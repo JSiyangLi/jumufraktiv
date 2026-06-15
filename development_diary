@@ -1,0 +1,38 @@
+### Achieved functionalities
+  none
+  
+### In progress
+  1. Dictionary of MGFs
+  2. Writing symbolic differentiation functions for some MGFs
+
+### Future developments
+ ## derivatives
+  1. Bell polynomial method of integer derivatives in numeric_integer_MGFderiv class
+  2. JAX method of integer derivatives in numeric_integer_MGFderiv class
+  3. differint method of fractional derivatives in numeric_fractional_MGFderiv class
+  4. SymPy method of integer derivatives in symbolic_MGFderiv class
+  5. SymPy method of Mellin transform (fractional integral) in symbolic_MGFderiv class
+
+ ## outputing (for each class)
+  1. marginal density
+  2. posterior density
+  3. posterior predictive density
+  4. posterior MGF
+  5. posterior moments
+
+ ## likelihoods
+  1. This package should contain the following 11 named likelihoods: 
+  Laplace (known mean), Normal (known mean), Rayleigh, Maxwell-Boltzmann, Inv-gamma, Levy (known mean), Weibull (known rho), BurrXII (known c), Pareto (known minimum), Dagum (known a and b), Gompertz (known b).
+  2. support customized likelihoods via user-specified a(), b() and c()
+  3. regulate the format of data input
+
+ ## priors
+  1. A complete dictionary of MGFs
+  2. combine this dictionary of MGFs seamlessly into the SciPy methods
+  3. support customized priors via user-specified MGFs
+
+ ## externals
+  1. support nested usage of this package within other (sampler) packages e.g. dynesty.
+
+ ## high-dimensional
+  1. support linear transforms inside the MGF before dervatives and at the evaluation point
