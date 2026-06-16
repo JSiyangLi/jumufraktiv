@@ -1,0 +1,1 @@
+# MGFdictionary is a subpackage in mgf2post.
