@@ -1,11 +1,11 @@
-### Achieved functionalities
+# Achieved functionalities
   none
   
-### In progress
+# In progress
   1. Dictionary of MGFs
   2. Writing symbolic differentiation functions for some MGFs
 
-### Future developments
+# Future developments
  ## derivatives
   1. Bell polynomial method of integer derivatives in numeric_integer_MGFderiv class
   2. JAX method of integer derivatives in numeric_integer_MGFderiv class
@@ -22,7 +22,7 @@
 
  ## likelihoods
   1. This package should contain the following 11 named likelihoods: 
-  Laplace (known mean), Normal (known mean), Rayleigh, Maxwell-Boltzmann, Inv-gamma, Levy (known mean), Weibull (known rho), BurrXII (known c), Pareto (known minimum), Dagum (known a and b), Gompertz (known b).
+  Poisson, Gamma (known shape), Laplace (known mean), Normal (known mean), Rayleigh, Maxwell-Boltzmann, Inv-gamma (known shape), Levy (known mean), Weibull (known rho), BurrXII (known c), Pareto (known minimum), Dagum (known a and b), Gompertz (known b).
   2. support customized likelihoods via user-specified a(), b() and c()
   3. regulate the format of data input
 
