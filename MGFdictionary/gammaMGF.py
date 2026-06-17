@@ -1,6 +1,7 @@
 import math
-from logsum import logminus
+from logsum import logplus, logminus
 import sympy as sp
+import jax.numpy as jnp   # optional, but we'll add it
 
 def gamma_mgf_symbolic():
     """
@@ -10,7 +11,16 @@ def gamma_mgf_symbolic():
     t, alpha, beta = sp.symbols('t alpha beta', positive=True, real=True)
     return (beta / (beta - t)) ** alpha
 
-def log_gamma_mgf(t: float, alpha: float, beta: float) -> float:
+def gamma_cgf_symbolic():
+    """
+    Returns symbolic expression for the cumulant generating function (CGF)
+    of the Gamma(alpha, rate=beta) distribution:
+        K(t) = log M(t) = alpha * (log(beta) - log(beta - t))
+    """
+    t, alpha, beta = sp.symbols('t alpha beta', positive=True, real=True)
+    return alpha * (sp.log(beta) - sp.log(beta - t))
+
+def gamma_cgf(t: float, alpha: float, beta: float) -> float:
     """
     Log moment generating function of Gamma(alpha, rate=beta).
     log M(t) = alpha * log(beta) - alpha * log(beta - t),  for t < beta.
@@ -22,10 +32,10 @@ def log_gamma_mgf(t: float, alpha: float, beta: float) -> float:
     
     # Convert inputs to log scale
     log_beta = math.log(beta)
-    log_t = math.log(t)
+    log_nt = math.log(-t)
     
     # Compute log(beta - t) = log(exp(log_beta) - exp(log_t))
-    log_diff = logminus(log_beta, log_t)   # logminus returns NaN if log_beta <= log_t (t>=beta)
+    log_diff = logplus(log_beta, log_nt)   # logminus returns NaN if log_beta <= log_t (t>=beta)
     
     if math.isnan(log_diff):
         # This shouldn't happen because we already checked t < beta,
@@ -41,5 +51,12 @@ def gamma_mgf(t: float, alpha: float, beta: float) -> float:
     """
     Wrapper to return the MGF in normal scale.
     """
-    log_mgf = log_gamma_mgf(t, alpha, beta)
+    log_mgf = gamma_cgf(t, alpha, beta)
     return math.exp(log_mgf)
+
+def gamma_cgf_jax(t, alpha, beta):
+    """JAX version of log M(t)."""
+    return alpha * (jnp.log(beta) - jnp.log(beta - t))
+
+def gamma_mgf_jax(t, alpha, beta):
+    return jnp.exp(gamma_cgf_jax(t, alpha, beta))

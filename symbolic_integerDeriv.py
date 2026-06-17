@@ -64,7 +64,7 @@ def integerDeriv_symbolic(order: int, prior: str, simplify: bool = False):
 # Test: simplified derivatives, orders 0–3
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-    max_order = 3
+    max_order = 2
     priors = ["gamma", "pareto"]
 
     for prior in priors:
@@ -77,3 +77,60 @@ if __name__ == "__main__":
             sp.pprint(deriv, use_unicode=False)
 
         print("\n" + "-"*60 + "\n")
+
+if __name__ == "__main__":
+    import math
+    # ---- NEW: 75th derivative of Gamma with simplify=True ----
+    print("\n" + "="*60)
+    print("Testing 75th derivative of Gamma MGF with simplify=True")
+    print("(This may take a very long time due to simplification)")
+    print("="*60)
+
+    import time
+    order_high = 5
+
+    # This line calls integerDeriv_symbolic with simplify=True
+    # ⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️
+    deriv_expr = integerDeriv_symbolic(order_high, "gamma", simplify=True)
+    # ⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️
+
+    print(f"Simplified derivative expression obtained.")
+    print(f"Expression size (operations): {sp.count_ops(deriv_expr)}")
+
+    # Preview the expression (it should be compact after simplification)
+    expr_str = str(deriv_expr)
+    if len(expr_str) > 500:
+        print(f"Preview: {expr_str[:500]}... (truncated)")
+    else:
+        print("Derivative expression:")
+        sp.pprint(deriv_expr, use_unicode=False)
+
+    # Evaluate numerically with small parameters
+    alpha_small = 1e-5
+    beta_small = 1e-5
+    t_small = -1e-6
+
+    t_sym = next(s for s in deriv_expr.free_symbols if s.name == 't')
+    alpha_sym = next(s for s in deriv_expr.free_symbols if s.name == 'alpha')
+    beta_sym = next(s for s in deriv_expr.free_symbols if s.name == 'beta')
+
+    subs_dict = {alpha_sym: alpha_small, beta_sym: beta_small}
+    full_expr = deriv_expr.subs(subs_dict).subs({t_sym: t_small})
+
+    print("Attempting numeric evaluation...")
+    try:
+        import signal
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Evaluation timed out")
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
+        numeric_val = full_expr.evalf()
+        signal.alarm(0)
+        log_abs = math.log(abs(float(numeric_val)))
+        sign = 1 if float(numeric_val) > 0 else -1
+        print(f" Numeric result: log|deriv| = {log_abs:.6e}, sign = {sign}")
+    except TimeoutError:
+        print(" Evaluation timed out after 30 seconds.")
+        print(" Simplify might still be too heavy; try numeric methods.")
+    except Exception as e:
+        print(f" Evaluation failed: {e}")
