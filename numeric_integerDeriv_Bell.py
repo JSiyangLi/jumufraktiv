@@ -7,8 +7,11 @@ symbolic (SymPy) and numeric (JAX). Falls back to JAX if symbolic fails.
 """
 
 import math
+import time
 import sys
 import sympy as sp
+import jax
+jax.config.update("jax_enable_x64", True)
 from jax import grad
 
 # Local imports – make sure these files are in the same directory
@@ -24,7 +27,99 @@ from MGFdictionary.paretoMGF import (
 )
 from logsum import logplus, logminus, logplusvec   # needed for Bell polynomial
 from numeric_symbolic_decision import suggest_method_integerDeriv
+from jax.experimental import jet
+import jax.numpy as jnp
 
+def cgf_derivatives_jet(cgf_func, t, order):
+    """
+    Returns
+
+        log_abs[k-1] = log|K^(k)(t)|
+        sign[k-1]    = sign(K^(k)(t))
+
+    for k = 1,...,order.
+    """
+
+    if order == 0:
+        return [], []
+
+    # Seed x -> t + ε
+    series_in = ((1.0,) + (0.0,) * (order - 1),)
+
+    _, derivs = jet.jet(
+        cgf_func,
+        (t,),
+        series_in,
+    )
+
+    log_abs = []
+    signs = []
+
+    for d in derivs[:order]:
+        val = float(d)
+
+        if abs(val) < sys.float_info.epsilon:
+            log_abs.append(-float("inf"))
+            signs.append(1)
+        else:
+            log_abs.append(math.log(abs(val)))
+            signs.append(1 if val > 0 else -1)
+
+    return log_abs, signs
+
+def cgf_derivatives_grad(cgf_func, t, order):
+    log_abs = []
+    signs = []
+
+    f = cgf_func
+
+    for k in range(1, order + 1):
+        f = grad(f)
+
+        val = float(f(t))
+
+        if abs(val) < sys.float_info.epsilon:
+            log_abs.append(-float("inf"))
+            signs.append(1)
+        else:
+            log_abs.append(math.log(abs(val)))
+            signs.append(1 if val > 0 else -1)
+
+    return log_abs, signs
+
+def cgf_derivatives_auto(cgf_func, t, order):
+
+    try:
+        return cgf_derivatives_jet(
+            cgf_func,
+            t,
+            order,
+        )
+
+    except Exception as e:
+
+        msg = str(e).lower()
+
+        unsupported = (
+            isinstance(e, KeyError)
+            or "jet" in msg
+            or "primitive" in msg
+            or "not implemented" in msg
+        )
+
+        if unsupported:
+            print(
+                f"⚠️ Jet failed ({type(e).__name__}: {e}). "
+                f"Falling back to grad()."
+            )
+
+            return cgf_derivatives_grad(
+                cgf_func,
+                t,
+                order,
+            )
+
+        raise
 
 # ===== Bell polynomial (log‑space, sign‑aware) =====
 def bell_polynomial_log(n: int, logv: list, vsign: list):
@@ -111,26 +206,20 @@ def get_cgf_func(prior: str, params: dict, use_jax: bool = False):
 
 # ===== Main function =====
 def integerDeriv_numeric_bell(t: float, prior: str, params: dict, order: int):
-    """
-    Compute the order‑th derivative of M(t) at t using Bell polynomials.
-    Returns (log_abs_deriv, sign).
-    """
     if order < 0:
         raise ValueError("Order must be non‑negative.")
 
-    # ----- 1. Build symbolic CGF expression (log M) -----
+    # ----- 1. Build symbolic CGF expression -----
     if prior.lower() == "gamma":
         cgf_sym = gamma_cgf_symbolic()
-        # Extract symbols from the expression
         all_syms = cgf_sym.free_symbols
         t_sym = next(s for s in all_syms if s.name == 't')
         alpha_sym = next(s for s in all_syms if s.name == 'alpha')
         beta_sym = next(s for s in all_syms if s.name == 'beta')
         param_syms = (alpha_sym, beta_sym)
         param_names = ('alpha', 'beta')
-    else:  # pareto
+    else:
         cgf_sym = pareto_cgf_symbolic()
-        # Extract symbols from the expression
         all_syms = cgf_sym.free_symbols
         t_sym = next(s for s in all_syms if s.name == 't')
         alpha_sym = next(s for s in all_syms if s.name == 'alpha')
@@ -138,7 +227,7 @@ def integerDeriv_numeric_bell(t: float, prior: str, params: dict, order: int):
         param_syms = (alpha_sym, xi_sym)
         param_names = ('alpha', 'xi')
 
-    # ----- 2. Decision (test at low order) -----
+    # ----- 2. Decision -----
     decision = suggest_method_integerDeriv(
         cgf_sym, t_sym, order,
         test_order=min(order, 2),
@@ -148,15 +237,16 @@ def integerDeriv_numeric_bell(t: float, prior: str, params: dict, order: int):
     use_symbolic = decision['recommend_symbolic']
     print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
 
-    # ----- 3. Try symbolic path (with fallback) -----
+    # Flag to track if we should use JAX (set to True if symbolic fails)
+    use_jax = not use_symbolic
+
+    # ----- 3. Try symbolic path -----
     if use_symbolic:
         try:
-            # Substitute numeric parameters
             subs_dict = {}
             for name, sym in zip(param_names, param_syms):
                 subs_dict[sym] = float(params[name])
 
-            # Compute derivatives of CGF (K^(k)(t)) symbolically and evaluate
             kappa_log_abs = []
             kappa_sign = []
             for k in range(1, order + 1):
@@ -174,45 +264,43 @@ def integerDeriv_numeric_bell(t: float, prior: str, params: dict, order: int):
                     kappa_log_abs.append(math.log(abs(val)))
                     kappa_sign.append(1 if val > 0 else -1)
 
-            # Get CGF(t) using the math version
             cgf_func = get_cgf_func(prior, params, use_jax=False)
             cgf_t = cgf_func(t)
 
-            # Bell polynomial
             log_abs_B, sign_B = bell_polynomial_log(order, kappa_log_abs, kappa_sign)
-            # Final: log|M^(n)(t)| = K(t) + log|B_n|
-            return cgf_t + log_abs_B, sign_B
+            result = cgf_t + log_abs_B
+
+            # Check for NaN or inf
+            if math.isnan(result) or math.isinf(result):
+                raise ValueError("Symbolic result is NaN or inf – falling back to JAX")
+
+            # Success – return symbolic result
+            return result, sign_B
 
         except Exception as e:
             import traceback
-            traceback.print_exc()   # prints full stack trace
-            print(f"⚠️ Symbolic path failed for full order: {e}. Falling back to JAX.")
-            use_symbolic = False
+            traceback.print_exc()
+            print(f"⚠️ Symbolic path failed: {e}. Falling back to JAX.")
+            use_jax = True   # force numeric path
 
-    # ----- 4. Numeric path using JAX (fallback or direct) -----
-    cgf_func = get_cgf_func(prior, params, use_jax=True)
+    # ----- 4. Numeric (JAX) path -----
+    if use_jax:
+        print("Using JAX numeric path...")
+        cgf_func = get_cgf_func(prior, params, use_jax=True)
 
-    # Build derivative functions K^(0), K^(1), ..., K^(order) via nested grad
-    deriv_funcs = [cgf_func]
-    for _ in range(order):
-        deriv_funcs.append(grad(deriv_funcs[-1]))
+        # Build derivative functions via nested grad
+        kappa_log_abs, kappa_sign = cgf_derivatives_auto(
+            cgf_func,
+            t,
+            order
+        )
 
-    kappa_log_abs = []
-    kappa_sign = []
-    for k in range(1, order + 1):
-        val = float(deriv_funcs[k](t))
-        if abs(val) < sys.float_info.epsilon:
-            kappa_log_abs.append(-float('inf'))
-            kappa_sign.append(1)
-        else:
-            kappa_log_abs.append(math.log(abs(val)))
-            kappa_sign.append(1 if val > 0 else -1)
+        cgf_t = float(cgf_func(t))
+        log_abs_B, sign_B = bell_polynomial_log(order, kappa_log_abs, kappa_sign)
+        return cgf_t + log_abs_B, sign_B
 
-    cgf_t = float(cgf_func(t))
-    log_abs_B, sign_B = bell_polynomial_log(order, kappa_log_abs, kappa_sign)
-
-    return cgf_t + log_abs_B, sign_B
-
+    # This should never happen, but just in case:
+    raise RuntimeError("No path was executed.")
 
 if __name__ == "__main__":
     # ---- Existing tests (Gamma and Pareto, orders 0–3) ----
@@ -234,17 +322,16 @@ if __name__ == "__main__":
         log_abs, sign = integerDeriv_numeric_bell(t_val, 'pareto', pareto_params, n)
         print(f"Pareto M^{{{n}}}({t_val}) : log|.| = {log_abs:.4f}, sign = {sign}")
 
-    # ---- New: 5th derivative of Gamma with very small parameters ----
+    # ---- New: 51th derivative of Gamma with very small parameters ----
     print("\n" + "="*60)
-    print("Testing 5th derivative of Gamma MGF with small parameters")
+    print("Testing 51th derivative of Gamma MGF with small parameters")
     print("(alpha = beta = 1e-5, t = -1e-6)")
     print("="*60)
 
-    import time
     alpha_small = 1e-5
     beta_small = 1e-5
     t_small = -1e-6
-    order_test = 5
+    order_test = 51
     small_params = {'alpha': alpha_small, 'beta': beta_small}
 
     start = time.time()

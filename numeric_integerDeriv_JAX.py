@@ -7,6 +7,7 @@ Differentiates the MGF directly – no Bell polynomials needed.
 
 import math
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.experimental import jet
 
@@ -72,7 +73,7 @@ def integerDeriv_numeric_jax(t, prior, params, order):
     sign = 1 if coef > 0 else -1
 
     # log(|f^(n)|) = log(|coef|) + log(n!)
-    log_abs = math.log(abs(coef)) + math.lgamma(order + 1)
+    log_abs = math.log(abs(coef))
 
     return log_abs, sign
 
@@ -91,13 +92,13 @@ if __name__ == "__main__":
         log_abs, sign = integerDeriv_numeric_jax(t_val, 'gamma', gamma_params, n)
         print(f"Gamma M^{{{n}}}({t_val}) : log|.| = {log_abs:.4f}, sign = {sign}")
 
-    # High‑order test: 5th derivative of Gamma with very small parameters
+    # High‑order test: 8th derivative of Gamma with very small parameters
     print("\n" + "=" * 60)
-    print("High‑order test: Gamma M^5 with alpha=beta=1e-5, t=-1e-6")
+    print("High‑order test: Gamma M^50 with alpha=beta=1e-5, t=-1e-6")
     alpha_small = 1e-5
     beta_small = 1e-5
     t_small = -1e-6
-    order_high = 5
+    order_high = 50
     small_params = {'alpha': alpha_small, 'beta': beta_small}
 
     start = time.time()
