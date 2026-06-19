@@ -94,11 +94,11 @@ if __name__ == "__main__":
 
     # High‑order test: 8th derivative of Gamma with very small parameters
     print("\n" + "=" * 60)
-    print("High‑order test: Gamma M^50 with alpha=beta=1e-5, t=-1e-6")
+    print("High‑order test: Gamma M^175 with alpha=beta=1e-5, t=-1e3")
     alpha_small = 1e-5
     beta_small = 1e-5
-    t_small = -1e-6
-    order_high = 50
+    t_small = -1e3
+    order_high = 175
     small_params = {'alpha': alpha_small, 'beta': beta_small}
 
     start = time.time()

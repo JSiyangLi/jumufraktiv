@@ -82,16 +82,16 @@ if __name__ == "__main__":
     import math
     # ---- NEW: 75th derivative of Gamma with simplify=True ----
     print("\n" + "="*60)
-    print("Testing 75th derivative of Gamma MGF with simplify=True")
+    print("Testing 175th derivative of Gamma MGF with simplify=True")
     print("(This may take a very long time due to simplification)")
     print("="*60)
 
     import time
-    order_high = 5
+    order_high = 175
 
     # This line calls integerDeriv_symbolic with simplify=True
     # ⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️
-    deriv_expr = integerDeriv_symbolic(order_high, "gamma", simplify=True)
+    deriv_expr = integerDeriv_symbolic(order_high, "gamma", simplify=False)
     # ⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️
 
     print(f"Simplified derivative expression obtained.")
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     # Evaluate numerically with small parameters
     alpha_small = 1e-5
     beta_small = 1e-5
-    t_small = -1e-6
+    t_small = -1e3
 
     t_sym = next(s for s in deriv_expr.free_symbols if s.name == 't')
     alpha_sym = next(s for s in deriv_expr.free_symbols if s.name == 'alpha')
