@@ -16,7 +16,6 @@ All arithmetic is performed with the precision specified by mp.dps.
 """
 
 from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
-from derivativeDispatch import mgfDerivative_integer
 
 
 def fractionalDeriv_numeric_mpmath_tan(
@@ -141,6 +140,7 @@ def fractionalDeriv_numeric_mpmath(
     tol : float
         Relative tolerance for convergence (default 1e-8).
     """
+    from derivativeDispatch import mgfDerivative_integer
     mp.dps = dps
 
     if order <= 0:

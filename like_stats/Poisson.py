@@ -30,7 +30,8 @@ def _extract_1d(obj: Any) -> np.ndarray:
 
 def readyPoisson(
     data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray] = 1.0
+    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray] = 1.0,
+    **kwargs
 ) -> Dict[str, Union[float, int]]:
     """
     Compute sufficient statistics for a Poisson likelihood.

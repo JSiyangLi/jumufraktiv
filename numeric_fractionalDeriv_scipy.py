@@ -17,7 +17,6 @@ import math
 import numpy as np
 from scipy.integrate import quad
 from scipy.special import gamma as gamma_func
-from derivativeDispatch import mgfDerivative_integer
 
 
 def fractionalDeriv_numeric_scipy_tan(
@@ -177,6 +176,7 @@ def fractionalDeriv_numeric_scipy(
     -------
     float or tuple (log_abs, sign)
     """
+    from derivativeDispatch import mgfDerivative_integer
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
 
