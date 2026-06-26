@@ -16,6 +16,7 @@ Function:
 
 import math
 import sympy as sp
+import numpy as np
 from symbolic_integerDeriv import integerDeriv_symbolic
 from numeric_integerDeriv_Bell import integerDeriv_numeric_bell
 from numeric_integerDeriv_JAX import integerDeriv_numeric_jax
@@ -247,13 +248,89 @@ def mgfDerivative(
     simplify: bool = False,
     log: bool = True,
     integer_method: str = "symbolic",
+    use_interpolation: bool = True,
+    d_vec: tuple = (0.8, 0.9, 0.95),
+    int_tol: float = 1e-12,
     **kwargs
 ):
+    """
+    Unified wrapper for integer or fractional derivatives of the MGF.
+
+    - If `order` is an integer (within `int_tol`), calls `mgfDerivative_integer`.
+    - Otherwise:
+        - If `use_interpolation` is True and the order is within `(n - min_dev, n)`,
+          where `min_dev = 1 - max(d_vec)`, uses cubic interpolation based on
+          pre‑computed derivatives at `n - dev1, n - dev2, n - dev3, n`,
+          with `dev_i = 1 - d_i`.
+          The integration method for interpolation points is always `scipy` (ignoring `method`).
+        - Else, calls `mgfDerivative_fractional` (scipy/mpmath/symbolic).
+
+    Parameters
+    ----------
+    order : float
+        Derivative order (integer or fractional).
+    prior : str
+        'gamma' or 'pareto'.
+    method : str, optional
+        For integer order: one of 'symbolic', 'bell', 'jax'.
+        For fractional order: one of 'scipy', 'mpmath', 'symbolic'.
+        Default 'symbolic'.
+    t : float, optional
+        Evaluation point. Required for numeric methods.
+    params : dict, optional
+        Prior parameters. Required for numeric methods.
+    simplify : bool, optional
+        If True, simplify the symbolic expression (only for symbolic methods).
+    log : bool, optional
+        If True and result is numeric, returns (log_abs, sign); else ordinary float.
+    integer_method : str, optional
+        For fractional order only: method to compute the integer derivative inside
+        the fractional integrator. One of 'symbolic', 'jax', or 'bell'.
+        Default 'symbolic'.
+    use_interpolation : bool, optional
+        If True, use cubic interpolation for orders near an integer from below.
+        Default True.
+    d_vec : tuple, optional
+        Three values in (0,1) that are complements of deviations. For example,
+        d_vec = (0.8, 0.9, 0.95) gives deviations (0.2, 0.1, 0.05) via `dev = 1 - d`.
+        The interpolation points are n - dev1, n - dev2, n - dev3, n.
+        Interpolation is used only for orders in `(n - min_dev, n)` where
+        `min_dev = min(dev_i) = 1 - max(d_vec)`.
+        Must have exactly 3 elements.
+    int_tol : float, optional
+        Tolerance for detecting integer order. If |order - round(order)| < int_tol,
+        the order is treated as integer. Default 1e-12.
+    **kwargs : additional arguments passed to the underlying function.
+        For fractional 'scipy' and 'mpmath' methods: see their docstrings.
+        For fractional 'symbolic': timeout_seconds, etc.
+        For integer methods: extra parameters are ignored.
+
+    Returns
+    -------
+    Depending on the method and order:
+        - Symbolic expression (if method='symbolic' and no numeric evaluation)
+        - Tuple (log_abs, sign) if log=True
+        - Float if log=False
+
+    Raises
+    ------
+    ValueError
+        If order is invalid, method is invalid for the order type, required arguments missing,
+        or d_vec does not have exactly 3 elements or any element >= 1.
+    """
     if params is None:
         params = {}
 
-    tol = 1e-12
-    is_integer = abs(order - round(order)) < tol
+    # ---- Validate d_vec ----
+    if len(d_vec) != 3:
+        raise ValueError("d_vec must have exactly 3 elements (e.g., (0.8, 0.9, 0.95)).")
+    if any(d >= 1 for d in d_vec):
+        raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
+    # Compute the smallest deviation (corresponds to the largest complement)
+    min_dev = 1.0 - max(d_vec)
+
+    # ---- Determine if order is integer (within tolerance) ----
+    is_integer = abs(order - round(order)) < int_tol
 
     if is_integer:
         int_order = int(round(order))
@@ -261,15 +338,19 @@ def mgfDerivative(
         if method.lower() not in valid_int_methods:
             raise ValueError(f"Invalid method '{method}' for integer order. Choose from {valid_int_methods}.")
         return mgfDerivative_integer(
-            order=int_order, prior=prior, method=method,
-            t=t, params=params, simplify=simplify, log=log
+            order=int_order,
+            prior=prior,
+            method=method,
+            t=t,
+            params=params,
+            simplify=simplify,
+            log=log
         )
     else:
-        # Fractional order
+        # ---- Fractional order ----
         valid_frac_methods = {'scipy', 'mpmath', 'symbolic'}
-        # Auto‑correct if user passed 'jax' or 'bell' as method
         if method.lower() in {'jax', 'bell'}:
-            print(f"⚠️ ⚠️ Warning: For fractional order, 'method' should be one of {valid_frac_methods}. ⚠️ ⚠️"
+            print(f"Note: For fractional order, 'method' should be one of {valid_frac_methods}. "
                   f"Interpreting 'method' as 'integer_method' and using default fractional method 'scipy'.")
             integer_method = method
             method = 'scipy'
@@ -281,15 +362,48 @@ def mgfDerivative(
         if integer_method.lower() not in valid_int_methods:
             raise ValueError(f"Invalid integer_method '{integer_method}'. Choose from {valid_int_methods}.")
 
+        # ---- Check if interpolation should be used ----
+        n = int(np.ceil(order))
+        if use_interpolation and order > n - min_dev:
+            # Interpolation will override method (use scipy for interpolation points)
+            if method.lower() != 'scipy':
+                print(f"⚠️ Interpolation triggered for order {order}. "
+                      f"Overriding method '{method}' with 'scipy' (interpolation points use scipy).")
+            # Filter kwargs for scipy (ignore mpmath-specific ones)
+            scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
+            scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
+            try:
+                from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
+            except ImportError as e:
+                raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
+            # Pass d_vec as is (complements), the interpolation function will convert internally
+            return fractionalDeriv_interpolated(
+                order=order,
+                prior=prior,
+                params=params,
+                t=t,
+                d_vec=d_vec,          # pass the user's complements
+                return_log=log,
+                integer_method=integer_method,
+                **scipy_kwargs
+            )
+
+        # ---- Otherwise, use standard fractional method ----
         return mgfDerivative_fractional(
-            order=order, prior=prior, method=method,
-            t=t, params=params, simplify=simplify, log=log,
-            integerDeriv_method=integer_method, **kwargs
+            order=order,
+            prior=prior,
+            method=method,
+            t=t,
+            params=params,
+            simplify=simplify,
+            log=log,
+            integerDeriv_method=integer_method,
+            **kwargs
         )
-    
 
 if __name__ == "__main__":
     import math
+    import pandas as pd
 
     # ===== Integer derivative examples =====
     print("=" * 60)
@@ -393,9 +507,9 @@ if __name__ == "__main__":
         print(f"Difference (mpmath vs 2nd) on ordinary scale: {abs(val_frac_mpmath - deriv2):.2e}")
 
     # ===== Unified wrapper examples =====
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Unified wrapper examples")
-    print("="*60)
+    print("=" * 60)
 
     # Integer order via wrapper
     log_abs, sign = mgfDerivative(
@@ -407,11 +521,11 @@ if __name__ == "__main__":
     )
     print(f"Wrapper (integer, log): log|deriv| = {log_abs:.6f}, sign = {sign}")
 
-    # Fractional order via wrapper (with auto‑correction)
+    # Fractional order via wrapper (auto‑corrected)
     log_abs, sign = mgfDerivative(
         order=1.99,
         prior='gamma',
-        method='jax',          # This will be auto‑corrected to integer_method='jax', method='scipy'
+        method='jax',          # auto‑corrected to integer_method='jax', method='scipy'
         t=-1.0,
         params={'alpha': 2.0, 'beta': 3.0},
         epsrel=1e-10
@@ -429,3 +543,52 @@ if __name__ == "__main__":
         epsrel=1e-10
     )
     print(f"Wrapper (fractional, explicit): log|deriv| = {log_abs:.6f}, sign = {sign}")
+
+    # ===== Interpolation test (near-integer fractional order) =====
+    print("\n" + "=" * 60)
+    print("Interpolation test (order 1.999, exponential prior)")
+    print("=" * 60)
+
+    # Use Gamma likelihood with exponential prior (Gamma(1,0.9)) so analytic formula exists.
+    data_interp = pd.DataFrame({'y': [1.0]})
+    prior_params_interp = {'alpha': 1.0, 'beta': 0.9}
+    t_interp = -1.0
+    order_interp = 1.999
+
+    # Using interpolation (default)
+    log_abs_interp, sign_interp = mgfDerivative(
+        order=order_interp,
+        prior='gamma',
+        method='scipy',
+        t=t_interp,
+        params=prior_params_interp,
+        log=True,
+        integer_method='symbolic',
+        use_interpolation=True,
+        d_vec=(0.8, 0.9, 0.95),
+        epsrel=1e-10
+    )
+    print(f"Interpolated: log|deriv| = {log_abs_interp:.6f}, sign = {sign_interp}")
+
+    # Analytic formula for exponential prior: D^α M(t) = λ * Γ(α+1) * (λ - t)^(-α-1)
+    lambda_exp = prior_params_interp['beta']
+    log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
+    print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
+    print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")
+
+    # Optional: show that direct scipy would be unstable (commented out to avoid long run)
+    # try:
+    #     log_abs_direct, sign_direct = mgfDerivative(
+    #         order=order_interp,
+    #         prior='gamma',
+    #         method='scipy',
+    #         t=t_interp,
+    #         params=prior_params_interp,
+    #         log=True,
+    #         integer_method='symbolic',
+    #         use_interpolation=False,   # force direct scipy
+    #         epsrel=1e-10
+    #     )
+    #     print(f"Direct (scipy) log|deriv| = {log_abs_direct:.6f}, sign = {sign_direct}")
+    # except Exception as e:
+    #     print(f"Direct scipy failed as expected: {e}")

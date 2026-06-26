@@ -12,6 +12,7 @@
   3. differint method of fractional derivatives in numeric_fractional_MGFderiv class
   4. SymPy method of integer derivatives in symbolic_MGFderiv class
   5. SymPy method of Mellin transform (fractional integral) in symbolic_MGFderiv class
+  6. Include the analytical expressions of fractional derivatives of MGFs in their dictionary
 
  ## outputing (for each class)
   1. marginal density

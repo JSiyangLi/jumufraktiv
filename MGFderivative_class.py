@@ -14,8 +14,20 @@ from derivativeDispatch import mgfDerivative
 # ---- Import all ready* and c* functions ----
 from like_stats.Poisson import readyPoisson, cPoisson
 from like_stats.Gamma import readyGamma, cGamma
+from like_stats.Laplace import readyLaplace, cLaplace
+from like_stats.Normal import readyNormal, cNormal
+from like_stats.Rayleigh import readyRayleigh, cRayleigh
+from like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann
+from like_stats.InverseGamma import readyInverseGamma, cInverseGamma
+from like_stats.Levy import readyLevy, cLevy
+from like_stats.Weibull import readyWeibull, cWeibull
+from like_stats.BurrXII import readyBurrXII, cBurrXII
+from like_stats.Pareto import readyPareto, cPareto
+from like_stats.Dagum import readyDagum, cDagum
+from like_stats.Gompertz import readyGompertz, cGompertz
+from like_stats.HalfNormal import readyHalfNormal, cHalfNormal
 
-# Other likelihoods (to be implemented later)
+# ---- Placeholder for unimplemented likelihoods ----
 def _not_implemented(*args, **kwargs):
     raise NotImplementedError("This likelihood's module has not been implemented yet.")
 
@@ -28,36 +40,51 @@ class MGFDerivative:
     via the sufficient statistics of the likelihood.
 
     Currently supports:
-        - Poisson, Gamma, Laplace, normal, Rayleigh, Maxwell-Boltzmann,
-          inverse gamma, Levy, Weibull, BurrXII, Pareto, Dagum, Gompertz
+        - Poisson, Gamma, Laplace, Normal, Rayleigh, Maxwell‑Boltzmann,
+          Inverse Gamma, Lévy, Weibull, Burr XII, Pareto, Dagum, Gompertz, Half‑Normal
 
     Special route:
-        - Weibull has a special derivative route that converts an n-th order derivative
-          into n 1st-order partial derivatives.
+        - Weibull has a special derivative route that converts an n‑th order derivative
+          into n 1st‑order partial derivatives (placeholder).
     """
 
     # Registry: maps likelihood name -> (ready_func, c_func)
     _registry = {
         'poisson':           (readyPoisson, cPoisson),
         'gamma':             (readyGamma,   cGamma),
-        'laplace':           (_not_implemented, _not_implemented),
-        'normal':            (_not_implemented, _not_implemented),
-        'rayleigh':          (_not_implemented, _not_implemented),
-        'maxwell-boltzmann': (_not_implemented, _not_implemented),
-        'inverse gamma':     (_not_implemented, _not_implemented),
-        'levy':              (_not_implemented, _not_implemented),
-        'weibull':           (_not_implemented, _not_implemented),  # special derivative route
-        'burrxii':           (_not_implemented, _not_implemented),
-        'pareto':            (_not_implemented, _not_implemented),
-        'dagum':             (_not_implemented, _not_implemented),
-        'gompertz':          (_not_implemented, _not_implemented),
+        'laplace':           (readyLaplace, cLaplace),
+        'normal':            (readyNormal,  cNormal),
+        'rayleigh':          (readyRayleigh, cRayleigh),
+        'maxwell-boltzmann': (readyMaxwellBoltzmann, cMaxwellBoltzmann),
+        'inverse gamma':     (readyInverseGamma, cInverseGamma),
+        'levy':              (readyLevy, cLevy),
+        'weibull':           (readyWeibull, cWeibull),
+        'burrxii':           (readyBurrXII, cBurrXII),
+        'pareto':            (readyPareto, cPareto),
+        'dagum':             (readyDagum, cDagum),
+        'gompertz':          (readyGompertz, cGompertz),
+        'halfnormal':        (readyHalfNormal, cHalfNormal),
+        # Additional aliases for convenience
+        'maxwell':           (readyMaxwellBoltzmann, cMaxwellBoltzmann),
+        'inverse-gamma':     (readyInverseGamma, cInverseGamma),
+        'burr xii':          (readyBurrXII, cBurrXII),
+        'burr-xii':          (readyBurrXII, cBurrXII),
     }
 
     # Likelihoods that use a special derivative computation (instead of standard mgfDerivative)
     _special_likelihoods = {'weibull'}
 
     # Keys that are meant for the likelihood's ready function (not for mgfDerivative)
-    _ready_keys = {'scale', 'shape'}   # extend as new likelihoods are added
+    _ready_keys = {
+        'scale',       # Poisson, Pareto, Rayleigh
+        'shape',       # Gamma, InverseGamma
+        'mean',        # Laplace, Normal
+        'location',    # Levy
+        'rho',         # Weibull
+        'known_shape', # BurrXII
+        'r',           # Dagum
+        's',           # Dagum
+    }
 
     def __init__(self, prior, data, likelihood='poisson', method='symbolic',
                  params=None, simplify=False, log=True, **kwargs):
@@ -86,7 +113,9 @@ class MGFDerivative:
                    and/or to mgfDerivative.
             For Poisson: scale.
             For Gamma: shape.
-            For Weibull: shape (rho) and possibly others.
+            For Weibull: rho.
+            For BurrXII: known_shape.
+            For Dagum: r, s.
             For mgfDerivative: integer_method, epsrel, dps, tol, etc.
         """
         self.prior = prior
@@ -109,8 +138,7 @@ class MGFDerivative:
         self.ready_func, self.c_func = self._registry[self.likelihood]
 
         # ---- Compute sufficient statistics ----
-        # Pass only kwargs that are relevant to ready_func (but with **kwargs in ready, we can pass all)
-        # However, to be safe, we pass only self._ready_kwargs (since ready functions ignore extra anyway)
+        # Pass only kwargs that are relevant to ready_func
         stats = self.ready_func(data, **self._ready_kwargs)
         self.a = stats['a']
         self.b = stats['b']
@@ -141,8 +169,6 @@ class MGFDerivative:
         Special derivative computation for Weibull.
         This converts an n-th order derivative into n 1st-order partial derivatives.
         """
-        # Placeholder: to be implemented specifically for Weibull.
-        # For now, we raise a clear error to remind the developer.
         raise NotImplementedError(
             f"Special derivative route for '{self.likelihood}' not yet implemented. "
             f"Please implement in {self.__class__.__name__}._compute_derivative_special()."
@@ -150,6 +176,8 @@ class MGFDerivative:
 
     def _store_result(self, result):
         """Store the result from mgfDerivative."""
+        if result is None:
+            raise RuntimeError("Derivative computation returned None. This may indicate a timeout or failure.")
         if isinstance(result, sp.Expr):
             self._symbolic = True
             self._expr = result
