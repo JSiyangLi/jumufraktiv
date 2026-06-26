@@ -60,3 +60,22 @@ def gamma_cgf_jax(t, alpha, beta):
 
 def gamma_mgf_jax(t, alpha, beta):
     return jnp.exp(gamma_cgf_jax(t, alpha, beta))
+
+def gamma_pdf_symbolic():
+    """
+    Return a SymPy expression for the Gamma(alpha, beta) density at theta:
+        p(theta) = beta^alpha / Gamma(alpha) * theta^(alpha-1) * exp(-beta*theta)
+    """
+    theta, alpha, beta = sp.symbols('theta alpha beta', positive=True, real=True)
+    return (beta**alpha / sp.gamma(alpha)) * theta**(alpha - 1) * sp.exp(-beta * theta)
+
+def gamma_pdf_symbolic_sub(params):
+    """
+    Return the symbolic Gamma PDF with parameters substituted.
+    params must contain 'alpha' and 'beta'.
+    """
+    alpha = params['alpha']
+    beta = params['beta']
+    # We could just call gamma_pdf_symbolic and substitute, but we can also build directly.
+    # Using the base function ensures consistency.
+    return gamma_pdf_symbolic().subs({sp.Symbol('alpha'): alpha, sp.Symbol('beta'): beta})

@@ -31,6 +31,7 @@
   1. A complete dictionary of MGFs
   2. combine this dictionary of MGFs seamlessly into the SciPy methods
   3. support customized priors via user-specified MGFs
+  4. Sequential update, i.e. using the posterior of last run as the prior
 
  ## externals
   1. support nested usage of this package within other (sampler) packages e.g. dynesty.

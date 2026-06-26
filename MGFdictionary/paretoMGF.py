@@ -67,3 +67,20 @@ def pareto_cgf_jax(t, alpha, xi):
 def pareto_mgf_jax(t, alpha, xi):
     """JAX version of MGF (ordinary scale)."""
     return jnp.exp(pareto_cgf_jax(t, alpha, xi))
+
+def pareto_pdf_symbolic():
+    """
+    Return a SymPy expression for the Pareto(alpha, xi) density at theta:
+        p(theta) = alpha * xi^alpha / theta^(alpha+1) ,  theta >= xi
+    """
+    theta, alpha, xi = sp.symbols('theta alpha xi', positive=True, real=True)
+    return alpha * xi**alpha * theta**(-alpha - 1)
+
+def pareto_pdf_symbolic_sub(params):
+    """
+    Return the symbolic Pareto PDF with parameters substituted.
+    params must contain 'alpha' and 'xi'.
+    """
+    alpha = params['alpha']
+    xi = params['xi']
+    return pareto_pdf_symbolic().subs({sp.Symbol('alpha'): alpha, sp.Symbol('xi'): xi})

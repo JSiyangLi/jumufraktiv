@@ -575,20 +575,3 @@ if __name__ == "__main__":
     log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
     print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
     print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")
-
-    # Optional: show that direct scipy would be unstable (commented out to avoid long run)
-    # try:
-    #     log_abs_direct, sign_direct = mgfDerivative(
-    #         order=order_interp,
-    #         prior='gamma',
-    #         method='scipy',
-    #         t=t_interp,
-    #         params=prior_params_interp,
-    #         log=True,
-    #         integer_method='symbolic',
-    #         use_interpolation=False,   # force direct scipy
-    #         epsrel=1e-10
-    #     )
-    #     print(f"Direct (scipy) log|deriv| = {log_abs_direct:.6f}, sign = {sign_direct}")
-    # except Exception as e:
-    #     print(f"Direct scipy failed as expected: {e}")
