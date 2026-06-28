@@ -52,6 +52,26 @@ from MGFdictionary.paretoMGF import (
     pareto_pdf_symbolic,
     pareto_pdf_symbolic_sub,
 )
+from MGFdictionary.heavisideMGF import (
+    heaviside_mgf_symbolic,
+    heaviside_cgf_symbolic,
+    heaviside_cgf,
+    heaviside_mgf,
+    heaviside_cgf_jax,
+    heaviside_mgf_jax,
+    heaviside_pdf_symbolic,
+    heaviside_pdf_symbolic_sub,
+)
+from MGFdictionary.uniformMGF import (
+    uniform_mgf_symbolic,
+    uniform_cgf_symbolic,
+    uniform_cgf,
+    uniform_mgf,
+    uniform_cgf_jax,
+    uniform_mgf_jax,
+    uniform_pdf_symbolic,
+    uniform_pdf_symbolic_sub,
+)
 
 # ---- Placeholder for unimplemented likelihoods ----
 def _not_implemented(*args, **kwargs):
@@ -81,6 +101,30 @@ PRIOR_REGISTRY = {
         'pdf_sym': pareto_pdf_symbolic,
         'pdf_sym_func': pareto_pdf_symbolic_sub,
     },
+    'heaviside': {
+        'dist': None,
+        'mgf_sym': heaviside_mgf_symbolic,
+        'cgf_sym': heaviside_cgf_symbolic,
+        'mgf': heaviside_mgf,
+        'cgf': heaviside_cgf,
+        'mgf_jax': heaviside_mgf_jax,
+        'cgf_jax': heaviside_cgf_jax,
+        'pdf_sym': heaviside_pdf_symbolic,
+        'pdf_sym_func': heaviside_pdf_symbolic_sub,
+        'pdf_func': lambda theta, k: 1.0 if theta >= k else 0.0,
+        'logpdf_func': lambda theta, k: 0.0 if theta >= k else -np.inf,
+    },
+    'uniform': {
+        'dist': lambda p: stats.uniform(loc=p['a'], scale=p['b'] - p['a']),
+        'mgf_sym': uniform_mgf_symbolic,
+        'cgf_sym': uniform_cgf_symbolic,
+        'mgf': uniform_mgf,
+        'cgf': uniform_cgf,
+        'mgf_jax': uniform_mgf_jax,
+        'cgf_jax': uniform_cgf_jax,
+        'pdf_sym': uniform_pdf_symbolic,
+        'pdf_sym_func': uniform_pdf_symbolic_sub,
+    },
 }
 
 
@@ -94,7 +138,7 @@ class MGFDerivative:
     Currently supports:
         - Likelihoods: Poisson, Gamma, Laplace, Normal, Rayleigh, Maxwell‑Boltzmann,
           Inverse Gamma, Lévy, Weibull, Burr XII, Pareto, Dagum, Gompertz, Half‑Normal
-        - Priors: gamma, pareto (others can be added to the registry)
+        - Priors: gamma, pareto, heaviside, uniform (others can be added to the registry)
     """
 
     LIKELIHOOD_REGISTRY = {
@@ -125,11 +169,22 @@ class MGFDerivative:
         'known_shape', 'r', 's',
     }
 
-    def __init__(self, prior, data, likelihood='poisson', method='symbolic',
-                 params=None, simplify=False, log=True,
-                 prior_mgf_func=None, prior_cgf_func=None,
-                 prior_pdf_func=None, prior_pdf_sym_func=None,
-                 **kwargs):
+    def __init__(
+        self,
+        prior: str,
+        data,
+        likelihood: str = 'poisson',
+        method: str = 'symbolic',
+        params: dict = None,
+        simplify: bool = False,
+        log: bool = True,
+        prior_mgf_func=None,
+        prior_cgf_func=None,
+        prior_pdf_func=None,
+        prior_logpdf_func=None,
+        prior_pdf_sym_func=None,
+        **kwargs
+    ):
         """
         Compute the MGF derivative for the given data and prior.
 
@@ -158,10 +213,18 @@ class MGFDerivative:
             Function (t, *args) -> log M(t) for custom prior.
         prior_pdf_func : callable, optional
             Function (theta, *args) -> p(theta) for custom prior.
+        prior_logpdf_func : callable, optional
+            Function (theta, *args) -> log p(theta) for custom prior.
         prior_pdf_sym_func : callable, optional
             Function (params) -> symbolic PDF expression for custom prior.
         **kwargs : additional arguments passed to the likelihood's ready function
-                   and/or to mgfDerivative.
+                and/or to mgfDerivative.
+            For Poisson: scale.
+            For Gamma: shape.
+            For Weibull: rho.
+            For BurrXII: known_shape.
+            For Dagum: r, s.
+            For mgfDerivative: integer_method, epsrel, dps, tol, symbolic_timeout, etc.
         """
         # ---- Validate prior ----
         self.prior = prior.lower()
@@ -175,8 +238,9 @@ class MGFDerivative:
             self._prior_mgf_func = prior_mgf_func
             self._prior_cgf_func = prior_cgf_func
             self._prior_pdf_func = prior_pdf_func
+            self._prior_logpdf_func = prior_logpdf_func
             self._prior_pdf_sym_func = prior_pdf_sym_func
-            # Create a dummy prior_info for consistency
+            # Create dummy prior_info for consistency
             self.prior_info = {
                 'dist': None,
                 'mgf_sym': None,
@@ -187,13 +251,15 @@ class MGFDerivative:
                 'cgf_jax': None,
                 'pdf_sym': prior_pdf_sym_func,
                 'pdf_sym_func': lambda p: prior_pdf_sym_func,
+                'pdf_func': prior_pdf_func,
+                'logpdf_func': prior_logpdf_func,
             }
-            # We'll set params to None since they are not used for custom prior
+            # Custom prior does not use params
             self.params = None
         else:
             if self.prior not in PRIOR_REGISTRY:
                 raise ValueError(f"Unsupported prior: {prior}. "
-                                 f"Choose from {list(PRIOR_REGISTRY.keys())} or 'custom'.")
+                                f"Choose from {list(PRIOR_REGISTRY.keys())} or 'custom'.")
             self.prior_info = PRIOR_REGISTRY[self.prior]
             self.params = params
 
@@ -208,20 +274,40 @@ class MGFDerivative:
             all(isinstance(v, (int, float)) for v in params.values())
         )
 
+        # ---- Separate kwargs for ready vs derivative ----
+        self._ready_keys = {
+            'scale', 'shape', 'mean', 'location', 'rho',
+            'known_shape', 'r', 's',
+        }
         self._ready_kwargs = {k: v for k, v in kwargs.items() if k in self._ready_keys}
         self._deriv_kwargs = {k: v for k, v in kwargs.items() if k not in self._ready_keys}
 
+        # ---- Look up ready and c functions from likelihood registry ----
         if self.likelihood not in self.LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unsupported likelihood: {likelihood}. "
                              f"Choose from {list(self.LIKELIHOOD_REGISTRY.keys())}")
 
         self.ready_func, self.c_func = self.LIKELIHOOD_REGISTRY[self.likelihood]
 
+        # ---- Compute sufficient statistics ----
         stats = self.ready_func(data, **self._ready_kwargs)
         self.a = stats['a']
         self.b = stats['b']
         self.log_c = stats['log_c']
 
+        # ---- Warn if order is integer but method is fractional ----
+        if abs(self.a - round(self.a)) < 1e-12:
+            if self.method.lower() in ('scipy', 'mpmath'):
+                import warnings
+                warnings.warn(
+                    f"The derivative order a = {self.a} is integer. "
+                    f"Methods 'scipy' and 'mpmath' are intended for fractional orders. "
+                    f"Consider using method='symbolic', 'bell', or 'jax' for integer orders. "
+                    f"Your current method '{self.method}' will be dispatched to the integer path.",
+                    UserWarning
+                )
+
+        # ---- Compute derivative ----
         if self.likelihood in self._special_likelihoods:
             self._compute_derivative_special()
         else:
@@ -230,9 +316,6 @@ class MGFDerivative:
     def _compute_derivative_standard(self):
         """Standard derivative computation using mgfDerivative."""
         if self._custom_prior:
-            # For custom prior, we need to compute the derivative of the custom MGF.
-            # This is not yet implemented in mgfDerivative, so we raise an error.
-            # In practice, the user should use the standard prior registry for sequential updates.
             raise NotImplementedError("Custom prior derivatives are not yet supported by mgfDerivative.")
         result = mgfDerivative(
             order=self.a,
@@ -277,11 +360,9 @@ class MGFDerivative:
         """
         Returns True only if the derivative is symbolic AND parameters are not all numeric.
         If parameters are numeric, we treat the object as numeric (even if the derivative was computed symbolically).
-        For custom prior, we treat it as symbolic only if the MGF function returns a sympy expression.
+        For custom prior, we treat it as symbolic only if the method is 'symbolic' and params are None.
         """
         if self._custom_prior:
-            # For custom prior, we cannot easily determine if it's symbolic.
-            # We assume it's numeric unless the method is 'symbolic' and params are None.
             return self.method.lower() == 'symbolic' and self.params is None
         return self._is_symbolic and not self._has_numeric_params
 
@@ -360,10 +441,11 @@ class MGFDerivative:
     def _get_prior_dist(self):
         """Return a scipy.stats distribution object for the prior."""
         if self._custom_prior:
-            # Custom prior: we cannot provide a scipy distribution.
-            # Return None and let the method handle it.
             return None
-        return self.prior_info['dist'](self.params)
+        dist_constructor = self.prior_info['dist']
+        if dist_constructor is None:
+            return None
+        return dist_constructor(self.params)
 
     def evidence(self):
         """
@@ -460,14 +542,25 @@ class MGFDerivative:
         if theta is None:
             raise ValueError("For numeric evaluation, theta must be provided.")
 
-        # For custom prior, use the provided PDF function
+        # Get log prior density
         if self._custom_prior:
-            if self._prior_pdf_func is None:
+            if self._prior_logpdf_func is not None:
+                log_prior = self._prior_logpdf_func(theta)
+            elif self._prior_pdf_func is not None:
+                log_prior = np.log(self._prior_pdf_func(theta))
+            else:
                 raise ValueError("No numeric PDF function provided for custom prior.")
-            log_prior = np.log(self._prior_pdf_func(theta))
         else:
-            dist = self._get_prior_dist()
-            log_prior = dist.logpdf(theta)
+            prior_info = self.prior_info
+            if 'logpdf_func' in prior_info and prior_info['logpdf_func'] is not None:
+                log_prior = prior_info['logpdf_func'](theta, **self.params)
+            elif 'pdf_func' in prior_info and prior_info['pdf_func'] is not None:
+                log_prior = np.log(prior_info['pdf_func'](theta, **self.params))
+            elif prior_info['dist'] is not None:
+                dist = prior_info['dist'](self.params)
+                log_prior = dist.logpdf(theta)
+            else:
+                raise NotImplementedError("No numeric PDF function available for this prior. Please use custom prior with numeric PDF or use symbolic path.")
 
         log_num = log_prior + self.a * np.log(theta) - self.b * theta
         log_post = log_num - self.log_abs
@@ -791,50 +884,6 @@ class MGFDerivative:
 
     # ---- Sequential updating methods ----
 
-    def _posterior_mgf_func(self):
-        """
-        Return a callable that evaluates the posterior MGF at any r.
-        """
-        if self.is_symbolic:
-            t_sym = sp.Symbol('t', real=True)
-            r_sym = sp.Symbol('r', real=True)
-            num_expr = self._expr.subs(t_sym, r_sym - self.b)
-            denom_expr = self._expr.subs(t_sym, -self.b)
-            post_mgf_expr = num_expr / denom_expr
-            def func(r_val, *args):
-                return float(post_mgf_expr.subs({r_sym: r_val}).evalf())
-            return func
-        else:
-            def func(r_val, *args):
-                log_abs_num, sign_num = mgfDerivative(
-                    order=self.a,
-                    prior=self.prior,
-                    method=self.method,
-                    t=float(r_val - self.b),
-                    params=self.params,
-                    simplify=self.simplify,
-                    log=True,
-                    **self._deriv_kwargs
-                )
-                log_ratio = log_abs_num - self.log_abs
-                sign_ratio = sign_num * self.sign
-                if log_ratio == -float('inf'):
-                    return 0.0
-                return sign_ratio * math.exp(log_ratio)
-            return func
-
-    def _posterior_cgf_func(self):
-        """Return callable for log of posterior MGF."""
-        def func(r_val, *args):
-            return math.log(self._posterior_mgf_func()(r_val))
-        return func
-
-    def _posterior_pdf_func(self):
-        """Return callable for posterior density (ordinary scale)."""
-        def func(theta, *args):
-            return self.post_density(theta, log=False)
-        return func
-
     def update(self, new_data, method=None, log=None, simplify=None, **kwargs):
         """
         Perform sequential Bayesian updating with new data.
@@ -870,14 +919,13 @@ class MGFDerivative:
             if not self.is_symbolic:
                 raise ValueError("Cannot use symbolic method for sequential update when the posterior derivative is not symbolic. Choose a numeric method (jax, bell, scipy, mpmath).")
 
-        # Prepare custom prior functions
-        post_mgf = self._posterior_mgf_func()
-        post_cgf = self._posterior_cgf_func()
-        post_pdf = self._posterior_pdf_func()
-        post_pdf_sym = None  # Not needed for numeric updates
+        # Create custom prior functions directly as lambdas using existing methods
+        post_mgf = lambda r_val, *args: self.post_mgf(r_val, log=False)
+        post_cgf = lambda r_val, *args: self.post_mgf(r_val, log=True)
+        post_pdf = lambda theta, *args: self.post_density(theta, log=False)
+        post_logpdf = lambda theta, *args: self.post_density(theta, log=True)
 
-        # Create new object with prior='custom'
-        # We merge the old ready kwargs with any new ones provided
+        # Merge ready kwargs
         merged_ready = {**self._ready_kwargs, **kwargs}
 
         return MGFDerivative(
@@ -885,12 +933,13 @@ class MGFDerivative:
             data=new_data,
             likelihood=self.likelihood,
             method=method,
-            params=None,  # No params needed for custom prior
+            params=None,
             simplify=simplify,
             log=log,
             prior_mgf_func=post_mgf,
             prior_cgf_func=post_cgf,
             prior_pdf_func=post_pdf,
-            prior_pdf_sym_func=post_pdf_sym,
+            prior_logpdf_func=post_logpdf,
+            prior_pdf_sym_func=None,
             **merged_ready
         )

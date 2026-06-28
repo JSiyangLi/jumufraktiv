@@ -2,6 +2,7 @@ import math
 from logsum import logplus, logminus
 import sympy as sp
 import jax.numpy as jnp   # optional, but we'll add it
+import torch
 
 def gamma_mgf_symbolic():
     """
@@ -60,6 +61,13 @@ def gamma_cgf_jax(t, alpha, beta):
 
 def gamma_mgf_jax(t, alpha, beta):
     return jnp.exp(gamma_cgf_jax(t, alpha, beta))
+
+def gamma_mgf_torch(t, alpha, beta):
+    """Torch version of M(t) for Gamma(alpha, rate=beta)."""
+    # Ensure alpha and beta are tensors with matching dtype/device
+    alpha_t = torch.tensor(alpha, dtype=t.dtype, device=t.device)
+    beta_t = torch.tensor(beta, dtype=t.dtype, device=t.device)
+    return torch.exp(alpha_t * (torch.log(beta_t) - torch.log(beta_t - t)))
 
 def gamma_pdf_symbolic():
     """

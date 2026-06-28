@@ -29,7 +29,9 @@ def mgfDerivative_integer(
     t: float = float('nan'),
     params: dict = None,
     simplify: bool = False,
-    log: bool = True
+    log: bool = True,
+    symbolic_timeout: float = 600.0,
+    cgf_method: str = 'auto'
 ):
     """
     Compute the order‑th integer derivative of the MGF using the specified method.
@@ -43,16 +45,21 @@ def mgfDerivative_integer(
     method : str, optional
         One of 'symbolic', 'bell', 'jax'. Default 'symbolic'.
     t : float, optional
-        Evaluation point. Required for 'bell' and 'jax'. For 'symbolic', if provided
-        together with params, the symbolic expression is evaluated numerically.
+        Evaluation point. Required for 'bell' and 'jax'.
     params : dict, optional
-        Distribution parameters. Required for 'bell' and 'jax' unless evaluating
-        symbolic expression.
+        Distribution parameters. Required for 'bell' and 'jax'.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for 'symbolic' method).
     log : bool, optional
         If True and output is numeric, return (log_abs, sign).
         If False, return the ordinary‑scale value as a float.
+    symbolic_timeout : float, optional
+        Maximum time (seconds) allowed for symbolic CGF derivative computation
+        in the 'bell' method. If exceeded, falls back to JAX. Default 600.
+    cgf_method : str, optional
+        For 'bell' method only. Method to compute CGF derivatives in the numeric path.
+        Options: 'auto' (try jet, fallback to grad), 'jet' (force Taylor mode),
+        'grad' (force nested grad). Default 'auto'.
 
     Returns
     -------
@@ -110,7 +117,11 @@ def mgfDerivative_integer(
             raise ValueError("For 'bell' method, t must be provided.")
         if not params:
             raise ValueError("For 'bell' method, params must be provided.")
-        log_abs, sign = integerDeriv_numeric_bell(t, prior, params, order)
+        log_abs, sign = integerDeriv_numeric_bell(
+            t, prior, params, order,
+            symbolic_timeout=symbolic_timeout,
+            cgf_method=cgf_method
+        )
         if log:
             return (log_abs, sign)
         else:
@@ -135,7 +146,6 @@ def mgfDerivative_integer(
 
     else:
         raise ValueError(f"Unknown method: '{method}'. Choose 'symbolic', 'bell', or 'jax'.")
-
 
 def mgfDerivative_fractional(
     order: float,
@@ -256,33 +266,41 @@ def mgfDerivative(
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
 
-    - If `order` is an integer (within `int_tol`), calls `mgfDerivative_integer`.
-    - Otherwise:
-        - If `use_interpolation` is True and the order is within `(n - min_dev, n)`,
-          where `min_dev = 1 - max(d_vec)`, uses cubic interpolation based on
-          pre‑computed derivatives at `n - dev1, n - dev2, n - dev3, n`,
-          with `dev_i = 1 - d_i`.
-          The integration method for interpolation points is always `scipy` (ignoring `method`).
-        - Else, calls `mgfDerivative_fractional` (scipy/mpmath/symbolic).
+    This function automatically detects whether the derivative order is integer
+    or fractional and dispatches to the appropriate method (integer or fractional).
+    For integer orders, it can use symbolic, Bell-polynomial, or JAX methods.
+    For fractional orders, it can use scipy, mpmath, or symbolic methods.
+
+    Special handling for Pareto prior:
+        - If method='jax' is selected, it is overridden to 'symbolic' with a warning
+          because JAX's `jet` does not support the required incomplete gamma function.
+        - If method='bell' is selected, a warning is issued about potential slowness
+          due to symbolic CGF derivatives, but the method is not overridden.
 
     Parameters
     ----------
     order : float
-        Derivative order (integer or fractional).
+        Derivative order (integer or fractional). If within `int_tol` of an integer,
+        it is treated as integer.
     prior : str
-        'gamma' or 'pareto'.
+        Prior name. Must be one of 'gamma', 'pareto' (or others added to the registry).
     method : str, optional
         For integer order: one of 'symbolic', 'bell', 'jax'.
         For fractional order: one of 'scipy', 'mpmath', 'symbolic'.
         Default 'symbolic'.
     t : float, optional
-        Evaluation point. Required for numeric methods.
+        Evaluation point. Required for numeric methods ('bell', 'jax', 'scipy', 'mpmath').
+        For 'symbolic', if provided together with `params`, the symbolic expression is
+        evaluated numerically; otherwise, a symbolic expression is returned.
     params : dict, optional
-        Prior parameters. Required for numeric methods.
+        Prior parameters. Required for numeric methods. For 'symbolic', if provided,
+        the symbolic expression is evaluated numerically; otherwise, a symbolic expression
+        is returned.
     simplify : bool, optional
-        If True, simplify the symbolic expression (only for symbolic methods).
+        If True, simplify the symbolic expression (only for 'symbolic' methods).
     log : bool, optional
-        If True and result is numeric, returns (log_abs, sign); else ordinary float.
+        If True and output is numeric, return (log_abs, sign). If False, return the
+        ordinary-scale value as a float.
     integer_method : str, optional
         For fractional order only: method to compute the integer derivative inside
         the fractional integrator. One of 'symbolic', 'jax', or 'bell'.
@@ -292,7 +310,7 @@ def mgfDerivative(
         Default True.
     d_vec : tuple, optional
         Three values in (0,1) that are complements of deviations. For example,
-        d_vec = (0.8, 0.9, 0.95) gives deviations (0.2, 0.1, 0.05) via `dev = 1 - d`.
+        d_vec = (0.8, 0.9, 0.95) gives actual deviations (0.2, 0.1, 0.05) via `dev = 1 - d`.
         The interpolation points are n - dev1, n - dev2, n - dev3, n.
         Interpolation is used only for orders in `(n - min_dev, n)` where
         `min_dev = min(dev_i) = 1 - max(d_vec)`.
@@ -300,17 +318,25 @@ def mgfDerivative(
     int_tol : float, optional
         Tolerance for detecting integer order. If |order - round(order)| < int_tol,
         the order is treated as integer. Default 1e-12.
-    **kwargs : additional arguments passed to the underlying function.
-        For fractional 'scipy' and 'mpmath' methods: see their docstrings.
+    **kwargs : additional keyword arguments passed to the underlying functions.
+        For integer methods (via mgfDerivative_integer):
+            symbolic_timeout : float, optional
+                Maximum time (seconds) allowed for symbolic CGF derivative computation
+                in the 'bell' method. If exceeded, falls back to JAX. Default 600.
+            cgf_method : str, optional
+                For 'bell' method only. Method to compute CGF derivatives in the numeric path.
+                Options: 'auto' (try jet, fallback to grad), 'jet' (force Taylor mode),
+                'grad' (force nested grad). Default 'auto'.
+        For fractional 'scipy' and 'mpmath' methods: epsabs, epsrel, limit, etc.
         For fractional 'symbolic': timeout_seconds, etc.
-        For integer methods: extra parameters are ignored.
 
     Returns
     -------
     Depending on the method and order:
-        - Symbolic expression (if method='symbolic' and no numeric evaluation)
-        - Tuple (log_abs, sign) if log=True
-        - Float if log=False
+        - If method='symbolic' and no numeric evaluation (t is nan or params is None):
+            sympy.Expr (symbolic expression)
+        - If numeric evaluation (log=True): tuple (log_abs, sign)
+        - If numeric evaluation (log=False): float (ordinary value)
 
     Raises
     ------
@@ -321,15 +347,41 @@ def mgfDerivative(
     if params is None:
         params = {}
 
+    # ---- Extract cgf_method and symbolic_timeout from kwargs ----
+    cgf_method = kwargs.pop('cgf_method', 'auto')
+    symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
+
     # ---- Validate d_vec ----
     if len(d_vec) != 3:
         raise ValueError("d_vec must have exactly 3 elements (e.g., (0.8, 0.9, 0.95)).")
     if any(d >= 1 for d in d_vec):
         raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
-    # Compute the smallest deviation (corresponds to the largest complement)
     min_dev = 1.0 - max(d_vec)
 
-    # ---- Determine if order is integer (within tolerance) ----
+    # ---- Special handling for Pareto prior ----
+    if prior.lower() == 'pareto':
+        # For integer orders, handle method selection
+        # We'll check if order is integer (within tolerance) and warn/override
+        is_integer = abs(order - round(order)) < int_tol
+        if is_integer:
+            if method.lower() == 'jax':
+                import warnings
+                warnings.warn(
+                    "JAX (jet) does not currently support the Pareto prior. "
+                    "Overriding method to 'symbolic' for integer order.",
+                    UserWarning
+                )
+                method = 'symbolic'
+            elif method.lower() == 'bell':
+                import warnings
+                warnings.warn(
+                    "The Bell method with Pareto prior may be very slow due to symbolic CGF derivatives. "
+                    "Consider using 'symbolic' for faster exact results.",
+                    UserWarning
+                )
+                # Do not override; let the user proceed.
+
+    # ---- Determine if order is integer ----
     is_integer = abs(order - round(order)) < int_tol
 
     if is_integer:
@@ -344,7 +396,9 @@ def mgfDerivative(
             t=t,
             params=params,
             simplify=simplify,
-            log=log
+            log=log,
+            symbolic_timeout=symbolic_timeout,
+            cgf_method=cgf_method
         )
     else:
         # ---- Fractional order ----
@@ -365,24 +419,21 @@ def mgfDerivative(
         # ---- Check if interpolation should be used ----
         n = int(np.ceil(order))
         if use_interpolation and order > n - min_dev:
-            # Interpolation will override method (use scipy for interpolation points)
             if method.lower() != 'scipy':
                 print(f"⚠️ Interpolation triggered for order {order}. "
                       f"Overriding method '{method}' with 'scipy' (interpolation points use scipy).")
-            # Filter kwargs for scipy (ignore mpmath-specific ones)
             scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
             scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
             try:
                 from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
             except ImportError as e:
                 raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
-            # Pass d_vec as is (complements), the interpolation function will convert internally
             return fractionalDeriv_interpolated(
                 order=order,
                 prior=prior,
                 params=params,
                 t=t,
-                d_vec=d_vec,          # pass the user's complements
+                d_vec=d_vec,
                 return_log=log,
                 integer_method=integer_method,
                 **scipy_kwargs

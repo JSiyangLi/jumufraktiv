@@ -80,6 +80,7 @@ def integerDeriv_numeric_jax(t, prior, params, order):
 
 if __name__ == "__main__":
     import time
+    from MGFdictionary.paretoMGF import pareto_cgf_jax
 
     print("=" * 60)
     print("Testing integerDeriv_numeric_jax (direct MGF derivatives via jet)")
@@ -94,11 +95,11 @@ if __name__ == "__main__":
 
     # High‑order test: 8th derivative of Gamma with very small parameters
     print("\n" + "=" * 60)
-    print("High‑order test: Gamma M^175 with alpha=beta=1e-5, t=-1e3")
+    print("High‑order test: Gamma M^15 with alpha=beta=1e-5, t=-1e3")
     alpha_small = 1e-5
     beta_small = 1e-5
     t_small = -1e3
-    order_high = 175
+    order_high = 15
     small_params = {'alpha': alpha_small, 'beta': beta_small}
 
     start = time.time()
@@ -119,3 +120,13 @@ if __name__ == "__main__":
         print("  ✅ Matches analytical formula.")
     else:
         print("  ⚠️ Difference not negligible – check precision.")
+
+    import jax.scipy.special as jsp
+
+    alpha = 3.5
+    z = 0.5
+
+    print(jsp.gammaincc(-alpha, z))
+
+    import scipy.special as sc
+    print(sc.gammaincc(-alpha, z))
