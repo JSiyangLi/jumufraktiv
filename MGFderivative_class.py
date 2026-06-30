@@ -6,6 +6,12 @@ and marginal likelihoods (evidence) for various likelihoods and priors.
 
 Supports sequential updating via the `update` method, using the posterior MGF
 as the prior for the next chunk of data.
+
+Custom priors are supported via `prior='custom'` with either symbolic or numeric
+functions. Symbolic requires `prior_mgf_sym`; numeric requires `prior_mgf_func`.
+
+Custom likelihoods are supported via `likelihood='custom'`, requiring `ready_func`
+and `c_func` to be provided.
 """
 
 import math
@@ -183,6 +189,10 @@ class MGFDerivative:
         prior_pdf_func=None,
         prior_logpdf_func=None,
         prior_pdf_sym_func=None,
+        prior_mgf_sym=None,
+        prior_cgf_sym=None,
+        ready_func=None,
+        c_func=None,
         **kwargs
     ):
         """
@@ -195,30 +205,39 @@ class MGFDerivative:
         data : pandas DataFrame, Series, or array‑like
             Observed data.
         likelihood : str, optional
-            One of the supported likelihoods (default 'poisson').
+            One of the supported likelihoods or 'custom'. Default 'poisson'.
         method : str, optional
             For integer order: 'symbolic', 'bell', 'jax'.
             For fractional order: 'scipy', 'mpmath', 'symbolic' (if order is fractional).
             Default 'symbolic'.
         params : dict or None
             Prior parameters. If None and method='symbolic', returns symbolic expression.
-            For 'custom' prior, this is ignored.
+            For 'custom' prior, if provided, will be used for numeric substitution
+            when method='symbolic'.
         simplify : bool, optional
             If True, simplify symbolic expressions.
         log : bool, optional
             If True, store derivative in log scale (numeric only).
         prior_mgf_func : callable, optional
-            Function (t, *args) -> M(t) for custom prior.
+            Function (t, *args) -> M(t) for custom prior (numeric).
         prior_cgf_func : callable, optional
-            Function (t, *args) -> log M(t) for custom prior.
+            Function (t, *args) -> log M(t) for custom prior (numeric).
         prior_pdf_func : callable, optional
             Function (theta, *args) -> p(theta) for custom prior.
         prior_logpdf_func : callable, optional
             Function (theta, *args) -> log p(theta) for custom prior.
         prior_pdf_sym_func : callable, optional
             Function (params) -> symbolic PDF expression for custom prior.
+        prior_mgf_sym : sympy.Expr or callable, optional
+            Symbolic MGF expression (or function returning one) for custom prior with method='symbolic'.
+        prior_cgf_sym : sympy.Expr or callable, optional
+            Symbolic CGF expression (or function returning one) for custom prior with method='symbolic'.
+        ready_func : callable, optional
+            For custom likelihood: function (data, **kwargs) -> dict with 'a', 'b', 'log_c'.
+        c_func : callable, optional
+            For custom likelihood: function () -> symbolic expression for the normalising constant c(y).
         **kwargs : additional arguments passed to the likelihood's ready function
-                and/or to mgfDerivative.
+                   and/or to mgfDerivative.
             For Poisson: scale.
             For Gamma: shape.
             For Weibull: rho.
@@ -233,18 +252,19 @@ class MGFDerivative:
 
         if self.prior == 'custom':
             self._custom_prior = True
-            if prior_mgf_func is None:
-                raise ValueError("For custom prior, prior_mgf_func must be provided.")
+            # Store custom functions
             self._prior_mgf_func = prior_mgf_func
             self._prior_cgf_func = prior_cgf_func
             self._prior_pdf_func = prior_pdf_func
             self._prior_logpdf_func = prior_logpdf_func
             self._prior_pdf_sym_func = prior_pdf_sym_func
-            # Create dummy prior_info for consistency
+            self._prior_mgf_sym = prior_mgf_sym
+            self._prior_cgf_sym = prior_cgf_sym
+            # Create a dummy prior_info for consistency
             self.prior_info = {
                 'dist': None,
-                'mgf_sym': None,
-                'cgf_sym': None,
+                'mgf_sym': prior_mgf_sym,
+                'cgf_sym': prior_cgf_sym,
                 'mgf': prior_mgf_func,
                 'cgf': prior_cgf_func,
                 'mgf_jax': None,
@@ -254,12 +274,12 @@ class MGFDerivative:
                 'pdf_func': prior_pdf_func,
                 'logpdf_func': prior_logpdf_func,
             }
-            # Custom prior does not use params
-            self.params = None
+            # For custom prior, store params if provided (for numeric substitution)
+            self.params = params
         else:
             if self.prior not in PRIOR_REGISTRY:
                 raise ValueError(f"Unsupported prior: {prior}. "
-                                f"Choose from {list(PRIOR_REGISTRY.keys())} or 'custom'.")
+                                 f"Choose from {list(PRIOR_REGISTRY.keys())} or 'custom'.")
             self.prior_info = PRIOR_REGISTRY[self.prior]
             self.params = params
 
@@ -269,25 +289,33 @@ class MGFDerivative:
         self.likelihood = likelihood.lower()
         self.data = data
         self._has_numeric_params = (
-            not self._custom_prior and
             params is not None and
             all(isinstance(v, (int, float)) for v in params.values())
         )
 
+        # ---- Handle custom likelihood ----
+        if self.likelihood == 'custom':
+            if ready_func is None:
+                raise ValueError("For custom likelihood, ready_func must be provided.")
+            if c_func is None:
+                raise ValueError("For custom likelihood, c_func must be provided.")
+            self.ready_func = ready_func
+            self.c_func = c_func
+            # No registry lookup
+        else:
+            if self.likelihood not in self.LIKELIHOOD_REGISTRY:
+                raise ValueError(f"Unsupported likelihood: {likelihood}. "
+                                 f"Choose from {list(self.LIKELIHOOD_REGISTRY.keys())} or 'custom'.")
+            self.ready_func, self.c_func = self.LIKELIHOOD_REGISTRY[self.likelihood]
+
         # ---- Separate kwargs for ready vs derivative ----
-        self._ready_keys = {
-            'scale', 'shape', 'mean', 'location', 'rho',
-            'known_shape', 'r', 's',
-        }
-        self._ready_kwargs = {k: v for k, v in kwargs.items() if k in self._ready_keys}
-        self._deriv_kwargs = {k: v for k, v in kwargs.items() if k not in self._ready_keys}
-
-        # ---- Look up ready and c functions from likelihood registry ----
-        if self.likelihood not in self.LIKELIHOOD_REGISTRY:
-            raise ValueError(f"Unsupported likelihood: {likelihood}. "
-                             f"Choose from {list(self.LIKELIHOOD_REGISTRY.keys())}")
-
-        self.ready_func, self.c_func = self.LIKELIHOOD_REGISTRY[self.likelihood]
+        # For custom likelihood, we don't filter based on _ready_keys; just pass all kwargs
+        if self.likelihood == 'custom':
+            self._ready_kwargs = kwargs  # all kwargs go to ready_func
+            self._deriv_kwargs = {}       # no derivative-specific kwargs from this call
+        else:
+            self._ready_kwargs = {k: v for k, v in kwargs.items() if k in self._ready_keys}
+            self._deriv_kwargs = {k: v for k, v in kwargs.items() if k not in self._ready_keys}
 
         # ---- Compute sufficient statistics ----
         stats = self.ready_func(data, **self._ready_kwargs)
@@ -314,9 +342,121 @@ class MGFDerivative:
             self._compute_derivative_standard()
 
     def _compute_derivative_standard(self):
-        """Standard derivative computation using mgfDerivative."""
+        """Standard derivative computation using mgfDerivative or custom prior."""
         if self._custom_prior:
-            raise NotImplementedError("Custom prior derivatives are not yet supported by mgfDerivative.")
+            # ---- Custom prior ----
+            if self.method.lower() == 'symbolic':
+                # Require symbolic MGF
+                if self._prior_mgf_sym is None:
+                    raise ValueError(
+                        "For method='symbolic' with custom prior, prior_mgf_sym must be provided."
+                    )
+                # Get symbolic MGF expression
+                mgf_expr = self._prior_mgf_sym() if callable(self._prior_mgf_sym) else self._prior_mgf_sym
+                # Ensure it's a SymPy expression
+                if not isinstance(mgf_expr, sp.Expr):
+                    raise TypeError("prior_mgf_sym must be a SymPy expression or a callable returning one.")
+                # Differentiate with respect to t
+                t_sym = sp.Symbol('t', real=True)
+                deriv_expr = sp.diff(mgf_expr, t_sym, int(round(self.a)))
+                # Evaluate at t = -b if it's numeric
+                if not math.isnan(-self.b):
+                    deriv_expr = deriv_expr.subs(t_sym, -self.b)
+                # Substitute numeric parameters if provided (they may be in self.params)
+                if self.params is not None:
+                    for sym in deriv_expr.free_symbols:
+                        if sym.name in self.params:
+                            deriv_expr = deriv_expr.subs(sym, self.params[sym.name])
+                if self.simplify:
+                    deriv_expr = sp.simplify(deriv_expr)
+                self._is_symbolic = True
+                self._expr = deriv_expr
+                self._log_abs = None
+                self._sign = None
+                self._value = None
+                return
+
+            elif self.method.lower() in ('jax', 'bell'):
+                # Numeric route: require MGF function
+                if self._prior_mgf_func is None:
+                    raise ValueError(
+                        f"For method='{self.method}' with custom prior, prior_mgf_func must be provided."
+                    )
+                # If bell and no CGF provided, derive from MGF (log)
+                if self.method.lower() == 'bell' and self._prior_cgf_func is None:
+                    # Define CGF as log of MGF
+                    def cgf_from_mgf(t, *args):
+                        return math.log(self._prior_mgf_func(t, *args))
+                    self._prior_cgf_func = cgf_from_mgf
+
+                # Use JAX for differentiation
+                import jax
+                import jax.numpy as jnp
+                jax.config.update("jax_enable_x64", True)
+                t_jax = jnp.array(-self.b, dtype=jnp.float64)
+
+                if self.method.lower() == 'jax':
+                    # Differentiate MGF directly
+                    mgf_func = self._prior_mgf_func
+                    f = mgf_func
+                    for _ in range(int(round(self.a))):
+                        f = jax.grad(f, argnums=0)
+                    deriv_val = float(f(t_jax))
+                    # Store numeric result
+                    if abs(deriv_val) < 1e-300:
+                        log_abs = -float('inf')
+                        sign = 1
+                    else:
+                        log_abs = math.log(abs(deriv_val))
+                        sign = 1 if deriv_val > 0 else -1
+                    if self.log:
+                        self._log_abs, self._sign = log_abs, sign
+                        self._value = None
+                    else:
+                        self._value = deriv_val
+                        self._log_abs, self._sign = None, None
+                    self._is_symbolic = False
+                    self._expr = None
+                    return
+
+                else:  # bell
+                    # Differentiate CGF and use Bell polynomial
+                    from logsum import bell_polynomial_log
+                    cgf_func = self._prior_cgf_func
+                    # Build derivative functions up to order a (integer)
+                    order_int = int(round(self.a))
+                    deriv_funcs = [cgf_func]
+                    for _ in range(order_int):
+                        deriv_funcs.append(jax.grad(deriv_funcs[-1], argnums=0))
+                    kappa_log_abs = []
+                    kappa_sign = []
+                    for k in range(1, order_int + 1):
+                        val = float(deriv_funcs[k](t_jax))
+                        if abs(val) < 1e-300:
+                            kappa_log_abs.append(-float('inf'))
+                            kappa_sign.append(1)
+                        else:
+                            kappa_log_abs.append(math.log(abs(val)))
+                            kappa_sign.append(1 if val > 0 else -1)
+                    log_abs_B, sign_B = bell_polynomial_log(order_int, kappa_log_abs, kappa_sign)
+                    cgf_t = float(cgf_func(t_jax))
+                    deriv_log_abs = cgf_t + log_abs_B
+                    deriv_sign = sign_B
+                    if self.log:
+                        self._log_abs, self._sign = deriv_log_abs, deriv_sign
+                        self._value = None
+                    else:
+                        self._value = deriv_sign * math.exp(deriv_log_abs)
+                        self._log_abs, self._sign = None, None
+                    self._is_symbolic = False
+                    self._expr = None
+                    return
+
+            else:
+                raise ValueError(f"Unsupported method '{self.method}' for custom prior. "
+                                 f"Choose 'symbolic', 'jax', or 'bell'.")
+
+        # ---- Non-custom prior: use mgfDerivative ----
         result = mgfDerivative(
             order=self.a,
             prior=self.prior,
@@ -452,28 +592,23 @@ class MGFDerivative:
         Return the marginal likelihood (evidence).
 
         If `self.is_symbolic` is True, returns a symbolic expression.
-        Otherwise, evaluates numerically.
+        Otherwise, uses the already‑computed numeric derivative (stored in `_log_abs` and `_sign`).
         """
         if self.is_symbolic:
             c_expr = self.c_func()
             return c_expr * self._expr
         else:
-            # Recompute derivative numerically to get numeric result
-            log_abs_num, sign_num = mgfDerivative(
-                order=self.a,
-                prior=self.prior,
-                method=self.method,
-                t=float(-self.b),
-                params=self.params,
-                simplify=self.simplify,
-                log=True,
-                **self._deriv_kwargs
-            )
-            total_log_abs = self.log_c + log_abs_num
+            # The numeric derivative must have been computed at instantiation
+            if self._log_abs is None or self._sign is None:
+                raise RuntimeError(
+                    "Numeric derivative not available. "
+                    "Make sure the derivative was computed during instantiation."
+                )
+            total_log_abs = self.log_c + self._log_abs
             if self.log:
-                return total_log_abs, sign_num
+                return total_log_abs, self._sign
             else:
-                return math.exp(total_log_abs) * sign_num
+                return math.exp(total_log_abs) * self._sign
 
     def post_density(self, theta=None, log=True):
         """
@@ -603,7 +738,6 @@ class MGFDerivative:
                     log_c_new = sp.Symbol('log_c_new', real=True)
                     numeric_new = False
                 else:
-                    # Numeric new data: compute statistics (these will be numeric)
                     stats_new = self.ready_func(new_data, **kwargs)
                     a_new = stats_new['a']
                     b_new = stats_new['b']
@@ -884,9 +1018,14 @@ class MGFDerivative:
 
     # ---- Sequential updating methods ----
 
-    def update(self, new_data, method=None, log=None, simplify=None, **kwargs):
+    def update(self, new_data, method=None, log=None, simplify=None, params=None, likelihood=None, **kwargs):
         """
         Perform sequential Bayesian updating with new data.
+
+        If `self.is_symbolic` is True and `method='symbolic'`, it uses the symbolic
+        posterior MGF expression as the prior for the new data. If `params` is provided,
+        it will be used for numeric substitution during derivative evaluation.
+        Otherwise, it uses numeric methods (jax, bell, scipy, mpmath).
 
         Parameters
         ----------
@@ -900,6 +1039,14 @@ class MGFDerivative:
             Whether to store the derivative in log scale.
         simplify : bool, optional
             Whether to simplify symbolic expressions.
+        params : dict, optional
+            Numeric hyperparameters for the symbolic prior (only used if method='symbolic').
+            If provided, the derivative expression will be evaluated numerically after
+            symbolic differentiation.
+        likelihood : str, optional
+            Likelihood to use for the new data. If not provided, uses the same likelihood
+            as the current object. If provided and differs from the current likelihood,
+            a warning is issued.
         **kwargs : additional arguments passed to the likelihood's ready function.
 
         Returns
@@ -913,13 +1060,78 @@ class MGFDerivative:
             log = self.log
         if simplify is None:
             simplify = self.simplify
+        if likelihood is None:
+            likelihood = self.likelihood
 
-        # Enforce method restriction
+        # ---- Warn if likelihood changes ----
+        if likelihood != self.likelihood:
+            import warnings
+            warnings.warn(
+                f"Changing likelihood from '{self.likelihood}' to '{likelihood}' in sequential update. "
+                "This means the new data will be processed under a different likelihood.",
+                UserWarning
+            )
+
+        # ---- Symbolic sequential update ----
         if method.lower() == 'symbolic':
             if not self.is_symbolic:
-                raise ValueError("Cannot use symbolic method for sequential update when the posterior derivative is not symbolic. Choose a numeric method (jax, bell, scipy, mpmath).")
+                raise ValueError(
+                    "Cannot use symbolic method for sequential update when the posterior derivative is not symbolic. "
+                    "Choose a numeric method (jax, bell, scipy, mpmath)."
+                )
+            # Get symbolic posterior MGF expression using existing post_mgf method
+            r_sym = sp.Symbol('r', real=True)
+            post_mgf_expr = self.post_mgf(r_sym, log=False)
+            # Substitute r with t to get the prior MGF as a function of t
+            t_sym = sp.Symbol('t', real=True)
+            prior_mgf_expr = post_mgf_expr.subs(r_sym, t_sym)
+            prior_cgf_expr = sp.log(prior_mgf_expr)
+            if simplify:
+                prior_mgf_expr = sp.simplify(prior_mgf_expr)
+                prior_cgf_expr = sp.simplify(prior_cgf_expr)
 
-        # Create custom prior functions directly as lambdas using existing methods
+            # Merge ready kwargs
+            merged_ready = {**self._ready_kwargs, **kwargs}
+
+            # ---- Handle likelihood functions ----
+            # If likelihood is 'custom', we need ready_func and c_func.
+            # They may be provided in kwargs or from self.
+            if likelihood == 'custom':
+                if 'ready_func' not in merged_ready and 'ready_func' not in self.__dict__:
+                    raise ValueError("For likelihood='custom', ready_func must be provided.")
+                if 'c_func' not in merged_ready and 'c_func' not in self.__dict__:
+                    raise ValueError("For likelihood='custom', c_func must be provided.")
+                # Use user-provided if given, else fall back to self's
+                if 'ready_func' not in merged_ready:
+                    merged_ready['ready_func'] = self.ready_func
+                if 'c_func' not in merged_ready:
+                    merged_ready['c_func'] = self.c_func
+            else:
+                # For named likelihood, ignore any ready_func/c_func in kwargs (with warning)
+                if 'ready_func' in merged_ready or 'c_func' in merged_ready:
+                    import warnings
+                    warnings.warn(
+                        "ready_func and c_func are ignored when likelihood is not 'custom'.",
+                    UserWarning
+                    )
+                    merged_ready.pop('ready_func', None)
+                    merged_ready.pop('c_func', None)
+
+            return MGFDerivative(
+                prior='custom',
+                data=new_data,
+                likelihood=likelihood,
+                method='symbolic',
+                params=params,
+                simplify=simplify,
+                log=log,
+                prior_mgf_sym=lambda: prior_mgf_expr,
+                prior_cgf_sym=lambda: prior_cgf_expr,
+                **merged_ready
+            )
+
+        # ---- Numeric sequential update ----
+        # Create numeric lambdas using existing methods
         post_mgf = lambda r_val, *args: self.post_mgf(r_val, log=False)
         post_cgf = lambda r_val, *args: self.post_mgf(r_val, log=True)
         post_pdf = lambda theta, *args: self.post_density(theta, log=False)
@@ -928,18 +1140,37 @@ class MGFDerivative:
         # Merge ready kwargs
         merged_ready = {**self._ready_kwargs, **kwargs}
 
+        # ---- Handle likelihood functions ----
+        if likelihood == 'custom':
+            if 'ready_func' not in merged_ready and 'ready_func' not in self.__dict__:
+                raise ValueError("For likelihood='custom', ready_func must be provided.")
+            if 'c_func' not in merged_ready and 'c_func' not in self.__dict__:
+                raise ValueError("For likelihood='custom', c_func must be provided.")
+            if 'ready_func' not in merged_ready:
+                merged_ready['ready_func'] = self.ready_func
+            if 'c_func' not in merged_ready:
+                merged_ready['c_func'] = self.c_func
+        else:
+            if 'ready_func' in merged_ready or 'c_func' in merged_ready:
+                import warnings
+                warnings.warn(
+                    "ready_func and c_func are ignored when likelihood is not 'custom'.",
+                    UserWarning
+                )
+                merged_ready.pop('ready_func', None)
+                merged_ready.pop('c_func', None)
+
         return MGFDerivative(
-            prior='custom',
-            data=new_data,
-            likelihood=self.likelihood,
-            method=method,
-            params=None,
-            simplify=simplify,
-            log=log,
-            prior_mgf_func=post_mgf,
-            prior_cgf_func=post_cgf,
-            prior_pdf_func=post_pdf,
-            prior_logpdf_func=post_logpdf,
-            prior_pdf_sym_func=None,
-            **merged_ready
+        prior='custom',
+        data=new_data,
+        likelihood=likelihood,
+        method=method,
+        params=None,           # numeric custom prior has embedded parameters
+        simplify=simplify,
+        log=log,
+        prior_mgf_func=post_mgf,
+        prior_cgf_func=post_cgf,
+        prior_pdf_func=post_pdf,
+        prior_logpdf_func=post_logpdf,
+        **merged_ready
         )
