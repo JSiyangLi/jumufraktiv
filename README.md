@@ -1,4 +1,4 @@
-# mgf2post
+# jumufraktiv
 A package that returns model evidence, posterior density, posterior predictive, posterior MGF and posterior moments by calculating fractional derivatives of prior MGF
 
 ## Things to check before start
