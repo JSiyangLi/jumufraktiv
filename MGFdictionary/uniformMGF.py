@@ -14,6 +14,8 @@ import math
 import sympy as sp
 import jax.numpy as jnp
 import scipy.stats as stats
+from jumufraktiv.registry import register_prior
+@register_prior("uniform")
 
 
 def uniform_mgf_symbolic():

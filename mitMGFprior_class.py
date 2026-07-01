@@ -27,260 +27,169 @@ Usage:
 """
 
 import math
-import sympy as sp
 import numpy as np
-import scipy.stats as stats
-from typing import Callable, Optional, Any, Dict
+import jax
+import jax.numpy as jnp
+from dataclasses import dataclass
+from typing import Callable, Optional, Dict, Any
 
-# ---- Import MGFdictionary functions ----
-from MGFdictionary.gammaMGF import (
-    gamma_mgf_symbolic,
-    gamma_cgf_symbolic,
-    gamma_cgf,
-    gamma_mgf,
-    gamma_cgf_jax,
-    gamma_mgf_jax,
-    gamma_pdf_symbolic,
-    gamma_pdf_symbolic_sub,
-)
-from MGFdictionary.paretoMGF import (
-    pareto_mgf_symbolic,
-    pareto_cgf_symbolic,
-    pareto_cgf,
-    pareto_mgf,
-    pareto_cgf_jax,
-    pareto_mgf_jax,
-    pareto_pdf_symbolic,
-    pareto_pdf_symbolic_sub,
-)
-from MGFdictionary.heavisideMGF import (
-    heaviside_mgf_symbolic,
-    heaviside_cgf_symbolic,
-    heaviside_cgf,
-    heaviside_mgf,
-    heaviside_cgf_jax,
-    heaviside_mgf_jax,
-    heaviside_pdf_symbolic,
-    heaviside_pdf_symbolic_sub,
-)
-from MGFdictionary.uniformMGF import (
-    uniform_mgf_symbolic,
-    uniform_cgf_symbolic,
-    uniform_cgf,
-    uniform_mgf,
-    uniform_cgf_jax,
-    uniform_mgf_jax,
-    uniform_pdf_symbolic,
-    uniform_pdf_symbolic_sub,
-)
+# optional
+import sympy as sp
+import scipy.special as sc
+import jax.scipy.special as jsc
 
 
+# ============================================================
+# Core class
+# ============================================================
+
+@dataclass
 class mitMGFprior:
-    """
-    Container for a prior distribution's functions.
+    name: str = "custom"
 
-    Attributes
-    ----------
-    name : str
-        Prior name.
-    dist : Optional[Callable]
-        Constructor for a scipy.stats distribution (params dict -> rv_continuous).
-    mgf_sym : Optional[Callable]
-        Function returning symbolic MGF expression (no arguments).
-    cgf_sym : Optional[Callable]
-        Function returning symbolic CGF expression (no arguments).
-    mgf : Optional[Callable]
-        Numeric MGF function (t, *args).
-    cgf : Optional[Callable]
-        Numeric CGF function (t, *args).
-    mgf_jax : Optional[Callable]
-        JAX MGF function.
-    cgf_jax : Optional[Callable]
-        JAX CGF function.
-    pdf_sym : Optional[Callable]
-        Function returning symbolic PDF expression (no arguments).
-    pdf_sym_func : Optional[Callable]
-        Function (params dict) -> symbolic PDF with numeric params substituted.
-    pdf_func : Optional[Callable]
-        Numeric PDF function (theta, *args).
-    logpdf_func : Optional[Callable]
-        Numeric log‑PDF function (theta, *args).
-    """
-    def __init__(
-        self,
-        name: str,
-        dist: Optional[Callable] = None,
-        mgf_sym: Optional[Callable] = None,
-        cgf_sym: Optional[Callable] = None,
-        mgf: Optional[Callable] = None,
-        cgf: Optional[Callable] = None,
-        mgf_jax: Optional[Callable] = None,
-        cgf_jax: Optional[Callable] = None,
-        pdf_sym: Optional[Callable] = None,
-        pdf_sym_func: Optional[Callable] = None,
-        pdf_func: Optional[Callable] = None,
-        logpdf_func: Optional[Callable] = None,
-    ):
-        self.name = name
-        self.dist = dist
-        self.mgf_sym = mgf_sym
-        self.cgf_sym = cgf_sym
-        self.mgf = mgf
-        self.cgf = cgf
-        self.mgf_jax = mgf_jax
-        self.cgf_jax = cgf_jax
-        self.pdf_sym = pdf_sym
-        self.pdf_sym_func = pdf_sym_func
-        self.pdf_func = pdf_func
-        self.logpdf_func = logpdf_func
+    # --- symbolic layer (optional) ---
+    mgf_sym: Optional[sp.Expr] = None
+    pdf_sym: Optional[sp.Expr] = None
 
+    # --- backend layer (optional) ---
+    mgf_backend: Optional[Callable] = None
+    pdf_backend: Optional[Callable] = None
+
+    params: Optional[Dict[str, Any]] = None
+
+    # compiled outputs
+    mgf: Optional[Callable] = None
+    cgf: Optional[Callable] = None
+    mgf_jax: Optional[Callable] = None
+    cgf_jax: Optional[Callable] = None
+
+    pdf_func: Optional[Callable] = None
+    logpdf_func: Optional[Callable] = None
+
+    mgf_sym_out: Any = None
+    cgf_sym: Any = None
+    pdf_sym_func: Any = None
+
+
+    # ========================================================
+    # Validation method
+    # ========================================================
+    @staticmethod
+    def is_mitMGFprior(obj) -> bool:
+        """
+        Check whether an object is compatible with mitMGFprior.
+        Accepts dict-like or object-like inputs.
+        """
+
+        required_any = [
+            "mgf_sym", "mgf_backend"
+        ]
+
+        # allow dict or object
+        def get(x, key):
+            if isinstance(x, dict):
+                return x.get(key, None)
+            return getattr(x, key, None)
+
+        has_symbolic = get(obj, "mgf_sym") is not None
+        has_backend = get(obj, "mgf_backend") is not None
+
+        return has_symbolic or has_backend
+
+
+    # ========================================================
+    # Build / compile method
+    # ========================================================
     @classmethod
-    def as_(cls, **kwargs):
-        """
-        Convert a set of functions into a mitMGFprior object.
+    def from_registry(cls, name: str, params: dict = None):
+        from jumufraktiv.registry import get_prior
 
-        This is analogous to R's `as.matrix()` or `as.vector()`: it takes
-        loose functions and wraps them into a `mitMGFprior` instance.
+        spec_fn = get_prior(name)
+        spec = spec_fn(params or {})
 
-        Parameters
-        ----------
-        **kwargs : keyword arguments
-            Any of the attributes of mitMGFprior: name, dist, mgf_sym, cgf_sym,
-            mgf, cgf, mgf_jax, cgf_jax, pdf_sym, pdf_sym_func, pdf_func, logpdf_func.
+        obj = cls(
+            name=name,
+            mgf_sym=spec.get("mgf_sym"),
+            pdf_sym=spec.get("pdf_sym"),
 
-        Returns
-        -------
-        mitMGFprior
-            A new instance with the provided functions.
+            # directly inject backend functions (NO recomputation)
+            mgf=spec.get("mgf"),
+            cgf=spec.get("cgf"),
+            mgf_jax=spec.get("mgf_jax"),
+            cgf_jax=spec.get("cgf_jax"),
 
-        Example
-        -------
-        custom = mitMGFprior.as_(
-            name='my_prior',
-            mgf=lambda t, a, b: (b/(b-t))**a,
-            cgf=lambda t, a, b: a*(math.log(b)-math.log(b-t)),
-            pdf_func=lambda theta, a, b: (b**a / math.gamma(a)) * theta**(a-1) * math.exp(-b*theta),
+            pdf_func=spec.get("pdf_func"),
+            logpdf_func=spec.get("logpdf_func"),
+
+            params=params,
         )
+
+        return obj
+    
+    def as_mitMGFprior(self):
         """
-        # Default name if not provided
-        if 'name' not in kwargs:
-            kwargs['name'] = 'custom'
-        return cls(**kwargs)
-
-    def is_(self, attr: str) -> bool:
+        Compile all representations from available inputs.
         """
-        Check if the prior has a given function attribute (i.e., it is not None).
 
-        Parameters
-        ----------
-        attr : str
-            Name of the attribute to check (e.g., 'mgf', 'cgf', 'pdf_func').
+        # ----------------------------------------------------
+        # CASE 1: symbolic input
+        # ----------------------------------------------------
+        if self.mgf_sym is not None:
 
-        Returns
-        -------
-        bool
-            True if the attribute exists and is not None, False otherwise.
-        """
-        return hasattr(self, attr) and getattr(self, attr) is not None
+            t = sp.Symbol("t")
 
-    def get_dist(self, params: dict):
-        """Return a scipy.stats distribution instance for given parameters."""
-        if self.dist is None:
-            raise ValueError(f"No scipy distribution available for prior '{self.name}'.")
-        return self.dist(params)
+            self.cgf_sym = sp.log(self.mgf_sym)
 
-    def __repr__(self):
-        return f"mitMGFprior(name='{self.name}')"
+            self.mgf_sym_out = sp.simplify(self.mgf_sym)
+            self.cgf_sym = sp.simplify(self.cgf_sym)
 
+            # lambdify symbolic → math / numpy / jax
+            self.mgf = sp.lambdify(t, self.mgf_sym, modules="math")
+            self.cgf = sp.lambdify(t, self.cgf_sym, modules="math")
 
-# ---- Global registry of prior specifications ----
-PRIOR_REGISTRY: Dict[str, dict] = {}
+            self.mgf_jax = sp.lambdify(t, self.mgf_sym, modules="jax")
+            self.cgf_jax = sp.lambdify(t, self.cgf_sym, modules="jax")
 
-def register_prior(name: str, spec: dict):
-    """
-    Register a new prior.
+            # pdf if provided
+            if self.pdf_sym is not None:
+                x = sp.Symbol("x")
+                self.pdf_sym_func = sp.lambdify(x, self.pdf_sym, modules="math")
+                self.pdf_func = self.pdf_sym_func
+                self.logpdf_func = lambda x: math.log(self.pdf_func(x))
 
-    Parameters
-    ----------
-    name : str
-        Prior name (key in registry).
-    spec : dict
-        Dictionary with keys: 'dist', 'mgf_sym', 'cgf_sym', 'mgf', 'cgf',
-        'mgf_jax', 'cgf_jax', 'pdf_sym', 'pdf_sym_func', 'pdf_func', 'logpdf_func'.
-        All keys are optional; missing ones default to None.
-    """
-    PRIOR_REGISTRY[name] = spec
-
-def make_prior(name: str, **overrides) -> mitMGFprior:
-    """
-    Create a mitMGFprior instance by looking up the registry.
-
-    Parameters
-    ----------
-    name : str
-        Name of the prior (must be in PRIOR_REGISTRY).
-    **overrides : dict
-        Additional keyword arguments to override registry entries.
-
-    Returns
-    -------
-    mitMGFprior
-        The prior instance.
-    """
-    if name not in PRIOR_REGISTRY:
-        raise ValueError(f"Unknown prior: {name}. Available: {list(PRIOR_REGISTRY.keys())}")
-    spec = PRIOR_REGISTRY[name].copy()
-    spec.update(overrides)
-    return mitMGFprior(name=name, **spec)
+            return self
 
 
-# ---- Register built‑in priors ----
-register_prior('gamma', {
-    'dist': lambda p: stats.gamma(a=p['alpha'], scale=1/p['beta']),
-    'mgf_sym': gamma_mgf_symbolic,
-    'cgf_sym': gamma_cgf_symbolic,
-    'mgf': gamma_mgf,
-    'cgf': gamma_cgf,
-    'mgf_jax': gamma_mgf_jax,
-    'cgf_jax': gamma_cgf_jax,
-    'pdf_sym': gamma_pdf_symbolic,
-    'pdf_sym_func': gamma_pdf_symbolic_sub,
-})
+        # ----------------------------------------------------
+        # CASE 2: backend input
+        # ----------------------------------------------------
+        if self.mgf_backend is not None:
 
-register_prior('pareto', {
-    'dist': lambda p: stats.pareto(b=p['alpha'], scale=p['xi']),
-    'mgf_sym': pareto_mgf_symbolic,
-    'cgf_sym': pareto_cgf_symbolic,
-    'mgf': pareto_mgf,
-    'cgf': pareto_cgf,
-    'mgf_jax': pareto_mgf_jax,
-    'cgf_jax': pareto_cgf_jax,
-    'pdf_sym': pareto_pdf_symbolic,
-    'pdf_sym_func': pareto_pdf_symbolic_sub,
-})
+            params = self.params or {}
 
-register_prior('heaviside', {
-    'dist': None,  # improper, no scipy distribution
-    'mgf_sym': heaviside_mgf_symbolic,
-    'cgf_sym': heaviside_cgf_symbolic,
-    'mgf': heaviside_mgf,
-    'cgf': heaviside_cgf,
-    'mgf_jax': heaviside_mgf_jax,
-    'cgf_jax': heaviside_cgf_jax,
-    'pdf_sym': heaviside_pdf_symbolic,
-    'pdf_sym_func': heaviside_pdf_symbolic_sub,
-    'pdf_func': lambda theta, k: 1.0 if theta >= k else 0.0,
-    'logpdf_func': lambda theta, k: 0.0 if theta >= k else -np.inf,
-})
+            def mgf_math(t):
+                return self.mgf_backend(t, xp=math, special=sc, **params)
 
-register_prior('uniform', {
-    'dist': lambda p: stats.uniform(loc=p['a'], scale=p['b'] - p['a']),
-    'mgf_sym': uniform_mgf_symbolic,
-    'cgf_sym': uniform_cgf_symbolic,
-    'mgf': uniform_mgf,
-    'cgf': uniform_cgf,
-    'mgf_jax': uniform_mgf_jax,
-    'cgf_jax': uniform_cgf_jax,
-    'pdf_sym': uniform_pdf_symbolic,
-    'pdf_sym_func': uniform_pdf_symbolic_sub,
-})
+            def mgf_numpy(t):
+                return self.mgf_backend(t, xp=np, special=sc, **params)
+
+            def mgf_jax_fn(t):
+                return self.mgf_backend(t, xp=jnp, special=jsc, **params)
+
+            self.mgf = mgf_math
+            self.mgf_jax = mgf_jax_fn
+
+            self.cgf = lambda t: math.log(self.mgf(t))
+            self.cgf_jax = lambda t: jnp.log(self.mgf_jax(t))
+
+            if self.pdf_backend is not None:
+
+                def pdf_math(x):
+                    return self.pdf_backend(x, xp=math, special=sc, **params)
+
+                self.pdf_func = pdf_math
+                self.logpdf_func = lambda x: math.log(pdf_math(x))
+
+            return self
+
+        raise ValueError("Must provide either mgf_sym or mgf_backend")

@@ -11,6 +11,8 @@ import jax.numpy as jnp
 from jax.scipy.special import gammaln as jax_gammaln, gammaincc as jax_gammaincc
 import torch
 from torch.special import gammaincc as torch_gammaincc
+from jumufraktiv.registry import register_prior
+@register_prior("pareto")
 
 
 def pareto_mgf_symbolic():

@@ -3,6 +3,8 @@ from logsum import logplus, logminus
 import sympy as sp
 import jax.numpy as jnp   # optional, but we'll add it
 import torch
+from jumufraktiv.registry import register_prior
+@register_prior("gamma")
 
 def gamma_mgf_symbolic():
     """

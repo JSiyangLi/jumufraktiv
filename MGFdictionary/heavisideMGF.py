@@ -15,6 +15,8 @@ import math
 import sympy as sp
 import jax.numpy as jnp
 import scipy.stats as stats
+from jumufraktiv.registry import register_prior
+@register_prior("heaviside")
 
 
 def heaviside_mgf_symbolic():
