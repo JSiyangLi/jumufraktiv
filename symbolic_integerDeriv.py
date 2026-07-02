@@ -2,15 +2,14 @@
 Integer-order symbolic differentiation of moment generating functions.
 
 This module provides a function to compute symbolic derivatives of MGFs
-for Gamma and Pareto priors.
+for any prior that provides a symbolic MGF expression (mgf_sym).
 """
 
 import sympy as sp
-from MGFdictionary.gammaMGF import gamma_mgf_symbolic
-from MGFdictionary.paretoMGF import pareto_mgf_symbolic
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 
-def integerDeriv_symbolic(order: int, prior: str, simplify: bool = False):
+def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False):
     """
     Returns the symbolic derivative of order `order` of the MGF w.r.t. t.
 
@@ -18,8 +17,8 @@ def integerDeriv_symbolic(order: int, prior: str, simplify: bool = False):
     ----------
     order : int
         Order of differentiation (non‑negative integer).
-    prior : str
-        One of 'gamma' or 'pareto'.
+    prior : mitMGFprior
+        Prior object providing the symbolic MGF expression (mgf_sym).
     simplify : bool, optional
         If True, simplify the resulting expression (default False).
 
@@ -31,21 +30,20 @@ def integerDeriv_symbolic(order: int, prior: str, simplify: bool = False):
     Raises
     ------
     ValueError
-        If prior is not recognised or order is negative.
+        If order is negative.
+    RuntimeError
+        If no 't' symbol is found in the MGF expression.
     """
     if order < 0:
         raise ValueError("Order of derivative must be non‑negative.")
 
-    # Select the MGF expression
-    if prior.lower() == "gamma":
-        expr = gamma_mgf_symbolic()
-    elif prior.lower() == "pareto":
-        expr = pareto_mgf_symbolic()
-    else:
-        raise ValueError("prior must be 'gamma' or 'pareto'")
+    # Get the symbolic MGF expression from the prior object
+    if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
+        raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
 
-    # Find the symbol representing t (the differentiation variable)
-    # We assume it is named 't' and appears in the expression.
+    expr = prior.mgf_sym
+
+    # Find the symbol representing t
     t_symbols = [sym for sym in expr.free_symbols if sym.name == 't']
     if not t_symbols:
         raise RuntimeError("No symbol 't' found in the MGF expression.")
@@ -61,43 +59,49 @@ def integerDeriv_symbolic(order: int, prior: str, simplify: bool = False):
 
 
 # ----------------------------------------------------------------------
-# Test: simplified derivatives, orders 0–3
+# Test: simplified derivatives, orders 0–3, and high-order check
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-    max_order = 2
-    priors = ["gamma", "pareto"]
-
-    for prior in priors:
-        print(f"\n{'='*60}")
-        print(f"PRIOR: {prior.upper()}")
-        print('='*60)
-        for order in range(max_order + 1):
-            deriv = integerDeriv_symbolic(order, prior, simplify=True)
-            print(f"\nOrder {order} derivative (simplified):")
-            sp.pprint(deriv, use_unicode=False)
-
-        print("\n" + "-"*60 + "\n")
-
-if __name__ == "__main__":
     import math
-    # ---- NEW: 75th derivative of Gamma with simplify=True ----
-    print("\n" + "="*60)
-    print("Testing 175th derivative of Gamma MGF with simplify=True")
-    print("(This may take a very long time due to simplification)")
-    print("="*60)
-
     import time
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    import jumufraktiv.MGFdictionary  # necessary to import priors!
+
+    # Create a Gamma prior via registry
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+
+    # ---------- Low-order derivatives ----------
+    max_order = 3
+    print("Testing low-order derivatives (Gamma prior):")
+    print("=" * 60)
+    for order in range(max_order + 1):
+        deriv = integerDeriv_symbolic(order, gamma_prior, simplify=True)
+        print(f"\nOrder {order} derivative (simplified):")
+        sp.pprint(deriv, use_unicode=False)
+
+    # ---------- High-order derivative (175th) ----------
+    print("\n" + "=" * 60)
+    print("Testing 175th derivative of Gamma MGF with simplify=False")
+    print("(This may take a very long time due to expression size)")
+    print("=" * 60)
+
     order_high = 175
 
-    # This line calls integerDeriv_symbolic with simplify=True
-    # ⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️
-    deriv_expr = integerDeriv_symbolic(order_high, "gamma", simplify=False)
-    # ⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️
+    # Create a prior with very small parameters for the high-order test
+    small_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 1e-5, "beta": 1e-5}
+    )
 
-    print(f"Simplified derivative expression obtained.")
+    deriv_expr = integerDeriv_symbolic(order_high, small_prior, simplify=False)
+
+    print(f"Derivative expression obtained.")
     print(f"Expression size (operations): {sp.count_ops(deriv_expr)}")
 
-    # Preview the expression (it should be compact after simplification)
+    # Preview (truncated if too large)
     expr_str = str(deriv_expr)
     if len(expr_str) > 500:
         print(f"Preview: {expr_str[:500]}... (truncated)")
@@ -105,7 +109,7 @@ if __name__ == "__main__":
         print("Derivative expression:")
         sp.pprint(deriv_expr, use_unicode=False)
 
-    # Evaluate numerically with small parameters
+    # Evaluate numerically with the small parameters
     alpha_small = 1e-5
     beta_small = 1e-5
     t_small = -1e3

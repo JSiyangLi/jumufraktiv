@@ -69,3 +69,15 @@ def list_priors():
     """
     initialize()
     return list(PRIOR_REGISTRY.keys())
+
+def make_prior_spec(**kwargs):
+    """
+    Standard container for prior specifications.
+    """
+    required_keys = ["mgf", "cgf"]
+
+    for k in required_keys:
+        if k not in kwargs:
+            raise ValueError(f"Missing required prior field: {k}")
+
+    return kwargs

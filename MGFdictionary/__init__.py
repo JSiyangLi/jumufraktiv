@@ -1,15 +1,16 @@
 import pkgutil
 import importlib
+from pathlib import Path
 
-_DISCOVERED_PRIORS = []
+package_dir = Path(__file__).resolve().parent
 
+for module_info in pkgutil.iter_modules([str(package_dir)]):
+    # skip non-prior modules
+    if module_info.ispkg:
+        continue
 
-def discover_priors():
-    for mod in pkgutil.iter_modules(__path__):
-        name = f"{__name__}.{mod.name}"
-        importlib.import_module(name)
-        _DISCOVERED_PRIORS.append(name)
+    name = module_info.name
 
-
-def list_discovered():
-    return _DISCOVERED_PRIORS
+    # optional filter: only load MGFs
+    if "MGF" in name:
+        importlib.import_module(f"{__name__}.{name}")

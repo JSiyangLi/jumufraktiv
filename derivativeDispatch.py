@@ -24,128 +24,145 @@ from numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 
 def mgfDerivative_integer(
     order: int,
-    prior: str,
+    prior,
     method: str = "symbolic",
-    t: float = float('nan'),
-    params: dict = None,
+    t=None,
     simplify: bool = False,
     log: bool = True,
     symbolic_timeout: float = 600.0,
-    cgf_method: str = 'auto'
+    cgf_method: str = "auto",
 ):
     """
-    Compute the order‑th integer derivative of the MGF using the specified method.
+    Compute an integer-order derivative of a prior MGF.
 
     Parameters
     ----------
     order : int
-        Order of derivative (non‑negative integer).
-    prior : str
-        'gamma' or 'pareto'.
-    method : str, optional
-        One of 'symbolic', 'bell', 'jax'. Default 'symbolic'.
+        Non-negative derivative order.
+
+    prior : mitMGFprior
+        Prior object containing symbolic and/or backend MGF/PDF
+        representations.
+
+    method : {"symbolic", "bell", "jax"}, optional
+        Derivative backend.
+
     t : float, optional
-        Evaluation point. Required for 'bell' and 'jax'.
-    params : dict, optional
-        Distribution parameters. Required for 'bell' and 'jax'.
+        Evaluation point.
+        If omitted for the symbolic method, the symbolic derivative is
+        returned.
+
     simplify : bool, optional
-        If True, simplify the symbolic expression (only for 'symbolic' method).
+        Whether to simplify symbolic derivatives.
+
     log : bool, optional
-        If True and output is numeric, return (log_abs, sign).
-        If False, return the ordinary‑scale value as a float.
+        If True, numeric methods return (log_abs, sign).
+        Otherwise they return the ordinary derivative.
+
     symbolic_timeout : float, optional
-        Maximum time (seconds) allowed for symbolic CGF derivative computation
-        in the 'bell' method. If exceeded, falls back to JAX. Default 600.
-    cgf_method : str, optional
-        For 'bell' method only. Method to compute CGF derivatives in the numeric path.
-        Options: 'auto' (try jet, fallback to grad), 'jet' (force Taylor mode),
-        'grad' (force nested grad). Default 'auto'.
+        Maximum symbolic differentiation time used by the Bell backend.
+
+    cgf_method : {"auto","jet","grad"}, optional
+        Method used by the Bell backend for CGF derivatives.
 
     Returns
     -------
-    For numeric outputs:
-        - If log=True: tuple (log_abs, sign)
-        - If log=False: float (ordinary value)
-    For symbolic method without numeric evaluation:
-        - sympy.Expr (symbolic expression)
+    sympy.Expr
+        If symbolic differentiation is requested without evaluation.
+
+    (log_abs, sign)
+        If log=True.
+
+    float
+        If log=False.
     """
-    if params is None:
-        params = {}
 
-    # Dispatch by method
-    if method.lower() == "symbolic":
-        # Get symbolic expression
-        expr = integerDeriv_symbolic(order, prior, simplify=simplify)
+    method = method.lower()
 
-        # If numeric evaluation requested (t is not nan and params non‑empty)
-        if not math.isnan(t) and params:
-            # Extract symbols
-            all_syms = expr.free_symbols
-            t_sym = next((s for s in all_syms if s.name == 't'), None)
-            if t_sym is None:
-                raise RuntimeError("No symbol 't' found in expression.")
-            # Build substitution dict
-            subs_dict = {}
-            for sym in all_syms:
-                if sym.name == 't':
-                    subs_dict[sym] = t
-                elif sym.name in params:
-                    subs_dict[sym] = params[sym.name]
-                # else leave symbolic (should not happen if proper parameters given)
-            # Evaluate numerically
-            val = expr.subs(subs_dict).evalf()
-            val_float = float(val)
+    if method not in {"symbolic", "bell", "jax"}:
+        raise ValueError(
+            "method must be one of "
+            "{'symbolic','bell','jax'}."
+        )
 
-            # Compute log_abs and sign
-            if abs(val_float) < 1e-300:   # treat as zero
-                log_abs = -float('inf')
-                sign = 1
-            else:
-                log_abs = math.log(abs(val_float))
-                sign = 1 if val_float > 0 else -1
+    # ---------------------------------------------------------
+    # symbolic differentiation
+    # ---------------------------------------------------------
 
-            if log:
-                return (log_abs, sign)
-            else:
-                return val_float
-        else:
-            # Return symbolic expression
+    if method == "symbolic":
+
+        expr = integerDeriv_symbolic(
+            order=order,
+            prior=prior,
+            simplify=simplify,
+        )
+
+        # Return symbolic expression
+        if t is None:
             return expr
 
-    elif method.lower() == "bell":
-        if math.isnan(t):
-            raise ValueError("For 'bell' method, t must be provided.")
-        if not params:
-            raise ValueError("For 'bell' method, params must be provided.")
+        # Numerical evaluation
+        val = expr.subs(sp.Symbol("t"), t).evalf()
+        val = float(val)
+
+        if abs(val) < 1e-300:
+            log_abs = -math.inf
+            sign = 1
+        else:
+            log_abs = math.log(abs(val))
+            sign = 1 if val > 0 else -1
+
+        return (log_abs, sign) if log else val
+
+    # ---------------------------------------------------------
+    # Bell polynomial backend
+    # ---------------------------------------------------------
+
+    if method == "bell":
+
+        if t is None:
+            raise ValueError(
+                "t must be supplied for method='bell'."
+            )
+
         log_abs, sign = integerDeriv_numeric_bell(
-            t, prior, params, order,
+            prior=prior,
+            t=t,
+            order=order,
             symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method
+            cgf_method=cgf_method,
         )
-        if log:
-            return (log_abs, sign)
-        else:
-            if log_abs == -float('inf'):
-                return 0.0
-            else:
-                return sign * math.exp(log_abs)
 
-    elif method.lower() == "jax":
-        if math.isnan(t):
-            raise ValueError("For 'jax' method, t must be provided.")
-        if not params:
-            raise ValueError("For 'jax' method, params must be provided.")
-        log_abs, sign = integerDeriv_numeric_jax(t, prior, params, order)
         if log:
-            return (log_abs, sign)
-        else:
-            if log_abs == -float('inf'):
-                return 0.0
-            else:
-                return sign * math.exp(log_abs)
+            return log_abs, sign
 
-    else:
-        raise ValueError(f"Unknown method: '{method}'. Choose 'symbolic', 'bell', or 'jax'.")
+        if log_abs == -math.inf:
+            return 0.0
+
+        return sign * math.exp(log_abs)
+
+    # ---------------------------------------------------------
+    # JAX backend
+    # ---------------------------------------------------------
+
+    if t is None:
+        raise ValueError(
+            "t must be supplied for method='jax'."
+        )
+
+    log_abs, sign = integerDeriv_numeric_jax(
+        prior=prior,
+        t=t,
+        order=order,
+    )
+
+    if log:
+        return log_abs, sign
+
+    if log_abs == -math.inf:
+        return 0.0
+
+    return sign * math.exp(log_abs)
 
 def mgfDerivative_fractional(
     order: float,
