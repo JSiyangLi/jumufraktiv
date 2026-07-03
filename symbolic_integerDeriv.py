@@ -7,6 +7,7 @@ for any prior that provides a symbolic MGF expression (mgf_sym).
 
 import sympy as sp
 from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.symbols import t  # only t is needed for differentiation
 
 
 def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False):
@@ -37,19 +38,14 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     if order < 0:
         raise ValueError("Order of derivative must be non‑negative.")
 
-    # Get the symbolic MGF expression from the prior object
     if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
         raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
 
     expr = prior.mgf_sym
 
-    # Find the symbol representing t
-    t_symbols = [sym for sym in expr.free_symbols if sym.name == 't']
-    if not t_symbols:
-        raise RuntimeError("No symbol 't' found in the MGF expression.")
-    t = t_symbols[0]  # assume only one
+    if t not in expr.free_symbols:
+        raise RuntimeError("Symbol 't' not found in the MGF expression.")
 
-    # Compute derivative
     derivative = sp.diff(expr, t, order)
 
     if simplify:
@@ -63,11 +59,15 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     import math
-    import time
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    import signal
     import jumufraktiv.MGFdictionary  # necessary to import priors!
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.symbols import t, param
 
-    # Create a Gamma prior via registry
+    alpha = param("alpha")
+    beta = param("beta")
+
+    # Build a Gamma prior using the registry
     gamma_prior = mitMGFprior.from_registry(
         "gamma",
         params={"alpha": 2.0, "beta": 3.0}
@@ -90,7 +90,6 @@ if __name__ == "__main__":
 
     order_high = 175
 
-    # Create a prior with very small parameters for the high-order test
     small_prior = mitMGFprior.from_registry(
         "gamma",
         params={"alpha": 1e-5, "beta": 1e-5}
@@ -101,7 +100,6 @@ if __name__ == "__main__":
     print(f"Derivative expression obtained.")
     print(f"Expression size (operations): {sp.count_ops(deriv_expr)}")
 
-    # Preview (truncated if too large)
     expr_str = str(deriv_expr)
     if len(expr_str) > 500:
         print(f"Preview: {expr_str[:500]}... (truncated)")
@@ -114,12 +112,8 @@ if __name__ == "__main__":
     beta_small = 1e-5
     t_small = -1e3
 
-    t_sym = next(s for s in deriv_expr.free_symbols if s.name == 't')
-    alpha_sym = next(s for s in deriv_expr.free_symbols if s.name == 'alpha')
-    beta_sym = next(s for s in deriv_expr.free_symbols if s.name == 'beta')
-
-    subs_dict = {alpha_sym: alpha_small, beta_sym: beta_small}
-    full_expr = deriv_expr.subs(subs_dict).subs({t_sym: t_small})
+    subs_dict = {alpha: alpha_small, beta: beta_small, t: t_small}
+    full_expr = deriv_expr.subs(subs_dict)
 
     print("Attempting numeric evaluation...")
     try:

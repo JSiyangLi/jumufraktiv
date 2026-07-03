@@ -7,11 +7,7 @@ and marginal likelihoods (evidence) for various likelihoods and priors.
 Supports sequential updating via the `update` method, using the posterior MGF
 as the prior for the next chunk of data.
 
-Custom priors are supported via `prior='custom'` with either symbolic or numeric
-functions. Symbolic requires `prior_mgf_sym`; numeric requires `prior_mgf_func`.
-
-Custom likelihoods are supported via `likelihood='custom'`, requiring `ready_func`
-and `c_func` to be provided.
+Priors are represented as mitMGFprior objects.
 """
 
 import math
@@ -19,12 +15,12 @@ import sympy as sp
 import numpy as np
 import pandas as pd
 
-from derivativeDispatch import mgfDerivative
+from jumufraktiv.derivativeDispatch import mgfDerivative
 from mitMGFprior_class import mitMGFprior
-
+from jumufraktiv.symbols import t, theta
 
 # ============================================================
-# Likelihood registry (UNCHANGED)
+# Likelihood registry
 # ============================================================
 from like_stats.Poisson import readyPoisson, cPoisson
 from like_stats.Gamma import readyGamma, cGamma
@@ -70,42 +66,28 @@ class MGFDerivative:
 
     def __init__(
         self,
-        prior,                  # <-- NOW: mitMGFprior object ONLY
+        prior,                  # mitMGFprior object ONLY
         data,
         likelihood='poisson',
         method='symbolic',
         simplify=False,
         log=True,
-        ready_func=None,
-        c_func=None,
         **kwargs
     ):
         """
         prior must be a mitMGFprior instance.
         """
-
         # ----------------------------------------------------
-        # PRIOR HANDLING (SIMPLIFIED)
+        # PRIOR HANDLING
         # ----------------------------------------------------
         if not isinstance(prior, mitMGFprior):
             raise TypeError("prior must be a mitMGFprior object")
 
         self.prior = prior
-        self.prior_info = prior  # direct access
         self.params = prior.params
 
-        # expose prior functions directly
-        self.prior_mgf = prior.mgf
-        self.prior_cgf = prior.cgf
-        self.prior_pdf = prior.pdf_func
-        self.prior_logpdf = prior.logpdf_func
-
-        # symbolic if available
-        self.prior_mgf_sym = prior.mgf_sym
-        self.prior_cgf_sym = prior.cgf_sym
-
         # ----------------------------------------------------
-        # likelihood
+        # LIKELIHOOD
         # ----------------------------------------------------
         self.likelihood = likelihood.lower()
         self.data = data
@@ -114,20 +96,30 @@ class MGFDerivative:
         self.log = log
 
         if self.likelihood not in LIKELIHOOD_REGISTRY:
-            raise ValueError(f"Unknown likelihood {likelihood}")
+            raise ValueError(f"Unknown likelihood: {likelihood}")
 
         self.ready_func, self.c_func = LIKELIHOOD_REGISTRY[self.likelihood]
 
         # ----------------------------------------------------
-        # sufficient statistics
+        # Separate kwargs for ready vs derivative
         # ----------------------------------------------------
-        stats = self.ready_func(data, **kwargs)
+        _ready_keys = {
+            'scale', 'shape', 'mean', 'location', 'rho',
+            'known_shape', 'r', 's',
+        }
+        self._ready_kwargs = {k: v for k, v in kwargs.items() if k in _ready_keys}
+        self._deriv_kwargs = {k: v for k, v in kwargs.items() if k not in _ready_keys}
+
+        # ----------------------------------------------------
+        # Sufficient statistics
+        # ----------------------------------------------------
+        stats = self.ready_func(data, **self._ready_kwargs)
         self.a = stats['a']
         self.b = stats['b']
         self.log_c = stats['log_c']
 
         # ----------------------------------------------------
-        # compute derivative via existing engine
+        # Compute derivative
         # ----------------------------------------------------
         self._compute()
 
@@ -139,165 +131,143 @@ class MGFDerivative:
         Delegates ALL math to mgfDerivative,
         using mitMGFprior ONLY as input.
         """
-
         result = mgfDerivative(
             order=self.a,
             prior=self.prior,
             method=self.method,
             t=float(-self.b),
-            params=self.params,
             simplify=self.simplify,
-            log=self.log
+            log=self.log,
+            **self._deriv_kwargs
         )
-
         self._store_result(result)
 
     # ========================================================
-    # result storage
+    # RESULT STORAGE
     # ========================================================
     def _store_result(self, result):
         if isinstance(result, sp.Expr):
             self._expr = result
             self._is_symbolic = True
+            self._log_abs = None
+            self._sign = None
         else:
             self._expr = None
             self._is_symbolic = False
             self._log_abs, self._sign = result
 
+    @property
+    def is_symbolic(self):
+        return self._is_symbolic
+
     # ========================================================
-    # evidence
+    # EVIDENCE
     # ========================================================
     def evidence(self):
-        if self._is_symbolic:
+        """
+        Return the marginal likelihood (evidence).
+
+        If `self.is_symbolic` is True, returns a symbolic expression.
+        Otherwise, returns numeric (log_abs, sign) or ordinary value.
+        """
+        if self.is_symbolic:
             return self.c_func() * self._expr
         else:
-            total = self.log_c + self._log_abs
+            total_log_abs = self.log_c + self._log_abs
             if self.log:
-                return total, self._sign
-            return math.exp(total) * self._sign
+                return total_log_abs, self._sign
+            return math.exp(total_log_abs) * self._sign
 
-    def post_density(self, theta=None, log=True):
+    # ========================================================
+    # POSTERIOR DENSITY
+    # ========================================================
+    def post_density(self, theta_val=None, log=True):
         """
         Compute the posterior density (or log-density) at given θ.
 
         If `self.is_symbolic` is True:
-            - If theta is None or a sympy Symbol: returns a symbolic expression.
-            - If theta is numeric: evaluates the expression numerically.
-            - Uses numeric‑substituted PDF if params are numeric; otherwise base symbolic PDF.
+            - If theta_val is None or a sympy Symbol: returns a symbolic expression.
+            - If theta_val is numeric: evaluates the expression numerically.
+            - Uses the prior's symbolic PDF if available.
         If `self.is_symbolic` is False: performs numeric evaluation.
-
-        Parameters
-        ----------
-        theta : float, numpy array, or sympy.Symbol (optional)
-            Evaluation point(s). If None and derivative is symbolic, returns symbolic expression.
-        log : bool, optional
-            If True, return log-density; else density.
-
-        Returns
-        -------
-        sympy.Expr or float or numpy array
-            Symbolic expression or numeric value.
         """
         if self.is_symbolic:
             try:
-                t_sym = sp.Symbol('t', real=True)
-                denom_expr = self._expr.subs(t_sym, -self.b)
+                denom_expr = self._expr.subs(t, -self.b)
 
                 # Determine theta symbol
-                if theta is None:
-                    theta_sym = sp.Symbol('theta', positive=True)
-                elif isinstance(theta, sp.Symbol):
+                if theta_val is None or isinstance(theta_val, sp.Symbol):
+                    theta_sym = theta if theta_val is None else theta_val
+                else:
                     theta_sym = theta
-                else:
-                    theta_sym = sp.Symbol('theta', positive=True)
 
-                # Choose PDF: numeric‑substituted if params numeric, otherwise base symbolic
-                if self._has_numeric_params and not self._custom_prior:
-                    pdf_sym = self.prior_info['pdf_sym_func'](self.params)
-                elif self._custom_prior and self._prior_pdf_sym_func is not None:
-                    pdf_sym = self._prior_pdf_sym_func(self.params) if self.params is not None else self._prior_pdf_sym_func()
-                else:
-                    pdf_sym = self.prior_info['pdf_sym']() if not self._custom_prior else None
-
+                # Get symbolic PDF from the prior
+                pdf_sym = self.prior.pdf_sym
                 if pdf_sym is None:
                     raise ValueError("No symbolic PDF available for this prior.")
+
+                if callable(pdf_sym):
+                    pdf_sym = pdf_sym()
+
+                if not isinstance(pdf_sym, sp.Expr):
+                    raise TypeError("pdf_sym must be a SymPy expression.")
+
+                # Substitute numeric parameters if they exist
+                if self.params is not None:
+                    subs_dict = {}
+                    for sym in pdf_sym.free_symbols:
+                        if sym.name in self.params:
+                            subs_dict[sym] = self.params[sym.name]
+                    if subs_dict:
+                        pdf_sym = pdf_sym.subs(subs_dict)
 
                 log_prior = sp.log(pdf_sym)
 
                 log_num = log_prior + self.a * sp.log(theta_sym) - self.b * theta_sym
                 log_post = log_num - sp.log(denom_expr)
 
-                if theta is not None and not isinstance(theta, sp.Symbol):
-                    if hasattr(theta, '__len__'):
+                if theta_val is not None and not isinstance(theta_val, sp.Symbol):
+                    if hasattr(theta_val, '__len__'):
                         from sympy import lambdify
                         func = lambdify(theta_sym, log_post, modules='numpy')
-                        return func(theta)
+                        return func(theta_val)
                     else:
-                        return float(log_post.subs(theta_sym, float(theta)).evalf())
+                        return float(log_post.subs(theta_sym, float(theta_val)).evalf())
                 else:
                     return log_post if log else sp.exp(log_post)
+
             except Exception as e:
                 print(f"⚠️ Symbolic computation failed: {e}. Falling back to numeric.")
 
         # ---- Numeric path ----
-        if theta is None:
+        if theta_val is None:
             raise ValueError("For numeric evaluation, theta must be provided.")
 
-        # Get log prior density
-        if self._custom_prior:
-            if self._prior_logpdf_func is not None:
-                log_prior = self._prior_logpdf_func(theta)
-            elif self._prior_pdf_func is not None:
-                log_prior = np.log(self._prior_pdf_func(theta))
-            else:
-                raise ValueError("No numeric PDF function provided for custom prior.")
+        # Get log prior density from the prior object
+        if self.prior.logpdf_func is not None:
+            log_prior = self.prior.logpdf_func(theta_val)
+        elif self.prior.pdf_func is not None:
+            log_prior = np.log(self.prior.pdf_func(theta_val))
         else:
-            prior_info = self.prior_info
-            if 'logpdf_func' in prior_info and prior_info['logpdf_func'] is not None:
-                log_prior = prior_info['logpdf_func'](theta, **self.params)
-            elif 'pdf_func' in prior_info and prior_info['pdf_func'] is not None:
-                log_prior = np.log(prior_info['pdf_func'](theta, **self.params))
-            elif prior_info['dist'] is not None:
-                dist = prior_info['dist'](self.params)
-                log_prior = dist.logpdf(theta)
-            else:
-                raise NotImplementedError("No numeric PDF function available for this prior. Please use custom prior with numeric PDF or use symbolic path.")
+            raise ValueError("No numeric PDF function available for this prior.")
 
-        log_num = log_prior + self.a * np.log(theta) - self.b * theta
+        log_num = log_prior + self.a * np.log(theta_val) - self.b * theta_val
         log_post = log_num - self.log_abs
         if log:
             return log_post
         else:
             return np.exp(log_post)
 
+    # ========================================================
+    # POSTERIOR PREDICTIVE
+    # ========================================================
     def post_predictive(self, new_data, log=True, **kwargs):
         """
         Compute the posterior predictive density (or log-density) for new data.
-
-        If `self.is_symbolic` is True:
-            - If `new_data` is a sympy Symbol, returns a symbolic expression.
-            - If `new_data` is numeric, builds the symbolic expression and evaluates it
-              numerically (using `lambdify` for arrays, `evalf` for scalars).
-        If `self.is_symbolic` is False:
-            - Performs numeric evaluation directly.
-
-        Parameters
-        ----------
-        new_data : pandas DataFrame, Series, array‑like, or sympy.Symbol
-            New observation(s). If Symbol, treated as symbolic.
-        log : bool, optional
-            If True, return log-density; else density.
-        **kwargs : additional arguments for the likelihood's ready function (only used for numeric data).
-
-        Returns
-        -------
-        sympy.Expr or float or numpy array
-            Symbolic expression or numeric value(s).
         """
         # ---- Symbolic path ----
         if self.is_symbolic:
             try:
-                # Compute statistics for new data
                 if isinstance(new_data, sp.Symbol):
                     a_new = sp.Symbol('a_new', real=True)
                     b_new = sp.Symbol('b_new', real=True)
@@ -313,24 +283,20 @@ class MGFDerivative:
                 combined_order = self.a + a_new
                 combined_b = self.b + b_new
 
-                # Get symbolic derivative of combined order
                 deriv_combined = mgfDerivative(
                     order=combined_order,
                     prior=self.prior,
                     method='symbolic',
-                    t=float('nan'),
-                    params=self.params if self._has_numeric_params else None,
+                    t=None,
                     simplify=self.simplify,
                     log=False
                 )
-                t_sym = sp.Symbol('t', real=True)
-                num_expr = deriv_combined.subs(t_sym, -combined_b)
-                denom_expr = self._expr.subs(t_sym, -self.b)
+                num_expr = deriv_combined.subs(t, -combined_b)
+                denom_expr = self._expr.subs(t, -self.b)
 
                 log_pred = log_c_new + sp.log(num_expr) - sp.log(denom_expr)
 
                 if numeric_new:
-                    # Evaluate numerically
                     subs_dict = {}
                     for sym in log_pred.free_symbols:
                         if sym.name in self.params:
@@ -366,7 +332,6 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=float(-b_combined),
-            params=self.params,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
@@ -375,34 +340,17 @@ class MGFDerivative:
         if log:
             return log_pred
         else:
-            sign_pred = sign_num * self.sign
+            sign_pred = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
             if log_pred == -float('inf'):
                 return 0.0
             return sign_pred * math.exp(log_pred)
 
+    # ========================================================
+    # POSTERIOR MGF
+    # ========================================================
     def post_mgf(self, r, log=False):
         """
         Compute the posterior moment-generating function (MGF) at given r.
-
-        M_{Θ|y}(r) = D^{a(y)} M_Θ(t) |_{t = r - b(y)} / D^{a(y)} M_Θ(t) |_{t = -b(y)}
-
-        If `self.is_symbolic` is True:
-            - If r is a sympy Symbol or None, returns a symbolic expression.
-            - If r is numeric, evaluates the expression numerically.
-        If `self.is_symbolic` is False:
-            - Performs numeric evaluation.
-
-        Parameters
-        ----------
-        r : float, numpy array, or sympy.Symbol
-            The argument of the posterior MGF.
-        log : bool, optional
-            If True, return log MGF; otherwise return MGF.
-
-        Returns
-        -------
-        sympy.Expr or float or numpy array
-            Symbolic expression or numeric value(s).
         """
         # ---- Symbolic path ----
         if self.is_symbolic:
@@ -412,9 +360,8 @@ class MGFDerivative:
                 else:
                     r_sym = sp.Symbol('r', real=True)
 
-                t_sym = sp.Symbol('t', real=True)
-                num_expr = self._expr.subs(t_sym, r_sym - self.b)
-                denom_expr = self._expr.subs(t_sym, -self.b)
+                num_expr = self._expr.subs(t, r_sym - self.b)
+                denom_expr = self._expr.subs(t, -self.b)
 
                 log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
@@ -461,14 +408,13 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=float(r - self.b),
-            params=self.params,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
         )
 
         log_ratio = log_abs_num - self.log_abs
-        sign_ratio = sign_num * self.sign
+        sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
 
         if log:
             return log_ratio
@@ -477,29 +423,12 @@ class MGFDerivative:
                 return 0.0
             return sign_ratio * math.exp(log_ratio)
 
+    # ========================================================
+    # POSTERIOR MOMENT
+    # ========================================================
     def post_moment(self, q, log=False):
         """
         Compute the posterior moment of order q.
-
-        E[Θ^q | y] = D^{a(y)+q} M_Θ(t) |_{t = -b(y)} / D^{a(y)} M_Θ(t) |_{t = -b(y)}
-
-        If `self.is_symbolic` is True:
-            - If q is a sympy Symbol, returns a symbolic expression.
-            - If q is numeric, evaluates the expression numerically if possible.
-        If `self.is_symbolic` is False:
-            - Performs numeric evaluation.
-
-        Parameters
-        ----------
-        q : float or sympy.Symbol
-            Order of the moment. Can be integer, fractional, or symbolic.
-        log : bool, optional
-            If True, return log of the moment; else return the moment value.
-
-        Returns
-        -------
-        sympy.Expr or float
-            Symbolic expression or numeric value.
         """
         if self.is_symbolic:
             try:
@@ -513,14 +442,12 @@ class MGFDerivative:
                     order=order,
                     prior=self.prior,
                     method='symbolic',
-                    t=float('nan'),
-                    params=self.params if self._has_numeric_params else None,
+                    t=None,
                     simplify=self.simplify,
                     log=False
                 )
-                t_sym = sp.Symbol('t', real=True)
-                num_expr = deriv_expr.subs(t_sym, -self.b)
-                denom_expr = self._expr.subs(t_sym, -self.b)
+                num_expr = deriv_expr.subs(t, -self.b)
+                denom_expr = self._expr.subs(t, -self.b)
 
                 log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
@@ -566,14 +493,13 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=float(-self.b),
-            params=self.params,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
         )
 
         log_ratio = log_abs_num - self.log_abs
-        sign_ratio = sign_num * self.sign
+        sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
 
         if log:
             return log_ratio
@@ -582,34 +508,27 @@ class MGFDerivative:
                 return 0.0
             return sign_ratio * math.exp(log_ratio)
 
-    # ---- Sequential updating methods ----
+    # ========================================================
+    # SEQUENTIAL UPDATING
+    # ========================================================
 
     def to_prior_object(self):
         """
         Convert current posterior into a mitMGFprior object.
         """
-
-        return mitMGFprior(
+        return mitMGFprior.as_(
             name="posterior_prior",
-            mgf=self.post_mgf,
-            cgf=lambda r: self.post_mgf(r, log=True),
-            pdf_func=lambda theta: self.post_density(theta, log=False),
-            logpdf_func=lambda theta: self.post_density(theta, log=True),
-            mgf_sym=self.prior.mgf_sym,   # optional fallback
-            pdf_sym=self.prior.pdf_sym,
-            params=self.params
-        ).as_mitMGFprior()
-        
+            mgf=lambda r: self.post_mgf(r, log=False),
+            pdf=lambda theta: self.post_density(theta, log=False)
+        )
+
     def update(self, new_data, **kwargs):
         """
         Sequential update returns a new MGFDerivative,
         using posterior mitMGFprior as prior.
         """
-
-        # 1. compute posterior object (unchanged logic inside class)
         post_prior = self.to_prior_object()
 
-        # 2. return new inference problem
         return MGFDerivative(
             prior=post_prior,
             data=new_data,

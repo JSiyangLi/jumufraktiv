@@ -17,12 +17,13 @@ import math
 import numpy as np
 from scipy.integrate import quad
 from scipy.special import gamma as gamma_func
+from derivativeDispatch import mgfDerivative_integer
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 
 def fractionalDeriv_numeric_scipy_tan(
     order: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
@@ -40,31 +41,45 @@ def fractionalDeriv_numeric_scipy_tan(
 
     Parameters
     ----------
-    max_u : float
-        Maximum absolute value of u after transformation (default 20).
+    order : float
+        Fractional order (positive).
+    prior : mitMGFprior
+        Prior object providing the MGF.
+    t : float
+        Evaluation point.
+    method : str, optional
+        Method for computing integer derivatives: 'symbolic', 'bell', 'jax'.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
+    epsabs, epsrel : float
+        Tolerances for quad.
+    limit : int
+        Maximum number of subintervals.
+    return_log : bool, optional
+        If True, return (log_abs, sign) instead of ordinary value.
     margin : float
         Offset from the asymptotes to avoid infinities.
+    max_u : float
+        Maximum absolute value of u after transformation (default 20).
+
+    Returns
+    -------
+    float or tuple (log_abs, sign)
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
 
     # Integer order
     if order == int(order):
-        log_abs, sign = mgfDerivative_integer(
+        result = mgfDerivative_integer(
             order=int(order),
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
-            log=True
+            log=return_log
         )
-        if return_log:
-            return log_abs, sign
-        else:
-            if log_abs == -float('inf'):
-                return 0.0
-            return sign * math.exp(log_abs)
+        return result
 
     n = math.floor(order)
     gamma_val = (n + 1) - order
@@ -76,13 +91,12 @@ def fractionalDeriv_numeric_scipy_tan(
             u = max_u * tan_theta
             z = math.exp(u)
             y = t - z
-            # Get derivative in log scale
+            # Get derivative in log scale (always log=True)
             log_abs, sign = mgfDerivative_integer(
                 order=n + 1,
                 prior=prior,
                 method=method,
                 t=y,
-                params=params,
                 simplify=simplify,
                 log=True
             )
@@ -126,8 +140,7 @@ def fractionalDeriv_numeric_scipy_tan(
 
 def fractionalDeriv_numeric_scipy(
     order: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
@@ -147,10 +160,8 @@ def fractionalDeriv_numeric_scipy(
     ----------
     order : float
         Fractional order (positive). If integer, returns ordinary derivative.
-    prior : str
-        'gamma' or 'pareto'.
-    params : dict
-        Distribution parameters (must be numeric).
+    prior : mitMGFprior
+        Prior object providing the MGF.
     t : float
         Evaluation point (must be within MGF domain).
     method : str, optional
@@ -176,32 +187,25 @@ def fractionalDeriv_numeric_scipy(
     -------
     float or tuple (log_abs, sign)
     """
-    from derivativeDispatch import mgfDerivative_integer
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
 
-    # ---- 1. Handle integer order (common to both methods) ----
+    # ---- 1. Handle integer order ----
     if order == int(order):
-        log_abs, sign = mgfDerivative_integer(
+        result = mgfDerivative_integer(
             order=int(order),
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
-            log=True
+            log=return_log
         )
-        if return_log:
-            return log_abs, sign
-        else:
-            if log_abs == -float('inf'):
-                return 0.0
-            return sign * math.exp(log_abs)
+        return result
 
     # ---- 2. If use_tan=True, directly call tan version ----
     if use_tan:
         return fractionalDeriv_numeric_scipy_tan(
-            order, prior, params, t, method, simplify,
+            order, prior, t, method, simplify,
             epsabs, epsrel, limit, return_log
         )
 
@@ -217,7 +221,6 @@ def fractionalDeriv_numeric_scipy(
             prior=prior,
             method=method,
             t=y,
-            params=params,
             simplify=simplify,
             log=True
         )
@@ -246,14 +249,13 @@ def fractionalDeriv_numeric_scipy(
             L *= 2
         except Exception as e:
             print(f"Adaptive integration failed at L={L}: {e}")
-            # If we have a valid result, use it; otherwise fall back to tan
             if integral_valid is not None:
                 print(f"  Using last valid result from L={L/2}.")
                 break
             else:
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_scipy_tan(
-                    order, prior, params, t, method, simplify,
+                    order, prior, t, method, simplify,
                     epsabs, epsrel, limit, return_log
                 )
 
@@ -261,10 +263,9 @@ def fractionalDeriv_numeric_scipy(
     if L > max_L and integral_valid is not None:
         print(f"Warning: Adaptive integration did not converge before max_L={max_L}. Using last result.")
     elif L > max_L and integral_valid is None:
-        # No valid result at all – fall back to tan
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_scipy_tan(
-            order, prior, params, t, method, simplify,
+            order, prior, t, method, simplify,
             epsabs, epsrel, limit, return_log
         )
 
@@ -281,17 +282,24 @@ def fractionalDeriv_numeric_scipy(
 
 # ===== Example usage =====
 if __name__ == "__main__":
-    gamma_params = {'alpha': 2.0, 'beta': 3.0}
-    t_val = -1.0                     # changed from +1.0
-    frac_order = 1.99                # close to 2
+    import jumufraktiv.MGFdictionary  # ensures priors are registered
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    # Build Gamma prior
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+
+    t_val = -1.0
+    frac_order = 1.99
 
     print("Testing fractional derivative of Gamma MGF")
     print(f"  order={frac_order}, t={t_val}, alpha=2, beta=3")
     print("  Using default adaptive method (with fallback to tan)...")
     result_adaptive = fractionalDeriv_numeric_scipy(
         order=frac_order,
-        prior='gamma',
-        params=gamma_params,
+        prior=gamma_prior,
         t=t_val,
         method='symbolic',
         return_log=False
@@ -301,8 +309,7 @@ if __name__ == "__main__":
     print("\n  Using explicit tan‑transform method...")
     result_tan = fractionalDeriv_numeric_scipy(
         order=frac_order,
-        prior='gamma',
-        params=gamma_params,
+        prior=gamma_prior,
         t=t_val,
         method='symbolic',
         return_log=False,
@@ -313,10 +320,10 @@ if __name__ == "__main__":
     # Compare with ordinary 2nd derivative
     log_abs2, sign2 = mgfDerivative_integer(
         order=2,
-        prior='gamma',
+        prior=gamma_prior,
         method='symbolic',
         t=t_val,
-        params=gamma_params,
+        simplify=False,
         log=True
     )
     deriv2 = sign2 * math.exp(log_abs2)

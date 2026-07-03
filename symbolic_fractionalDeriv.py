@@ -8,8 +8,8 @@ or via Mellin transform if Laplace fails.
 
 import sympy as sp
 from sympy.integrals.transforms import laplace_transform, mellin_transform
-from MGFdictionary.gammaMGF import gamma_mgf_symbolic
-from MGFdictionary.paretoMGF import pareto_mgf_symbolic
+from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.symbols import t  # only t is needed
 
 try:
     from func_timeout import func_timeout, FunctionTimedOut
@@ -25,7 +25,7 @@ def _is_unevaluated_transform(expr):
 
 def fractionalDeriv_symbolic(
     order: float,
-    prior: str,
+    prior: mitMGFprior,
     simplify: bool = False,
     timeout_seconds: float = 30.0
 ):
@@ -40,8 +40,8 @@ def fractionalDeriv_symbolic(
     ----------
     order : float
         Fractional order (positive, non‑integer).
-    prior : str
-        'gamma' or 'pareto'.
+    prior : mitMGFprior
+        Prior object providing the symbolic MGF expression (mgf_sym).
     simplify : bool, optional
         If True, simplify the final expression.
     timeout_seconds : float, optional
@@ -55,26 +55,29 @@ def fractionalDeriv_symbolic(
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
 
-    # Select MGF expression
-    if prior.lower() == "gamma":
-        expr = gamma_mgf_symbolic()
-    elif prior.lower() == "pareto":
-        expr = pareto_mgf_symbolic()
-    else:
-        raise ValueError("prior must be 'gamma' or 'pareto'")
+    # Get symbolic MGF expression from the prior object
+    if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
+        raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
 
-    # Extract t symbol
-    t_symbols = [sym for sym in expr.free_symbols if sym.name == 't']
-    if not t_symbols:
-        raise RuntimeError("No symbol 't' found.")
-    t = t_symbols[0]
+    expr = prior.mgf_sym
+    # If it's a callable, call it to get the expression
+    if callable(expr):
+        expr = expr()
+
+    if not isinstance(expr, sp.Expr):
+        raise TypeError("mgf_sym must be a SymPy expression.")
+
+    # Extract the 't' symbol (should be present)
+    t_sym = next((s for s in expr.free_symbols if s.name == 't'), None)
+    if t_sym is None:
+        raise RuntimeError("No symbol 't' found in the MGF expression.")
 
     alpha = order
     n = sp.floor(alpha)
     gamma = (n + 1) - alpha
 
     # ---- Step 2: integer derivative of order n+1 ----
-    f_n = sp.diff(expr, t, int(n) + 1)
+    f_n = sp.diff(expr, t_sym, int(n) + 1)
 
     # ---- Step 3: Laplace method with timeout ----
     def _laplace_attempt():
@@ -82,11 +85,11 @@ def fractionalDeriv_symbolic(
         w = sp.Symbol('w', positive=True, real=True)
         s = sp.Symbol('s')
 
-        integrand1 = f_n.subs(t, t - sp.exp(u))
+        integrand1 = f_n.subs(t_sym, t_sym - sp.exp(u))
         F1 = laplace_transform(integrand1, u, s, noconds=True)
         I1 = F1.subs(s, -gamma)
 
-        integrand2 = f_n.subs(t, t - sp.exp(-w))
+        integrand2 = f_n.subs(t_sym, t_sym - sp.exp(-w))
         F2 = laplace_transform(integrand2, w, s, noconds=True)
         I2 = F2.subs(s, gamma)
 
@@ -117,7 +120,7 @@ def fractionalDeriv_symbolic(
     try:
         def _mellin_attempt():
             z = sp.Symbol('z', positive=True)
-            g = f_n.subs(t, t - z)
+            g = f_n.subs(t_sym, t_sym - z)
             s_m = sp.Symbol('s')
             return mellin_transform(g, z, s_m)
 
@@ -140,32 +143,32 @@ def fractionalDeriv_symbolic(
         print(f"❌ Mellin transform failed: {e2}")
         return None
 
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Test Gamma MGF
-    print("Gamma MGF, order 0.5:")
-    try:
-        result = fractionalDeriv_symbolic(0.5, "gamma", simplify=True)
-        sp.pprint(result)
-    except RuntimeError as e:
-        print(f"Error: {e}")
 
 # ===== Example usage =====
 if __name__ == "__main__":
-    # Test Gamma MGF
-    print("Gamma MGF, order 3.2:")
-    result = fractionalDeriv_symbolic(3.2, "gamma", simplify=True)
-    sp.pprint(result)
+    import jumufraktiv.MGFdictionary  # ensures priors are registered
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
 
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Test fractional derivative of Gamma MGF
-    print("Testing fractional derivative of Gamma MGF (order 1.1):")
-    try:
-        result = fractionalDeriv_symbolic(1.1, "gamma", simplify=True)
+    # Create a Gamma prior
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+
+    print("Testing fractional derivative of Gamma MGF (order 0.5):")
+    result = fractionalDeriv_symbolic(0.5, gamma_prior, simplify=True)
+    if result is not None:
         print("Symbolic result:")
         sp.pprint(result)
-    except Exception as e:
-        print(f"Error: {e}")
+    else:
+        print("Failed to compute fractional derivative.")
 
     print("\n" + "-" * 60)
+
+    print("Testing fractional derivative of Gamma MGF (order 3.2):")
+    result = fractionalDeriv_symbolic(3.2, gamma_prior, simplify=True)
+    if result is not None:
+        print("Symbolic result:")
+        sp.pprint(result)
+    else:
+        print("Failed to compute fractional derivative.")

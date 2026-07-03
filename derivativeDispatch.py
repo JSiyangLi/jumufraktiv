@@ -17,16 +17,17 @@ Function:
 import math
 import sympy as sp
 import numpy as np
-from symbolic_integerDeriv import integerDeriv_symbolic
-from numeric_integerDeriv_Bell import integerDeriv_numeric_bell
-from numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
+from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
+from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 
+from jumufraktiv.symbols import t as t_sym
 
 def mgfDerivative_integer(
     order: int,
     prior,
     method: str = "symbolic",
-    t=None,
+    t: float = None,        # parameter name is 't' (matches global symbol)
     simplify: bool = False,
     log: bool = True,
     symbolic_timeout: float = 600.0,
@@ -48,7 +49,7 @@ def mgfDerivative_integer(
         Derivative backend.
 
     t : float, optional
-        Evaluation point.
+        Evaluation point (uses the global canonical 't' symbol).
         If omitted for the symbolic method, the symbolic derivative is
         returned.
 
@@ -101,8 +102,17 @@ def mgfDerivative_integer(
         if t is None:
             return expr
 
-        # Numerical evaluation
-        val = expr.subs(sp.Symbol("t"), t).evalf()
+        # Substitution uses the global canonical t_sym
+        val = expr.subs(t_sym, t).evalf()
+
+        # If other symbols remain (e.g., alpha, beta), substitute from prior.params
+        if val.free_symbols:
+            params = prior.params or {}
+            for sym in list(val.free_symbols):
+                if sym.name in params:
+                    val = val.subs(sym, params[sym.name])
+            val = val.evalf()
+
         val = float(val)
 
         if abs(val) < 1e-300:
@@ -164,12 +174,12 @@ def mgfDerivative_integer(
 
     return sign * math.exp(log_abs)
 
+
 def mgfDerivative_fractional(
     order: float,
-    prior: str,
+    prior,
     method: str = "scipy",
-    t: float = float('nan'),
-    params: dict = None,
+    t: float = None,
     simplify: bool = False,
     log: bool = True,
     integerDeriv_method: str = "symbolic",
@@ -182,8 +192,8 @@ def mgfDerivative_fractional(
     ----------
     order : float
         Fractional order (positive). If integer, it will still work (returns ordinary derivative).
-    prior : str
-        'gamma' or 'pareto'.
+    prior : mitMGFprior
+        Prior object containing the MGF and its functions.
     method : str, optional
         One of:
             - 'scipy'   : uses scipy.integrate.quad (adaptive range, with fallback to tan)
@@ -192,8 +202,6 @@ def mgfDerivative_fractional(
         Default 'scipy'.
     t : float, optional
         Evaluation point. Required for numeric methods ('scipy', 'mpmath').
-    params : dict, optional
-        Prior parameters. Required for numeric methods.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for method='symbolic').
     log : bool, optional
@@ -215,34 +223,23 @@ def mgfDerivative_fractional(
         if log=True: (log_abs, sign)
         else: float (ordinary value)
     """
-    if params is None:
-        params = {}
-
     # ---- Handle symbolic method ----
     if method.lower() == "symbolic":
         print("⚠️ Warning: Symbolic computation of fractional derivatives can be very slow and inefficient. Consider using 'scipy' or 'mpmath' for numerical evaluation.")
-        # Lazy import symbolic_fractionalDeriv
-        try:
-            from symbolic_fractionalDeriv import fractionalDeriv_symbolic
-        except ImportError as e:
-            raise ImportError("Could not import symbolic_fractionalDeriv.py") from e
-        # Call the symbolic function, passing any kwargs (e.g., timeout_seconds)
+        from symbolic_fractionalDeriv import fractionalDeriv_symbolic
         expr = fractionalDeriv_symbolic(order=order, prior=prior, simplify=simplify, **kwargs)
         return expr
 
-    # ---- Numeric methods require t and params ----
-    if math.isnan(t):
+    # ---- Numeric methods require t ----
+    if t is None or math.isnan(t):
         raise ValueError(f"For method '{method}', t must be provided.")
-    if not params:
-        raise ValueError(f"For method '{method}', params must be provided.")
 
     # ---- Dispatch to scipy or mpmath ----
     if method.lower() == "scipy":
-        from numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
+        from jumufraktiv.numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
         return fractionalDeriv_numeric_scipy(
             order=order,
             prior=prior,
-            params=params,
             t=t,
             method=integerDeriv_method,
             simplify=simplify,
@@ -251,11 +248,10 @@ def mgfDerivative_fractional(
         )
 
     elif method.lower() == "mpmath":
-        from numeric_fractionalDeriv_mpmath import fractionalDeriv_numeric_mpmath
+        from jumufraktiv.numeric_fractionalDeriv_mpmath import fractionalDeriv_numeric_mpmath
         return fractionalDeriv_numeric_mpmath(
             order=order,
             prior=prior,
-            params=params,
             t=t,
             method=integerDeriv_method,
             simplify=simplify,
@@ -266,12 +262,12 @@ def mgfDerivative_fractional(
     else:
         raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
 
+
 def mgfDerivative(
     order: float,
-    prior: str,
+    prior,
     method: str = "symbolic",
-    t: float = float('nan'),
-    params: dict = None,
+    t: float = None,
     simplify: bool = False,
     log: bool = True,
     integer_method: str = "symbolic",
@@ -288,31 +284,20 @@ def mgfDerivative(
     For integer orders, it can use symbolic, Bell-polynomial, or JAX methods.
     For fractional orders, it can use scipy, mpmath, or symbolic methods.
 
-    Special handling for Pareto prior:
-        - If method='jax' is selected, it is overridden to 'symbolic' with a warning
-          because JAX's `jet` does not support the required incomplete gamma function.
-        - If method='bell' is selected, a warning is issued about potential slowness
-          due to symbolic CGF derivatives, but the method is not overridden.
-
     Parameters
     ----------
     order : float
         Derivative order (integer or fractional). If within `int_tol` of an integer,
         it is treated as integer.
-    prior : str
-        Prior name. Must be one of 'gamma', 'pareto' (or others added to the registry).
+    prior : mitMGFprior
+        Prior object containing the MGF and its functions.
     method : str, optional
         For integer order: one of 'symbolic', 'bell', 'jax'.
         For fractional order: one of 'scipy', 'mpmath', 'symbolic'.
         Default 'symbolic'.
     t : float, optional
         Evaluation point. Required for numeric methods ('bell', 'jax', 'scipy', 'mpmath').
-        For 'symbolic', if provided together with `params`, the symbolic expression is
-        evaluated numerically; otherwise, a symbolic expression is returned.
-    params : dict, optional
-        Prior parameters. Required for numeric methods. For 'symbolic', if provided,
-        the symbolic expression is evaluated numerically; otherwise, a symbolic expression
-        is returned.
+        For 'symbolic', if provided, the symbolic expression is evaluated numerically.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for 'symbolic' methods).
     log : bool, optional
@@ -350,7 +335,7 @@ def mgfDerivative(
     Returns
     -------
     Depending on the method and order:
-        - If method='symbolic' and no numeric evaluation (t is nan or params is None):
+        - If method='symbolic' and no numeric evaluation (t is None):
             sympy.Expr (symbolic expression)
         - If numeric evaluation (log=True): tuple (log_abs, sign)
         - If numeric evaluation (log=False): float (ordinary value)
@@ -361,9 +346,6 @@ def mgfDerivative(
         If order is invalid, method is invalid for the order type, required arguments missing,
         or d_vec does not have exactly 3 elements or any element >= 1.
     """
-    if params is None:
-        params = {}
-
     # ---- Extract cgf_method and symbolic_timeout from kwargs ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
     symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
@@ -374,29 +356,6 @@ def mgfDerivative(
     if any(d >= 1 for d in d_vec):
         raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
     min_dev = 1.0 - max(d_vec)
-
-    # ---- Special handling for Pareto prior ----
-    if prior.lower() == 'pareto':
-        # For integer orders, handle method selection
-        # We'll check if order is integer (within tolerance) and warn/override
-        is_integer = abs(order - round(order)) < int_tol
-        if is_integer:
-            if method.lower() == 'jax':
-                import warnings
-                warnings.warn(
-                    "JAX (jet) does not currently support the Pareto prior. "
-                    "Overriding method to 'symbolic' for integer order.",
-                    UserWarning
-                )
-                method = 'symbolic'
-            elif method.lower() == 'bell':
-                import warnings
-                warnings.warn(
-                    "The Bell method with Pareto prior may be very slow due to symbolic CGF derivatives. "
-                    "Consider using 'symbolic' for faster exact results.",
-                    UserWarning
-                )
-                # Do not override; let the user proceed.
 
     # ---- Determine if order is integer ----
     is_integer = abs(order - round(order)) < int_tol
@@ -411,7 +370,6 @@ def mgfDerivative(
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
             log=log,
             symbolic_timeout=symbolic_timeout,
@@ -445,10 +403,10 @@ def mgfDerivative(
                 from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
             except ImportError as e:
                 raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
+            # fractionalDeriv_interpolated now expects a prior object (no params)
             return fractionalDeriv_interpolated(
                 order=order,
                 prior=prior,
-                params=params,
                 t=t,
                 d_vec=d_vec,
                 return_log=log,
@@ -462,48 +420,64 @@ def mgfDerivative(
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
             log=log,
             integerDeriv_method=integer_method,
             **kwargs
         )
 
+
 if __name__ == "__main__":
     import math
+    import sympy as sp
     import pandas as pd
+    import jumufraktiv.MGFdictionary  # registers priors
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
 
-    # ===== Integer derivative examples =====
+    # ---- Create Gamma priors ----
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+    gamma_prior_small = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 1e-5, "beta": 1e-5}
+    )
+    gamma_prior_exp = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 1.0, "beta": 0.9}
+    )
+
     print("=" * 60)
     print("Integer derivative examples")
     print("=" * 60)
 
     # 1. Symbolic expression (no evaluation)
-    expr = mgfDerivative_integer(2, "gamma", method="symbolic")
+    expr = mgfDerivative_integer(2, gamma_prior, method="symbolic")
     print("Symbolic expression for 2nd derivative of Gamma MGF:")
     sp.pprint(expr)
 
     # 2. Symbolic evaluation with numeric output (log=True by default)
     log_abs, sign = mgfDerivative_integer(
-        2, "gamma", method="symbolic", t=-1.0, params={'alpha': 2.0, 'beta': 3.0}
+        2, gamma_prior, method="symbolic", t=-1.0, log=True
     )
     print(f"\nSymbolic evaluated (log scale): log|deriv| = {log_abs:.6f}, sign = {sign}")
 
     # 3. Symbolic evaluation with ordinary output (log=False)
     val = mgfDerivative_integer(
-        2, "gamma", method="symbolic", t=-1.0, params={'alpha': 2.0, 'beta': 3.0}, log=False
+        2, gamma_prior, method="symbolic", t=-1.0, log=False
     )
     print(f"Symbolic evaluated (ordinary scale): {val:.6f}")
 
     # 4. Bell method (numeric, log=True default)
     log_abs, sign = mgfDerivative_integer(
-        2, "gamma", method="bell", t=-1.0, params={'alpha': 2.0, 'beta': 3.0}
+        2, gamma_prior, method="bell", t=-1.0
     )
     print(f"\nBell method: log|deriv| = {log_abs:.6f}, sign = {sign}")
 
     # 5. JAX method with ordinary output
     val = mgfDerivative_integer(
-        2, "gamma", method="jax", t=-1.0, params={'alpha': 2.0, 'beta': 3.0}, log=False
+        2, gamma_prior, method="jax", t=-1.0, log=False
     )
     print(f"JAX method (ordinary): {val:.6e}")
 
@@ -513,7 +487,6 @@ if __name__ == "__main__":
     print("=" * 60)
 
     frac_order = 1.99
-    params_gamma = {'alpha': 2.0, 'beta': 3.0}
     t_val = -1.0
 
     # 6. Symbolic fractional derivative (warning will be printed)
@@ -521,7 +494,7 @@ if __name__ == "__main__":
     try:
         expr_frac = mgfDerivative_fractional(
             order=frac_order,
-            prior='gamma',
+            prior=gamma_prior,
             method='symbolic',
             simplify=True,
             timeout_seconds=10
@@ -535,10 +508,9 @@ if __name__ == "__main__":
     print("\n--- scipy method (log scale) ---")
     log_abs_frac, sign_frac = mgfDerivative_fractional(
         order=frac_order,
-        prior='gamma',
+        prior=gamma_prior,
         method='scipy',
         t=t_val,
-        params=params_gamma,
         integerDeriv_method='symbolic',
         epsrel=1e-10,
         tol=1e-8
@@ -550,10 +522,9 @@ if __name__ == "__main__":
     try:
         val_frac_mpmath = mgfDerivative_fractional(
             order=frac_order,
-            prior='gamma',
+            prior=gamma_prior,
             method='mpmath',
             t=t_val,
-            params=params_gamma,
             integerDeriv_method='symbolic',
             dps=60,
             tol=1e-10,
@@ -566,7 +537,7 @@ if __name__ == "__main__":
 
     # Compare with integer 2nd derivative
     log_abs2, sign2 = mgfDerivative_integer(
-        2, "gamma", method="symbolic", t=t_val, params=params_gamma, log=True
+        2, gamma_prior, method="symbolic", t=t_val, log=True
     )
     deriv2 = sign2 * math.exp(log_abs2)
     print(f"\nOrdinary 2nd derivative at t={t_val}: {deriv2:.6e}")
@@ -582,20 +553,19 @@ if __name__ == "__main__":
     # Integer order via wrapper
     log_abs, sign = mgfDerivative(
         order=2.0,
-        prior='gamma',
+        prior=gamma_prior,
         method='symbolic',
         t=-1.0,
-        params={'alpha': 2.0, 'beta': 3.0}
+        log=True
     )
     print(f"Wrapper (integer, log): log|deriv| = {log_abs:.6f}, sign = {sign}")
 
     # Fractional order via wrapper (auto‑corrected)
     log_abs, sign = mgfDerivative(
         order=1.99,
-        prior='gamma',
+        prior=gamma_prior,
         method='jax',          # auto‑corrected to integer_method='jax', method='scipy'
         t=-1.0,
-        params={'alpha': 2.0, 'beta': 3.0},
         epsrel=1e-10
     )
     print(f"Wrapper (fractional, auto‑corrected): log|deriv| = {log_abs:.6f}, sign = {sign}")
@@ -603,10 +573,9 @@ if __name__ == "__main__":
     # Fractional order with explicit scipy method
     log_abs, sign = mgfDerivative(
         order=1.99,
-        prior='gamma',
+        prior=gamma_prior,
         method='scipy',
         t=-1.0,
-        params={'alpha': 2.0, 'beta': 3.0},
         integer_method='symbolic',
         epsrel=1e-10
     )
@@ -619,17 +588,15 @@ if __name__ == "__main__":
 
     # Use Gamma likelihood with exponential prior (Gamma(1,0.9)) so analytic formula exists.
     data_interp = pd.DataFrame({'y': [1.0]})
-    prior_params_interp = {'alpha': 1.0, 'beta': 0.9}
     t_interp = -1.0
     order_interp = 1.999
 
     # Using interpolation (default)
     log_abs_interp, sign_interp = mgfDerivative(
         order=order_interp,
-        prior='gamma',
+        prior=gamma_prior_exp,
         method='scipy',
         t=t_interp,
-        params=prior_params_interp,
         log=True,
         integer_method='symbolic',
         use_interpolation=True,
@@ -639,7 +606,7 @@ if __name__ == "__main__":
     print(f"Interpolated: log|deriv| = {log_abs_interp:.6f}, sign = {sign_interp}")
 
     # Analytic formula for exponential prior: D^α M(t) = λ * Γ(α+1) * (λ - t)^(-α-1)
-    lambda_exp = prior_params_interp['beta']
+    lambda_exp = gamma_prior_exp.params['beta']
     log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
     print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
     print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")

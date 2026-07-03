@@ -16,12 +16,13 @@ All arithmetic is performed with the precision specified by mp.dps.
 """
 
 from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
+from derivativeDispatch import mgfDerivative_integer
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 
 def fractionalDeriv_numeric_mpmath_tan(
     order: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
@@ -37,6 +38,22 @@ def fractionalDeriv_numeric_mpmath_tan(
 
     Parameters
     ----------
+    order : float
+        Fractional order (positive).
+    prior : mitMGFprior
+        Prior object providing the MGF.
+    t : float
+        Evaluation point.
+    method : str, optional
+        Method for computing integer derivatives: 'symbolic', 'bell', 'jax'.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
+    return_log : bool, optional
+        If True, return (log_abs, sign) instead of ordinary value.
+    margin : float
+        Offset from the asymptotes to avoid infinities.
+    max_u : float
+        Maximum absolute value of u after transformation (default 20).
     dps : int
         Number of decimal digits for mpmath (default 50).
     """
@@ -52,7 +69,6 @@ def fractionalDeriv_numeric_mpmath_tan(
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
             log=True
         )
@@ -78,7 +94,6 @@ def fractionalDeriv_numeric_mpmath_tan(
                 prior=prior,
                 method=method,
                 t=float(y),
-                params=params,
                 simplify=simplify,
                 log=True
             )
@@ -118,8 +133,7 @@ def fractionalDeriv_numeric_mpmath_tan(
 
 def fractionalDeriv_numeric_mpmath(
     order: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
@@ -135,12 +149,29 @@ def fractionalDeriv_numeric_mpmath(
 
     Parameters
     ----------
-    dps : int
-        Number of decimal digits for mpmath (default 50).
+    order : float
+        Fractional order (positive). If integer, returns ordinary derivative.
+    prior : mitMGFprior
+        Prior object providing the MGF.
+    t : float
+        Evaluation point (must be within MGF domain).
+    method : str, optional
+        'symbolic', 'jax', or 'bell' – method for computing the integer derivative.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
+    return_log : bool, optional
+        If True, return (log_abs, sign) instead of ordinary value.
+    initial_L : float
+        Starting half‑width for integration range (adaptive method only).
+    max_L : float
+        Maximum allowed half‑width.
     tol : float
         Relative tolerance for convergence (default 1e-8).
+    use_tan : bool
+        If True, directly use the tan‑transform method.
+    dps : int
+        Number of decimal digits for mpmath (default 50).
     """
-    from derivativeDispatch import mgfDerivative_integer
     mp.dps = dps
 
     if order <= 0:
@@ -153,7 +184,6 @@ def fractionalDeriv_numeric_mpmath(
             prior=prior,
             method=method,
             t=t,
-            params=params,
             simplify=simplify,
             log=True
         )
@@ -167,7 +197,7 @@ def fractionalDeriv_numeric_mpmath(
     # ---- 2. use_tan: direct to tan version ----
     if use_tan:
         return fractionalDeriv_numeric_mpmath_tan(
-            order, prior, params, t, method, simplify,
+            order, prior, t, method, simplify,
             return_log, dps=dps
         )
 
@@ -184,7 +214,6 @@ def fractionalDeriv_numeric_mpmath(
             prior=prior,
             method=method,
             t=float(y),
-            params=params,
             simplify=simplify,
             log=True
         )
@@ -218,7 +247,7 @@ def fractionalDeriv_numeric_mpmath(
             else:
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_mpmath_tan(
-                    order, prior, params, t, method, simplify,
+                    order, prior, t, method, simplify,
                     return_log, dps=dps
                 )
 
@@ -229,7 +258,7 @@ def fractionalDeriv_numeric_mpmath(
     elif L > max_L and integral_valid is None:
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_mpmath_tan(
-            order, prior, params, t, method, simplify,
+            order, prior, t, method, simplify,
             return_log, dps=dps
         )
 
@@ -252,7 +281,15 @@ def fractionalDeriv_numeric_mpmath(
 
 # ===== Example usage =====
 if __name__ == "__main__":
-    gamma_params = {'alpha': 2.0, 'beta': 3.0}
+    import jumufraktiv.MGFdictionary  # ensures priors are registered
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    # Build Gamma prior
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+
     t_val = -1.0
     frac_order = 1.99
 
@@ -261,8 +298,7 @@ if __name__ == "__main__":
     print("  Using default adaptive method (with fallback to tan)...")
     result_adaptive = fractionalDeriv_numeric_mpmath(
         order=frac_order,
-        prior='gamma',
-        params=gamma_params,
+        prior=gamma_prior,
         t=t_val,
         method='symbolic',
         return_log=False,
@@ -274,8 +310,7 @@ if __name__ == "__main__":
     print("\n  Using explicit tan‑transform method...")
     result_tan = fractionalDeriv_numeric_mpmath(
         order=frac_order,
-        prior='gamma',
-        params=gamma_params,
+        prior=gamma_prior,
         t=t_val,
         method='symbolic',
         return_log=False,
@@ -287,10 +322,10 @@ if __name__ == "__main__":
     # Compare with ordinary 2nd derivative
     log_abs2, sign2 = mgfDerivative_integer(
         order=2,
-        prior='gamma',
+        prior=gamma_prior,
         method='symbolic',
         t=t_val,
-        params=gamma_params,
+        simplify=False,
         log=True
     )
     deriv2 = sign2 * float(exp(mpf(log_abs2)))

@@ -14,77 +14,118 @@ import math
 import sympy as sp
 import jax.numpy as jnp
 import scipy.stats as stats
-from jumufraktiv.registry import register_prior
-@register_prior("uniform")
+import numpy as np
 
+from jumufraktiv.logsum import logplus, logminus
+from jumufraktiv.registry import register_prior, make_prior_spec
+from jumufraktiv.symbols import t, theta, param
+
+
+# ============================================================
+# Canonical symbolic parameters
+# ============================================================
+a = param("a")
+b = param("b")
+
+
+# ============================================================
+# Symbolic expressions
+# ============================================================
 
 def uniform_mgf_symbolic():
     """
-    Return a SymPy expression for the uniform MGF:
-        M(t) = (exp(t*b) - exp(t*a)) / (t*(b-a))
+    M(t) = (exp(t*b) - exp(t*a)) / (t*(b-a))
     """
-    t, a, b = sp.symbols('t a b', real=True, positive=True)
     return (sp.exp(t * b) - sp.exp(t * a)) / (t * (b - a))
 
 
 def uniform_cgf_symbolic():
     """
-    Returns symbolic expression for the CGF of the uniform prior:
-        K(t) = log( (exp(t*b) - exp(t*a)) / (t*(b-a)) )
+    K(t) = log( (exp(t*b) - exp(t*a)) / (t*(b-a)) )
     """
-    t, a, b = sp.symbols('t a b', real=True, positive=True)
     return sp.log(uniform_mgf_symbolic())
-
-
-def uniform_cgf(t: float, a: float, b: float) -> float:
-    """
-    Log MGF for uniform prior on [a, b].
-    For t != 0: log( (exp(t*b) - exp(t*a)) / (t*(b-a)) )
-    For t = 0: returns 0 (since M(0)=1).
-    """
-    if t == 0.0:
-        return 0.0
-    if t >= 0:
-        # For t > 0, the MGF may be large, but we allow it for completeness.
-        pass
-    # For t < 0, exp(t*b) and exp(t*a) are positive, denominator negative, ratio positive.
-    return math.log(math.exp(t * b) - math.exp(t * a)) - math.log(t * (b - a))
-
-
-def uniform_mgf(t: float, a: float, b: float) -> float:
-    """
-    Return the MGF in normal scale.
-    """
-    return math.exp(uniform_cgf(t, a, b))
-
-
-def uniform_cgf_jax(t, a, b):
-    """JAX version of log M(t)."""
-    return jnp.log((jnp.exp(t * b) - jnp.exp(t * a)) / (t * (b - a)))
-
-
-def uniform_mgf_jax(t, a, b):
-    """JAX version of M(t)."""
-    return jnp.exp(uniform_cgf_jax(t, a, b))
 
 
 def uniform_pdf_symbolic():
     """
-    Return a SymPy expression for the uniform density:
-        p(theta) = 1/(b-a)  for theta in [a, b]
+    p(theta) = 1/(b-a),  for a <= theta <= b
+             = 0,          otherwise
     """
-    theta, a, b = sp.symbols('theta a b', real=True, positive=True)
-    return 1 / (b - a)
+    return sp.Piecewise((1 / (b - a), (theta >= a) & (theta <= b)), (0, True))
 
 
-def uniform_pdf_symbolic_sub(params):
-    """
-    Return the symbolic uniform PDF with parameters substituted.
-    params must contain 'a' and 'b'.
-    """
-    theta = sp.Symbol('theta', real=True)
-    a = params['a']
-    b = params['b']
-    # The density is 1/(b-a) for theta in [a,b], but we return the constant.
-    # Support condition is handled by the user.
-    return sp.Integer(1) / (b - a)
+# ============================================================
+# Numeric CGF / MGF
+# ============================================================
+
+def uniform_cgf(t_val: float, a_val: float, b_val: float) -> float:
+    if t_val == 0.0:
+        return 0.0
+    return math.log(math.exp(t_val * b_val) - math.exp(t_val * a_val)) - math.log(t_val * (b_val - a_val))
+
+
+def uniform_mgf(t_val: float, a_val: float, b_val: float) -> float:
+    return math.exp(uniform_cgf(t_val, a_val, b_val))
+
+
+# ============================================================
+# JAX versions
+# ============================================================
+
+def uniform_cgf_jax(t_val, a_val, b_val):
+    return jnp.log((jnp.exp(t_val * b_val) - jnp.exp(t_val * a_val)) / (t_val * (b_val - a_val)))
+
+
+def uniform_mgf_jax(t_val, a_val, b_val):
+    return jnp.exp(uniform_cgf_jax(t_val, a_val, b_val))
+
+
+# ============================================================
+# SciPy PDF / logPDF (using scipy.stats.uniform)
+# ============================================================
+
+def uniform_pdf(theta_val: float, a_val: float, b_val: float) -> float:
+    return stats.uniform(loc=a_val, scale=b_val - a_val).pdf(theta_val)
+
+
+def uniform_logpdf(theta_val: float, a_val: float, b_val: float) -> float:
+    return stats.uniform(loc=a_val, scale=b_val - a_val).logpdf(theta_val)
+
+
+# ============================================================
+# Registry factory
+# ============================================================
+
+@register_prior("uniform")
+def uniform_factory(params):
+    a_val = float(params["a"])
+    b_val = float(params["b"])
+
+    # Build symbolic expressions using the global symbols
+    mgf_sym = (sp.exp(t * b) - sp.exp(t * a)) / (t * (b - a))
+    cgf_sym = sp.log(mgf_sym)
+    pdf_sym = sp.Piecewise((1 / (b - a), (theta >= a) & (theta <= b)), (0, True))
+
+    # Substitute numeric parameter values into the symbolic expressions
+    subs_map = {a: a_val, b: b_val}
+    mgf_sym = mgf_sym.subs(subs_map)
+    cgf_sym = cgf_sym.subs(subs_map)
+    pdf_sym = pdf_sym.subs(subs_map)
+
+    # Return the spec using make_prior_spec
+    return make_prior_spec(
+        mgf_sym=mgf_sym,
+        cgf_sym=cgf_sym,
+        pdf_sym=pdf_sym,
+
+        mgf=lambda t_val: uniform_mgf(t_val, a_val, b_val),
+        cgf=lambda t_val: uniform_cgf(t_val, a_val, b_val),
+
+        mgf_jax=lambda t_val: uniform_mgf_jax(t_val, a_val, b_val),
+        cgf_jax=lambda t_val: uniform_cgf_jax(t_val, a_val, b_val),
+
+        pdf_func=lambda x: uniform_pdf(x, a_val, b_val),
+        logpdf_func=lambda x: uniform_logpdf(x, a_val, b_val),
+
+        params=params,
+    )

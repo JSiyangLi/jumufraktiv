@@ -6,82 +6,96 @@ import math
 import sympy as sp
 import numpy as np
 import scipy.special as sc
+import scipy.stats as stats
 from sympy.functions.special.error_functions import expint
 import jax.numpy as jnp
 from jax.scipy.special import gammaln as jax_gammaln, gammaincc as jax_gammaincc
 import torch
 from torch.special import gammaincc as torch_gammaincc
-from jumufraktiv.registry import register_prior
-@register_prior("pareto")
 
+from jumufraktiv.logsum import logplus, logminus
+from jumufraktiv.registry import register_prior, make_prior_spec
+from jumufraktiv.symbols import t, theta, param
+
+
+# ============================================================
+# Canonical symbolic parameters
+# ============================================================
+alpha = param("alpha")
+xi = param("xi")
+
+
+# ============================================================
+# Symbolic expressions
+# ============================================================
 
 def pareto_mgf_symbolic():
     """
-    Returns a SymPy expression for the Pareto MGF using the exponential integral.
-        M(t) = alpha * E_{alpha+1}(-xi*t),   for t <= 0
+    M(t) = alpha * E_{alpha+1}(-xi*t),   for t <= 0
     """
-    t = sp.Symbol('t', real=True, nonpositive=True)
-    alpha = sp.Symbol('alpha', positive=True, real=True)
-    xi = sp.Symbol('xi', positive=True, real=True)
-    z = -xi * t
-    return alpha * expint(alpha + 1, z)
+    return alpha * expint(alpha + 1, -xi * t)
 
 
 def pareto_cgf_symbolic():
     """
-    Returns symbolic expression for the CGF of the Pareto distribution:
-        K(t) = log(alpha) + log(E_{alpha+1}(-xi*t))   for t <= 0
+    K(t) = log(alpha) + log(E_{alpha+1}(-xi*t))
     """
-    t = sp.Symbol('t', real=True, nonpositive=True)
-    alpha = sp.Symbol('alpha', positive=True, real=True)
-    xi = sp.Symbol('xi', positive=True, real=True)
-    z = -xi * t
-    return sp.log(alpha) + sp.log(expint(alpha + 1, z))
+    return sp.log(alpha) + sp.log(expint(alpha + 1, -xi * t))
 
 
-def pareto_cgf(t: float, alpha: float, xi: float) -> float:
+def pareto_pdf_symbolic():
     """
-    Return log M(t) for the Pareto distribution using SciPy's `log_gammaincc`.
+    p(theta) = alpha * xi^alpha / theta^(alpha+1),   theta >= xi
     """
-    if t > 0:
+    return alpha * xi**alpha / theta**(alpha + 1)
+
+
+# ============================================================
+# Numeric CGF / MGF (using scipy)
+# ============================================================
+
+def pareto_cgf(t_val: float, alpha_val: float, xi_val: float) -> float:
+    if t_val > 0:
         raise ValueError("MGF of Pareto distribution exists only for t <= 0")
-    if t == 0.0:
+    if t_val == 0.0:
         return 0.0
 
-    z = -xi * t
-    # log(Γ(-alpha, z)) via log_gammaincc
-    log_gamma_inc = np.log(sc.gammaincc(-alpha, z)) + sc.gammaln(-alpha) # when sp.log_gammaincc becomes available, replace by log_gamma_inc = sc.log_gammaincc(-alpha, z) + sc.gammaln(-alpha)
-    return math.log(alpha) + alpha * math.log(z) + log_gamma_inc
+    z = -xi_val * t_val
+    # log(Γ(-alpha, z)) via gammaincc + gammaln
+    log_gamma_inc = np.log(sc.gammaincc(-alpha_val, z)) + sc.gammaln(-alpha_val)
+    return math.log(alpha_val) + alpha_val * math.log(z) + log_gamma_inc
 
 
-def pareto_mgf(t: float, alpha: float, xi: float) -> float:
-    """Returns the Pareto MGF in ordinary scale."""
-    return math.exp(pareto_cgf(t, alpha, xi))
+def pareto_mgf(t_val: float, alpha_val: float, xi_val: float) -> float:
+    return math.exp(pareto_cgf(t_val, alpha_val, xi_val))
 
 
-def pareto_cgf_jax(t, alpha, xi):
-    """JAX version of log MGF for Pareto(shape=alpha, scale=xi)."""
-    def safe_log(t_val):
-        z = -xi * t_val
-        a = -alpha
+# ============================================================
+# JAX versions
+# ============================================================
+
+def pareto_cgf_jax(t_val, alpha_val, xi_val):
+    def safe_log(t):
+        z = -xi_val * t
+        a = -alpha_val
         log_gamma_a = jax_gammaln(a)
         log_q = jnp.log(jax_gammaincc(a, z))
         log_inc_gamma = log_gamma_a + log_q
-        return jnp.log(alpha) + alpha * jnp.log(z) + log_inc_gamma
-    return jnp.where(t == 0.0, 0.0, safe_log(t))
+        return jnp.log(alpha_val) + alpha_val * jnp.log(z) + log_inc_gamma
+    return jnp.where(t_val == 0.0, 0.0, safe_log(t_val))
 
 
-def pareto_mgf_jax(t, alpha, xi):
-    """JAX version of MGF (ordinary scale)."""
-    return jnp.exp(pareto_cgf_jax(t, alpha, xi))
+def pareto_mgf_jax(t_val, alpha_val, xi_val):
+    return jnp.exp(pareto_cgf_jax(t_val, alpha_val, xi_val))
 
+
+# ============================================================
+# Torch version (optional)
+# ============================================================
 
 def pareto_mgf_torch(t, alpha, xi):
-    """Torch version of M(t) for Pareto(shape=alpha, scale=xi)."""
-    # Convert alpha, xi to tensors
     alpha_t = torch.tensor(alpha, dtype=t.dtype, device=t.device)
     xi_t = torch.tensor(xi, dtype=t.dtype, device=t.device)
-
     z = -xi_t * t
     a = -alpha_t
 
@@ -93,20 +107,51 @@ def pareto_mgf_torch(t, alpha, xi):
     return torch.where(t == 0.0, 0.0, log_mgf).exp()
 
 
-def pareto_pdf_symbolic():
-    """
-    Return a SymPy expression for the Pareto density:
-        p(theta) = alpha * xi^alpha / theta^(alpha+1),  theta >= xi
-    """
-    theta, alpha, xi = sp.symbols('theta alpha xi', positive=True, real=True)
-    return alpha * xi**alpha * theta**(-alpha - 1)
+# ============================================================
+# SciPy PDF / logPDF
+# ============================================================
+
+def pareto_pdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
+    return stats.pareto(b=alpha_val, scale=xi_val).pdf(theta_val)
 
 
-def pareto_pdf_symbolic_sub(params):
-    """
-    Return the symbolic Pareto PDF with numeric parameters substituted.
-    params must contain 'alpha' and 'xi'.
-    """
-    alpha = params['alpha']
-    xi = params['xi']
-    return pareto_pdf_symbolic().subs({sp.Symbol('alpha'): alpha, sp.Symbol('xi'): xi})
+def pareto_logpdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
+    return stats.pareto(b=alpha_val, scale=xi_val).logpdf(theta_val)
+
+
+# ============================================================
+# Registry factory
+# ============================================================
+
+@register_prior("pareto")
+def pareto_factory(params):
+    alpha_val = float(params["alpha"])
+    xi_val = float(params["xi"])
+
+    # Build symbolic expressions using global symbols
+    mgf_sym = alpha * expint(alpha + 1, -xi * t)
+    cgf_sym = sp.log(alpha) + sp.log(expint(alpha + 1, -xi * t))
+    pdf_sym = alpha * xi**alpha / theta**(alpha + 1)
+
+    # Substitute numeric parameter values
+    subs_map = {alpha: alpha_val, xi: xi_val}
+    mgf_sym = mgf_sym.subs(subs_map)
+    cgf_sym = cgf_sym.subs(subs_map)
+    pdf_sym = pdf_sym.subs(subs_map)
+
+    return make_prior_spec(
+        mgf_sym=mgf_sym,
+        cgf_sym=cgf_sym,
+        pdf_sym=pdf_sym,
+
+        mgf=lambda t_val: pareto_mgf(t_val, alpha_val, xi_val),
+        cgf=lambda t_val: pareto_cgf(t_val, alpha_val, xi_val),
+
+        mgf_jax=lambda t_val: pareto_mgf_jax(t_val, alpha_val, xi_val),
+        cgf_jax=lambda t_val: pareto_cgf_jax(t_val, alpha_val, xi_val),
+
+        pdf_func=lambda x: pareto_pdf(x, alpha_val, xi_val),
+        logpdf_func=lambda x: pareto_logpdf(x, alpha_val, xi_val),
+
+        params=params,
+    )

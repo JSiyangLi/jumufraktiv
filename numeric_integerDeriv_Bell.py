@@ -15,19 +15,10 @@ import jax
 jax.config.update("jax_enable_x64", True)
 from jax import grad
 
-# Local imports
-from MGFdictionary.gammaMGF import (
-    gamma_cgf_symbolic,
-    gamma_cgf,
-    gamma_cgf_jax
-)
-from MGFdictionary.paretoMGF import (
-    pareto_cgf_symbolic,
-    pareto_cgf,
-    pareto_cgf_jax
-)
-from logsum import logplus, logminus, logplusvec
-from numeric_symbolic_decision import suggest_method_integerDeriv
+# New import for mitMGFprior
+from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.logsum import logplus, logminus, logplusvec
+from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
 from jax.experimental import jet
 import jax.numpy as jnp
 
@@ -150,32 +141,10 @@ def bell_polynomial_log(n: int, logv: list, vsign: list):
     return logB[n], signB[n]
 
 
-# ===== Helper: CGF function =====
-def get_cgf_func(prior: str, params: dict, use_jax: bool = False):
-    """
-    Return a callable cgf(t) = log M(t) for the given prior.
-    """
-    if prior.lower() == "gamma":
-        alpha = params['alpha']
-        beta = params['beta']
-        if use_jax:
-            return lambda t: gamma_cgf_jax(t, alpha, beta)
-        else:
-            return lambda t: gamma_cgf(t, alpha, beta)
-    else:  # pareto
-        alpha = params['alpha']
-        xi = params['xi']
-        if use_jax:
-            return lambda t: pareto_cgf_jax(t, alpha, xi)
-        else:
-            return lambda t: pareto_cgf(t, alpha, xi)
-
-
-# ===== Main function =====
+# ===== main function =====
 def integerDeriv_numeric_bell(
     t: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     order: int,
     symbolic_timeout: float = 600.0,
     cgf_method: str = 'auto'
@@ -187,10 +156,8 @@ def integerDeriv_numeric_bell(
     ----------
     t : float
         Evaluation point.
-    prior : str
-        'gamma' or 'pareto'.
-    params : dict
-        Prior parameters.
+    prior : mitMGFprior
+        Prior object providing symbolic and numeric CGF functions.
     order : int
         Derivative order (>= 0).
     symbolic_timeout : float, optional
@@ -202,6 +169,7 @@ def integerDeriv_numeric_bell(
             - 'auto': try jet, fall back to grad on failure (default)
             - 'jet': force JAX Taylor mode (jet)
             - 'grad': force nested jax.grad (reverse mode)
+        If 'jet' or 'grad', the symbolic path is skipped entirely.
 
     Returns
     -------
@@ -211,32 +179,36 @@ def integerDeriv_numeric_bell(
         raise ValueError("Order must be non‑negative.")
 
     # ----- 1. Build symbolic CGF expression -----
-    if prior.lower() == "gamma":
-        cgf_sym = gamma_cgf_symbolic()
-        all_syms = cgf_sym.free_symbols
-        t_sym = next(s for s in all_syms if s.name == 't')
-        alpha_sym = next(s for s in all_syms if s.name == 'alpha')
-        beta_sym = next(s for s in all_syms if s.name == 'beta')
-        param_syms = (alpha_sym, beta_sym)
-        param_names = ('alpha', 'beta')
-    else:
-        cgf_sym = pareto_cgf_symbolic()
-        all_syms = cgf_sym.free_symbols
-        t_sym = next(s for s in all_syms if s.name == 't')
-        alpha_sym = next(s for s in all_syms if s.name == 'alpha')
-        xi_sym = next(s for s in all_syms if s.name == 'xi')
-        param_syms = (alpha_sym, xi_sym)
-        param_names = ('alpha', 'xi')
+    cgf_sym = prior.cgf_sym
+    if cgf_sym is None:
+        raise ValueError("Prior does not provide a symbolic CGF (cgf_sym).")
 
-    # ----- 2. Decision (low-order test) -----
-    decision = suggest_method_integerDeriv(
-        cgf_sym, t_sym, order,
-        test_order=min(order, 2),
-        timeout=1.0,
-        return_decision=True
-    )
-    use_symbolic = decision['recommend_symbolic']
-    print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
+    if callable(cgf_sym):
+        cgf_sym = cgf_sym()
+
+    if not isinstance(cgf_sym, sp.Expr):
+        raise TypeError("cgf_sym must be a SymPy expression.")
+
+    t_sym = next((s for s in cgf_sym.free_symbols if s.name == 't'), None)
+    if t_sym is None:
+        raise RuntimeError("No symbol 't' found in the CGF expression.")
+
+    params = prior.params or {}
+
+    # ----- 2. Decision: force JAX if user explicitly requested jet/grad -----
+    if cgf_method.lower() in ('jet', 'grad'):
+        use_symbolic = False
+        print(f"Decision: Forced JAX numeric path (cgf_method='{cgf_method}')")
+    else:
+        # Run the low-order test only if method is 'auto'
+        decision = suggest_method_integerDeriv(
+            cgf_sym, t_sym, order,
+            test_order=min(order, 2),
+            timeout=1.0,
+            return_decision=True
+        )
+        use_symbolic = decision['recommend_symbolic']
+        print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
 
     # Flag to track numeric path
     use_jax = not use_symbolic
@@ -245,8 +217,9 @@ def integerDeriv_numeric_bell(
     if use_symbolic:
         try:
             subs_dict = {}
-            for name, sym in zip(param_names, param_syms):
-                subs_dict[sym] = float(params[name])
+            for sym in cgf_sym.free_symbols:
+                if sym.name in params:
+                    subs_dict[sym] = float(params[sym.name])
 
             kappa_log_abs = []
             kappa_sign = []
@@ -272,8 +245,7 @@ def integerDeriv_numeric_bell(
                     kappa_log_abs.append(math.log(abs(val)))
                     kappa_sign.append(1 if val > 0 else -1)
 
-            cgf_func = get_cgf_func(prior, params, use_jax=False)
-            cgf_t = cgf_func(t)
+            cgf_t = prior.cgf(t)
 
             log_abs_B, sign_B = bell_polynomial_log(order, kappa_log_abs, kappa_sign)
             result = cgf_t + log_abs_B
@@ -295,9 +267,10 @@ def integerDeriv_numeric_bell(
     # ----- 4. Numeric (JAX) path -----
     if use_jax:
         print("Using JAX numeric path...")
-        cgf_func = get_cgf_func(prior, params, use_jax=True)
+        cgf_func = prior.cgf_jax
+        if cgf_func is None:
+            raise ValueError("Prior does not provide cgf_jax.")
 
-        # Compute CGF derivatives using the chosen method
         if cgf_method == 'jet':
             kappa_log_abs, kappa_sign = cgf_derivatives_jet(cgf_func, t, order)
         elif cgf_method == 'grad':
@@ -315,40 +288,38 @@ def integerDeriv_numeric_bell(
 # ===== Example usage =====
 if __name__ == "__main__":
     import time
+    import math
+    import jumufraktiv.MGFdictionary  # ensures priors are registered
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
 
     print("=" * 60)
-    print("Testing integerDeriv_numeric_bell() for orders 0–3")
+    print("Testing integerDeriv_numeric_bell() for Gamma prior (orders 0–3)")
     print("=" * 60)
 
-    # Gamma
+    # ---- Gamma prior ----
     gamma_params = {'alpha': 2.0, 'beta': 3.0}
+    gamma_prior = mitMGFprior.from_registry("gamma", params=gamma_params)
     t_val = -1.0
     for n in range(4):
-        log_abs, sign = integerDeriv_numeric_bell(t_val, 'gamma', gamma_params, n)
+        log_abs, sign = integerDeriv_numeric_bell(t_val, gamma_prior, n)
         print(f"Gamma M^{{{n}}}({t_val}) : log|.| = {log_abs:.4f}, sign = {sign}")
 
-    # Pareto
-    pareto_params = {'alpha': 3.5, 'xi': 1.0}
-    t_val = -0.5
-    for n in range(4):
-        log_abs, sign = integerDeriv_numeric_bell(t_val, 'pareto', pareto_params, n)
-        print(f"Pareto M^{{{n}}}({t_val}) : log|.| = {log_abs:.4f}, sign = {sign}")
-
-    # ---- High‑order test: 51st derivative of Gamma with very small parameters ----
+    # ---- High‑order test: 50th derivative of Gamma with very small parameters ----
     print("\n" + "=" * 60)
-    print("Testing 51st derivative of Gamma MGF with small parameters")
+    print("Testing 50th derivative of Gamma MGF with small parameters")
     print("(alpha = beta = 1e-5, t = -1e-6)")
     print("=" * 60)
 
     alpha_small = 1e-5
     beta_small = 1e-5
     t_small = -1e-6
-    order_test = 51
+    order_test = 50
     small_params = {'alpha': alpha_small, 'beta': beta_small}
+    small_prior = mitMGFprior.from_registry("gamma", params=small_params)
 
     start = time.time()
     log_abs, sign = integerDeriv_numeric_bell(
-        t_small, 'gamma', small_params, order_test,
+        t_small, small_prior, order_test,
         symbolic_timeout=600.0   # 10 minutes
     )
     elapsed = time.time() - start
@@ -359,7 +330,6 @@ if __name__ == "__main__":
     print(f"  Time       = {elapsed:.3f} seconds")
 
     # Analytical check
-    import math
     log_falling = math.lgamma(alpha_small + order_test) - math.lgamma(alpha_small)
     log_expected = (log_falling
                     + alpha_small * math.log(beta_small)

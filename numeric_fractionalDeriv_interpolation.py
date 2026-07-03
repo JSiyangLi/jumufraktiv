@@ -10,12 +10,12 @@ and interpolates for target orders near the integer.
 import numpy as np
 from scipy.interpolate import CubicSpline
 from numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 
 def fractionalDeriv_interpolated(
     order: float,
-    prior: str,
-    params: dict,
+    prior: mitMGFprior,
     t: float,
     d_vec: tuple = (0.8, 0.9, 0.95),
     return_log: bool = True,
@@ -38,10 +38,8 @@ def fractionalDeriv_interpolated(
     ----------
     order : float
         Target fractional order (non‑integer, typically just below an integer).
-    prior : str
-        'gamma' or 'pareto'.
-    params : dict
-        Distribution parameters (must be numeric).
+    prior : mitMGFprior
+        Prior object providing the MGF and its functions.
     t : float
         Evaluation point.
     d_vec : tuple, optional
@@ -73,7 +71,6 @@ def fractionalDeriv_interpolated(
         return fractionalDeriv_numeric_scipy(
             order=order,
             prior=prior,
-            params=params,
             t=t,
             return_log=return_log,
             method=integer_method,
@@ -95,7 +92,6 @@ def fractionalDeriv_interpolated(
         log_abs, sign = fractionalDeriv_numeric_scipy(
             order=alpha,
             prior=prior,
-            params=params,
             t=t,
             return_log=True,
             method=integer_method,
@@ -126,18 +122,22 @@ def fractionalDeriv_interpolated(
 # ===== Example usage =====
 if __name__ == "__main__":
     import math
+    import jumufraktiv.MGFdictionary  # ensures priors are registered
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
 
-    # Test with exponential prior (Gamma(1,0.9))
-    params = {'alpha': 1.0, 'beta': 0.9}
-    lambda_exp = params['beta']
+    # Build a Gamma prior (Exponential(0.9) is Gamma(1, 0.9))
+    gamma_prior = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 1.0, "beta": 0.9}
+    )
+
     t_val = -1.0
     order_target = 1.999
 
     # Interpolated value
     log_abs_interp, sign_interp = fractionalDeriv_interpolated(
         order=order_target,
-        prior='gamma',
-        params=params,
+        prior=gamma_prior,
         t=t_val,
         d_vec=(0.8, 0.9, 0.95),
         integer_method='symbolic',
@@ -146,6 +146,7 @@ if __name__ == "__main__":
     print(f"Interpolated log|deriv| = {log_abs_interp:.6f}, sign = {sign_interp}")
 
     # Analytical formula for Exponential prior: D^α M(t) = λ * Γ(α+1) * (λ - t)^(-α-1)
+    lambda_exp = gamma_prior.params['beta']
     log_analytic = math.log(lambda_exp) + math.lgamma(order_target + 1) - (order_target + 1) * math.log(lambda_exp - t_val)
     print(f"Analytic log|deriv|      = {log_analytic:.6f}")
     print(f"Difference (interp - analytic) = {log_abs_interp - log_analytic:.2e}")
