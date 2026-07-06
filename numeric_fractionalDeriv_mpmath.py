@@ -16,7 +16,7 @@ All arithmetic is performed with the precision specified by mp.dps.
 """
 
 from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
-from derivativeDispatch import mgfDerivative_integer
+from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 

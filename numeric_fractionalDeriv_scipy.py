@@ -17,7 +17,7 @@ import math
 import numpy as np
 from scipy.integrate import quad
 from scipy.special import gamma as gamma_func
-from derivativeDispatch import mgfDerivative_integer
+from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 

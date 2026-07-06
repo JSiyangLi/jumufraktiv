@@ -9,7 +9,7 @@ and interpolates for target orders near the integer.
 
 import numpy as np
 from scipy.interpolate import CubicSpline
-from numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
+from jumufraktiv.numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 

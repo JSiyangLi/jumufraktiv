@@ -16,26 +16,26 @@ import numpy as np
 import pandas as pd
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
-from mitMGFprior_class import mitMGFprior
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t, theta
 
 # ============================================================
 # Likelihood registry
 # ============================================================
-from like_stats.Poisson import readyPoisson, cPoisson
-from like_stats.Gamma import readyGamma, cGamma
-from like_stats.Laplace import readyLaplace, cLaplace
-from like_stats.Normal import readyNormal, cNormal
-from like_stats.Rayleigh import readyRayleigh, cRayleigh
-from like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann
-from like_stats.InverseGamma import readyInverseGamma, cInverseGamma
-from like_stats.Levy import readyLevy, cLevy
-from like_stats.Weibull import readyWeibull, cWeibull
-from like_stats.BurrXII import readyBurrXII, cBurrXII
-from like_stats.Pareto import readyPareto, cPareto
-from like_stats.Dagum import readyDagum, cDagum
-from like_stats.Gompertz import readyGompertz, cGompertz
-from like_stats.HalfNormal import readyHalfNormal, cHalfNormal
+from jumufraktiv.like_stats.Poisson import readyPoisson, cPoisson
+from jumufraktiv.like_stats.Gamma import readyGamma, cGamma
+from jumufraktiv.like_stats.Laplace import readyLaplace, cLaplace
+from jumufraktiv.like_stats.Normal import readyNormal, cNormal
+from jumufraktiv.like_stats.Rayleigh import readyRayleigh, cRayleigh
+from jumufraktiv.like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann
+from jumufraktiv.like_stats.InverseGamma import readyInverseGamma, cInverseGamma
+from jumufraktiv.like_stats.Levy import readyLevy, cLevy
+from jumufraktiv.like_stats.Weibull import readyWeibull, cWeibull
+from jumufraktiv.like_stats.BurrXII import readyBurrXII, cBurrXII
+from jumufraktiv.like_stats.Pareto import readyPareto, cPareto
+from jumufraktiv.like_stats.Dagum import readyDagum, cDagum
+from jumufraktiv.like_stats.Gompertz import readyGompertz, cGompertz
+from jumufraktiv.like_stats.HalfNormal import readyHalfNormal, cHalfNormal
 
 
 # ============================================================
@@ -149,12 +149,12 @@ class MGFDerivative:
         if isinstance(result, sp.Expr):
             self._expr = result
             self._is_symbolic = True
-            self._log_abs = None
+            self.log_abs = None
             self._sign = None
         else:
             self._expr = None
             self._is_symbolic = False
-            self._log_abs, self._sign = result
+            self.log_abs, self._sign = result
 
     @property
     def is_symbolic(self):
@@ -173,7 +173,7 @@ class MGFDerivative:
         if self.is_symbolic:
             return self.c_func() * self._expr
         else:
-            total_log_abs = self.log_c + self._log_abs
+            total_log_abs = self.log_c + self.log_abs
             if self.log:
                 return total_log_abs, self._sign
             return math.exp(total_log_abs) * self._sign
@@ -516,11 +516,21 @@ class MGFDerivative:
         """
         Convert current posterior into a mitMGFprior object.
         """
-        return mitMGFprior.as_(
+        # Define backend functions that match the expected signature:
+        # mgf_backend(t, xp=math, **params) -> M(t)
+        # pdf_backend(theta, xp=math, **params) -> p(theta)
+        def mgf_backend(t_val, xp=math, **params):
+            return self.post_mgf(t_val, log=False)
+
+        def pdf_backend(theta_val, xp=math, **params):
+            return self.post_density(theta_val, log=False)
+
+        return mitMGFprior(
             name="posterior_prior",
-            mgf=lambda r: self.post_mgf(r, log=False),
-            pdf=lambda theta: self.post_density(theta, log=False)
-        )
+            mgf_backend=mgf_backend,
+            pdf_backend=pdf_backend,
+            params=self.params
+        ).as_mitMGFprior()
 
     def update(self, new_data, **kwargs):
         """

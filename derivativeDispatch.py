@@ -400,7 +400,7 @@ def mgfDerivative(
             scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
             scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
             try:
-                from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
+                from jumufraktiv.numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
             except ImportError as e:
                 raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
             # fractionalDeriv_interpolated now expects a prior object (no params)
