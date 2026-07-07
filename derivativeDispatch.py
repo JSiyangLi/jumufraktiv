@@ -98,21 +98,18 @@ def mgfDerivative_integer(
             simplify=simplify,
         )
 
-        # Return symbolic expression
+        # Return symbolic expression if no evaluation point given
         if t is None:
             return expr
 
-        # Substitution uses the global canonical t_sym
+        # Substitute the numeric t
         val = expr.subs(t_sym, t).evalf()
 
-        # If other symbols remain (e.g., alpha, beta), substitute from prior.params
+        # If there are still free symbols (e.g., hyperparameters), return the expression
         if val.free_symbols:
-            params = prior.params or {}
-            for sym in list(val.free_symbols):
-                if sym.name in params:
-                    val = val.subs(sym, params[sym.name])
-            val = val.evalf()
+            return (val, 1.0)
 
+        # Otherwise, evaluate to float
         val = float(val)
 
         if abs(val) < 1e-300:
@@ -266,7 +263,7 @@ def mgfDerivative_fractional(
 def mgfDerivative(
     order: float,
     prior,
-    method: str = "symbolic",
+    method: str = "auto",
     t: float = None,
     simplify: bool = False,
     log: bool = True,
@@ -294,10 +291,10 @@ def mgfDerivative(
     method : str, optional
         For integer order: one of 'symbolic', 'bell', 'jax'.
         For fractional order: one of 'scipy', 'mpmath', 'symbolic'.
-        Default 'symbolic'.
+        Special value: 'auto' (default) chooses 'symbolic' for integer orders,
+        and 'scipy' for fractional orders.
     t : float, optional
-        Evaluation point. Required for numeric methods ('bell', 'jax', 'scipy', 'mpmath').
-        For 'symbolic', if provided, the symbolic expression is evaluated numerically.
+        Evaluation point. Required for numeric methods.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for 'symbolic' methods).
     log : bool, optional
@@ -335,7 +332,7 @@ def mgfDerivative(
     Returns
     -------
     Depending on the method and order:
-        - If method='symbolic' and no numeric evaluation (t is None):
+        - If method='symbolic' and no numeric evaluation (t is None or not provided):
             sympy.Expr (symbolic expression)
         - If numeric evaluation (log=True): tuple (log_abs, sign)
         - If numeric evaluation (log=False): float (ordinary value)
@@ -360,6 +357,14 @@ def mgfDerivative(
     # ---- Determine if order is integer ----
     is_integer = abs(order - round(order)) < int_tol
 
+    # ---- Resolve 'auto' method ----
+    if method.lower() == 'auto':
+        if is_integer:
+            method = 'symbolic'
+        else:
+            method = 'scipy'
+
+    # ---- Dispatch ----
     if is_integer:
         int_order = int(round(order))
         valid_int_methods = {'symbolic', 'bell', 'jax'}
@@ -400,10 +405,10 @@ def mgfDerivative(
             scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
             scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
             try:
-                from jumufraktiv.numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
+                from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
             except ImportError as e:
                 raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
-            # fractionalDeriv_interpolated now expects a prior object (no params)
+            # Interpolation expects a prior object (no params)
             return fractionalDeriv_interpolated(
                 order=order,
                 prior=prior,

@@ -125,8 +125,8 @@ def pareto_logpdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
 
 @register_prior("pareto")
 def pareto_factory(params):
-    alpha_val = float(params["alpha"])
-    xi_val = float(params["xi"])
+    alpha_val = params["alpha"]
+    xi_val = params["xi"]
 
     # Build symbolic expressions using global symbols
     mgf_sym = alpha * expint(alpha + 1, -xi * t)

@@ -11,6 +11,7 @@ Priors are represented as mitMGFprior objects.
 """
 
 import math
+import traceback
 import sympy as sp
 import numpy as np
 import pandas as pd
@@ -69,7 +70,7 @@ class MGFDerivative:
         prior,                  # mitMGFprior object ONLY
         data,
         likelihood='poisson',
-        method='symbolic',
+        method='auto',
         simplify=False,
         log=True,
         **kwargs
@@ -135,7 +136,7 @@ class MGFDerivative:
             order=self.a,
             prior=self.prior,
             method=self.method,
-            t=float(-self.b),
+            t=-self.b,
             simplify=self.simplify,
             log=self.log,
             **self._deriv_kwargs
@@ -170,7 +171,7 @@ class MGFDerivative:
         If `self.is_symbolic` is True, returns a symbolic expression.
         Otherwise, returns numeric (log_abs, sign) or ordinary value.
         """
-        if self.is_symbolic:
+        if self._is_symbolic:
             return self.c_func() * self._expr
         else:
             total_log_abs = self.log_c + self.log_abs
@@ -191,7 +192,7 @@ class MGFDerivative:
             - Uses the prior's symbolic PDF if available.
         If `self.is_symbolic` is False: performs numeric evaluation.
         """
-        if self.is_symbolic:
+        if self._is_symbolic:
             try:
                 denom_expr = self._expr.subs(t, -self.b)
 
@@ -266,7 +267,7 @@ class MGFDerivative:
         Compute the posterior predictive density (or log-density) for new data.
         """
         # ---- Symbolic path ----
-        if self.is_symbolic:
+        if self._is_symbolic:
             try:
                 if isinstance(new_data, sp.Symbol):
                     a_new = sp.Symbol('a_new', real=True)
@@ -331,7 +332,7 @@ class MGFDerivative:
             order=a_combined,
             prior=self.prior,
             method=self.method,
-            t=float(-b_combined),
+            t=-b_combined,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
@@ -348,12 +349,12 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR MGF
     # ========================================================
-    def post_mgf(self, r, log=False):
+    def post_mgf(self, r, log=True):
         """
         Compute the posterior moment-generating function (MGF) at given r.
         """
         # ---- Symbolic path ----
-        if self.is_symbolic:
+        if self._is_symbolic:
             try:
                 if isinstance(r, sp.Symbol) or r is None:
                     r_sym = sp.Symbol('r', real=True) if r is None else r
@@ -398,7 +399,7 @@ class MGFDerivative:
                 print(f"⚠️ Symbolic computation failed: {e}. Falling back to numeric.")
 
         # ---- Numeric path ----
-        if self.is_symbolic:
+        if self._is_symbolic:
             raise ValueError("Cannot compute numeric MGF from a symbolic derivative.")
         if r is None:
             raise ValueError("For numeric evaluation, r must be provided.")
@@ -407,7 +408,7 @@ class MGFDerivative:
             order=self.a,
             prior=self.prior,
             method=self.method,
-            t=float(r - self.b),
+            t=r - self.b,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
@@ -426,11 +427,11 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR MOMENT
     # ========================================================
-    def post_moment(self, q, log=False):
+    def post_moment(self, q, numerator_method='auto', log=True):
         """
         Compute the posterior moment of order q.
         """
-        if self.is_symbolic:
+        if self._is_symbolic:
             try:
                 q_is_symbol = isinstance(q, sp.Symbol)
                 if q_is_symbol:
@@ -441,7 +442,7 @@ class MGFDerivative:
                 deriv_expr = mgfDerivative(
                     order=order,
                     prior=self.prior,
-                    method='symbolic',
+                    method=numerator_method,
                     t=None,
                     simplify=self.simplify,
                     log=False
@@ -482,7 +483,7 @@ class MGFDerivative:
                 print(f"⚠️ Symbolic moment computation failed: {e}. Falling back to numeric.")
 
         # ---- Numeric path ----
-        if self.is_symbolic:
+        if self._is_symbolic:
             raise ValueError("Cannot compute numeric moment from a symbolic derivative.")
         if not isinstance(q, (int, float)):
             raise ValueError("For numeric evaluation, q must be numeric.")
@@ -491,8 +492,8 @@ class MGFDerivative:
         log_abs_num, sign_num = mgfDerivative(
             order=order_num,
             prior=self.prior,
-            method=self.method,
-            t=float(-self.b),
+            method=numerator_method,
+            t=-self.b,
             simplify=self.simplify,
             log=True,
             **self._deriv_kwargs
@@ -515,10 +516,35 @@ class MGFDerivative:
     def to_prior_object(self):
         """
         Convert current posterior into a mitMGFprior object.
+        Tries to construct a symbolic prior first if possible.
         """
-        # Define backend functions that match the expected signature:
-        # mgf_backend(t, xp=math, **params) -> M(t)
-        # pdf_backend(theta, xp=math, **params) -> p(theta)
+        # ---- Try symbolic route (if derivative is symbolic) ----
+        print("self._is_symbolic =", self._is_symbolic)
+        print("type(self._is_symbolic) =", type(self._is_symbolic))
+        if self._is_symbolic:
+            try:
+                # Use 'r' as the MGF argument symbol (post_mgf expects a symbol)
+                r_sym = sp.Symbol('r', real=True)
+
+                # Get symbolic expressions from post_mgf and post_density
+                mgf_sym_expr = self.post_mgf(r_sym, log=False)
+                pdf_sym_expr = self.post_density(theta, log=False)   # use canonical theta
+
+                # Ensure they are SymPy expressions
+                if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):
+                    return mitMGFprior(
+                        name="posterior_prior_symbolic",
+                        mgf_sym=mgf_sym_expr,
+                        pdf_sym=pdf_sym_expr,
+                        params=self.params
+                    ).as_mitMGFprior()
+            except Exception as e:
+                print("Symbolic construction failed:")
+                import traceback
+                traceback.print_exc()
+                pass
+
+        # ---- Backend (numeric) route ----
         def mgf_backend(t_val, xp=math, **params):
             return self.post_mgf(t_val, log=False)
 
@@ -537,14 +563,28 @@ class MGFDerivative:
         Sequential update returns a new MGFDerivative,
         using posterior mitMGFprior as prior.
         """
-        post_prior = self.to_prior_object()
+        # Extract known arguments
+        method = kwargs.pop("method", self.method)
+        likelihood = kwargs.pop("likelihood", self.likelihood)
+        simplify = kwargs.pop("simplify", self.simplify)
+        log = kwargs.pop("log", self.log)
 
+        # Enforce symbolic restriction
+        if method == 'symbolic' and not self._is_symbolic:
+            raise ValueError(
+                "Cannot use symbolic method for sequential update when the posterior derivative is numeric. "
+                "The posterior prior is numeric and cannot be used symbolically. Choose a numeric method (jax, bell, scipy, mpmath)."
+            )
+
+        post_prior = self.to_prior_object()
+        print("symbolic:", self._is_symbolic)
         return MGFDerivative(
             prior=post_prior,
             data=new_data,
-            likelihood=kwargs.get("likelihood", self.likelihood),
-            method=kwargs.get("method", self.method),
-            simplify=kwargs.get("simplify", self.simplify),
-            log=kwargs.get("log", self.log),
+            likelihood=likelihood,
+            method=method,
+            simplify=simplify,
+            log=log,
             **kwargs
         )
+
