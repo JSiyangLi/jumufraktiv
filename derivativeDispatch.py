@@ -15,6 +15,7 @@ Function:
 """
 
 import math
+import warnings
 import sympy as sp
 import numpy as np
 from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
@@ -107,7 +108,7 @@ def mgfDerivative_integer(
 
         # If there are still free symbols (e.g., hyperparameters), return the expression
         if val.free_symbols:
-            return (val, 1.0)
+            return val
 
         # Otherwise, evaluate to float
         val = float(val)
@@ -195,7 +196,11 @@ def mgfDerivative_fractional(
         One of:
             - 'scipy'   : uses scipy.integrate.quad (adaptive range, with fallback to tan)
             - 'mpmath'  : uses mpmath.quad (high precision)
-            - 'symbolic': returns a symbolic expression (no numerical evaluation)
+            - If method == "symbolic":
+                Performs the computation symbolically. If unresolved symbols remain after substitution, returns a SymPy expression.
+
+    Otherwise returns a numeric result
+    (float or (log_abs, sign) according to `log`).
         Default 'scipy'.
     t : float, optional
         Evaluation point. Required for numeric methods ('scipy', 'mpmath').
@@ -222,10 +227,48 @@ def mgfDerivative_fractional(
     """
     # ---- Handle symbolic method ----
     if method.lower() == "symbolic":
-        print("⚠️ Warning: Symbolic computation of fractional derivatives can be very slow and inefficient. Consider using 'scipy' or 'mpmath' for numerical evaluation.")
+
+        warnings.warn(
+            "⚠️ Warning: Symbolic computation of fractional derivatives "
+            "can be very slow and inefficient. "
+            "Consider using 'scipy' or 'mpmath' for numerical evaluation."
+        )
+
         from symbolic_fractionalDeriv import fractionalDeriv_symbolic
-        expr = fractionalDeriv_symbolic(order=order, prior=prior, simplify=simplify, **kwargs)
-        return expr
+
+        expr = fractionalDeriv_symbolic(
+            order=order,
+            prior=prior,
+            simplify=simplify,
+            **kwargs
+        )
+
+        if expr is None:
+            return None
+
+        # If no evaluation point is supplied,
+        # remain symbolic.
+        if t is None:
+            return expr
+
+        # Substitute t.
+        expr = expr.subs(t_sym, t).evalf()
+
+        # Still symbolic?
+        if expr.free_symbols:
+            return expr
+
+        # Fully numeric from here.
+        value = float(expr)
+
+        if abs(value) < 1e-300:
+            log_abs = -math.inf
+            sign = 1
+        else:
+            log_abs = math.log(abs(value))
+            sign = 1 if value > 0 else -1
+
+        return (log_abs, sign) if log else value
 
     # ---- Numeric methods require t ----
     if t is None or math.isnan(t):

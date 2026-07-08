@@ -12,6 +12,7 @@ Priors are represented as mitMGFprior objects.
 
 import math
 import traceback
+from unittest import result
 import sympy as sp
 import numpy as np
 import pandas as pd
@@ -120,46 +121,115 @@ class MGFDerivative:
         self.log_c = stats['log_c']
 
         # ----------------------------------------------------
-        # Compute derivative
+        # Build derivative representation
+        # ----------------------------------------------------
+        self._build_derivative()
+
+        # ----------------------------------------------------
+        # Evaluate derivative at posterior point t=-b
         # ----------------------------------------------------
         self._compute()
 
     # ========================================================
-    # CORE COMPUTATION
+    # CORE COMPUTATION, 3-layer design
     # ========================================================
+    def _build_derivative(self):
+        """
+        Construct D_a(t)=M^(a)(t) without evaluating at t=-b.
+        """
+        self._deriv = mgfDerivative(
+            order=self.a,
+            prior=self.prior,
+            method=self.method,
+            t=None,
+            simplify=self.simplify,
+            log=False,
+            **self._deriv_kwargs
+        )
+        self._deriv_is_symbolic = isinstance(self._deriv, sp.Expr) # is the derivative function representation symbolic? Can I represent D_a(t) symbolically?
+    
+    def _evaluate_derivative(self, t_value):
+        if isinstance(self._deriv, sp.Basic):
+            val = self._deriv.subs(t, t_value)
+            if not val.free_symbols:
+                numeric_val = float(val.evalf())
+                if self.log:
+                    # Return (log_abs, sign)
+                    if abs(numeric_val) < 1e-300:
+                        return (-float('inf'), 1)
+                    return (math.log(abs(numeric_val)), 1 if numeric_val > 0 else -1)
+                else:
+                    # Return scalar
+                    return numeric_val
+            return val
+        else:
+            # Numeric function (callable)
+            return self._deriv(t_value, **self._deriv_kwargs)
+    
     def _compute(self):
         """
         Delegates ALL math to mgfDerivative,
         using mitMGFprior ONLY as input.
         """
-        result = mgfDerivative(
-            order=self.a,
-            prior=self.prior,
-            method=self.method,
-            t=-self.b,
-            simplify=self.simplify,
-            log=self.log,
-            **self._deriv_kwargs
-        )
+        result = self._evaluate_derivative(-self.b)
         self._store_result(result)
 
     # ========================================================
     # RESULT STORAGE
     # ========================================================
     def _store_result(self, result):
+
+        # ----------------------------------------------------
+        # Symbolic state
+        # ----------------------------------------------------
         if isinstance(result, sp.Expr):
-            self._expr = result
-            self._is_symbolic = True
+            self._result_expr = result
+            self._is_symbolic = True # Is D_a(-b) symbolic after evaluation? is the stored evaluated result symbolic?
             self.log_abs = None
             self._sign = None
-        else:
-            self._expr = None
-            self._is_symbolic = False
+            self.value = None
+            return
+
+        # ----------------------------------------------------
+        # Numeric state
+        # ----------------------------------------------------
+        self._result_expr = None
+        self._is_symbolic = False
+
+        if self.log:
+            # Expect (log_abs, sign)
+            if not isinstance(result, tuple):
+                raise TypeError(
+                    "Expected (log_abs, sign) tuple when log=True."
+                )
             self.log_abs, self._sign = result
+            self.value = None
+
+        else:
+            # Expect ordinary numeric value
+            if isinstance(result, tuple):
+                raise TypeError(
+                    "Expected numeric value when log=False, "
+                    "but received (log_abs, sign)."
+                )
+
+            self.value = float(result)
+            self.log_abs = None
+            self._sign = None
 
     @property
     def is_symbolic(self):
         return self._is_symbolic
+    
+    @property
+    def value_numeric(self):
+        if self._is_symbolic:
+            raise ValueError("Result is symbolic")
+
+        if self.log:
+            return self._sign * math.exp(self.log_abs)
+
+        return self.value
 
     # ========================================================
     # EVIDENCE
@@ -169,15 +239,22 @@ class MGFDerivative:
         Return the marginal likelihood (evidence).
 
         If `self.is_symbolic` is True, returns a symbolic expression.
-        Otherwise, returns numeric (log_abs, sign) or ordinary value.
+
+        Otherwise:
+            - if self.log=True: returns (log_abs, sign)
+            - if self.log=False: returns ordinary numeric value
         """
+
         if self._is_symbolic:
-            return self.c_func() * self._expr
+            return self.c_func() * self._result_expr
+
         else:
-            total_log_abs = self.log_c + self.log_abs
             if self.log:
+                total_log_abs = self.log_c + self.log_abs
                 return total_log_abs, self._sign
-            return math.exp(total_log_abs) * self._sign
+
+            else:
+                return math.exp(self.log_c) * self.value
 
     # ========================================================
     # POSTERIOR DENSITY
@@ -194,51 +271,48 @@ class MGFDerivative:
         """
         if self._is_symbolic:
             try:
-                denom_expr = self._expr.subs(t, -self.b)
+                denom_expr = self._evaluate_derivative(-self.b)
 
-                # Determine theta symbol
                 if theta_val is None or isinstance(theta_val, sp.Symbol):
                     theta_sym = theta if theta_val is None else theta_val
+
                 else:
                     theta_sym = theta
 
-                # Get symbolic PDF from the prior
                 pdf_sym = self.prior.pdf_sym
-                if pdf_sym is None:
-                    raise ValueError("No symbolic PDF available for this prior.")
 
                 if callable(pdf_sym):
                     pdf_sym = pdf_sym()
 
-                if not isinstance(pdf_sym, sp.Expr):
-                    raise TypeError("pdf_sym must be a SymPy expression.")
-
-                # Substitute numeric parameters if they exist
-                if self.params is not None:
-                    subs_dict = {}
-                    for sym in pdf_sym.free_symbols:
-                        if sym.name in self.params:
-                            subs_dict[sym] = self.params[sym.name]
-                    if subs_dict:
-                        pdf_sym = pdf_sym.subs(subs_dict)
-
                 log_prior = sp.log(pdf_sym)
 
-                log_num = log_prior + self.a * sp.log(theta_sym) - self.b * theta_sym
-                log_post = log_num - sp.log(denom_expr)
+                log_num = (
+                    log_prior
+                    + self.a * sp.log(theta_sym)
+                    - self.b * theta_sym
+                )
 
+                log_post = sp.simplify(
+                    log_num - sp.log(denom_expr)
+                )
+
+                # resolve theta if numeric
                 if theta_val is not None and not isinstance(theta_val, sp.Symbol):
-                    if hasattr(theta_val, '__len__'):
-                        from sympy import lambdify
-                        func = lambdify(theta_sym, log_post, modules='numpy')
-                        return func(theta_val)
-                    else:
-                        return float(log_post.subs(theta_sym, float(theta_val)).evalf())
+
+                    evaluated = log_post.subs(theta_sym, theta_val).evalf()
+
+                    if evaluated.free_symbols:
+                        return evaluated if log else sp.exp(evaluated)
+
+                    return float(evaluated) if log else float(sp.exp(evaluated))
+
                 else:
                     return log_post if log else sp.exp(log_post)
 
             except Exception as e:
-                print(f"⚠️ Symbolic computation failed: {e}. Falling back to numeric.")
+                raise RuntimeError(
+                    f"Symbolic posterior density computation failed: {e}"
+                ) from e
 
         # ---- Numeric path ----
         if theta_val is None:
@@ -253,7 +327,15 @@ class MGFDerivative:
             raise ValueError("No numeric PDF function available for this prior.")
 
         log_num = log_prior + self.a * np.log(theta_val) - self.b * theta_val
-        log_post = log_num - self.log_abs
+        # reconstruct normalization constant
+
+        if self.log:
+            log_denom = self.log_abs
+        else:
+            log_denom = math.log(self.value)
+
+        log_post = log_num - log_denom
+
         if log:
             return log_post
         else:
@@ -273,49 +355,53 @@ class MGFDerivative:
                     a_new = sp.Symbol('a_new', real=True)
                     b_new = sp.Symbol('b_new', real=True)
                     log_c_new = sp.Symbol('log_c_new', real=True)
-                    numeric_new = False
                 else:
                     stats_new = self.ready_func(new_data, **kwargs)
                     a_new = stats_new['a']
                     b_new = stats_new['b']
                     log_c_new = stats_new['log_c']
-                    numeric_new = True
 
                 combined_order = self.a + a_new
                 combined_b = self.b + b_new
 
-                deriv_combined = mgfDerivative(
+                num = mgfDerivative(
                     order=combined_order,
                     prior=self.prior,
-                    method='symbolic',
-                    t=None,
+                    method="symbolic",
+                    t=-combined_b,
                     simplify=self.simplify,
-                    log=False
+                    log=True
                 )
-                num_expr = deriv_combined.subs(t, -combined_b)
-                denom_expr = self._expr.subs(t, -self.b)
 
-                log_pred = log_c_new + sp.log(num_expr) - sp.log(denom_expr)
+                if isinstance(num, tuple):
+                    raise RuntimeError(
+                        "Symbolic predictive unexpectedly received numeric derivative."
+                    )
 
-                if numeric_new:
+                denom = self._evaluate_derivative(-self.b)
+
+                log_pred = (
+                    log_c_new
+                    + sp.log(num)
+                    - sp.log(denom)
+                )
+
+                # final symbol resolution
+                if log_pred.free_symbols:
                     subs_dict = {}
                     for sym in log_pred.free_symbols:
                         if sym.name in self.params:
                             subs_dict[sym] = self.params[sym.name]
-                    if subs_dict:
-                        log_pred_sub = log_pred.subs(subs_dict)
-                    else:
-                        log_pred_sub = log_pred
-
-                    if hasattr(new_data, '__len__') and not isinstance(new_data, (str, bytes)):
-                        return float(log_pred_sub.evalf()) if log else float(sp.exp(log_pred_sub).evalf())
-                    else:
-                        return float(log_pred_sub.evalf()) if log else float(sp.exp(log_pred_sub).evalf())
-                else:
+                    log_pred = log_pred.subs(subs_dict)
+    
                     return log_pred if log else sp.exp(log_pred)
 
+                return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
+
             except Exception as e:
-                print(f"⚠️ Symbolic predictive computation failed: {e}. Falling back to numeric.")
+                raise RuntimeError(
+                    f"Symbolic predictive computation failed: {e}"
+                ) from e
 
         # ---- Numeric path ----
         if isinstance(new_data, sp.Symbol):
@@ -356,51 +442,45 @@ class MGFDerivative:
         # ---- Symbolic path ----
         if self._is_symbolic:
             try:
-                if isinstance(r, sp.Symbol) or r is None:
-                    r_sym = sp.Symbol('r', real=True) if r is None else r
-                else:
-                    r_sym = sp.Symbol('r', real=True)
+                r_sym = sp.Symbol('r', real=True) if r is None else (
+                    r if isinstance(r, sp.Symbol)
+                    else sp.Symbol('r', real=True)
+                )
 
-                num_expr = self._expr.subs(t, r_sym - self.b)
-                denom_expr = self._expr.subs(t, -self.b)
+                num_expr = self._evaluate_derivative(r_sym - self.b)
+                denom_expr = self._evaluate_derivative(-self.b)
 
                 log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
-                if isinstance(r, (int, float)) or hasattr(r, '__len__'):
-                    subs_dict = {}
-                    for sym in log_ratio.free_symbols:
-                        if sym.name in self.params:
-                            subs_dict[sym] = self.params[sym.name]
-                    if subs_dict:
-                        log_ratio_sub = log_ratio.subs(subs_dict)
-                    else:
-                        log_ratio_sub = log_ratio
+                # substitute known parameters
+                if self.params is not None:
+                    log_ratio = log_ratio.subs(
+                        {
+                            sym:self.params[sym.name]
+                            for sym in log_ratio.free_symbols
+                            if sym.name in self.params
+                        }
+                    )
 
-                    if hasattr(r, '__len__') and not isinstance(r, (str, bytes)):
-                        from sympy import lambdify
-                        func = lambdify(r_sym, log_ratio_sub, modules='numpy')
-                        if log:
-                            return func(r)
-                        else:
-                            return np.exp(func(r))
-                    else:
-                        log_val = float(log_ratio_sub.evalf())
-                        if log:
-                            return log_val
-                        else:
-                            return np.exp(log_val)
+                # symbol-numeric decision
+                if log_ratio.free_symbols:
+                    return log_ratio if log else sp.exp(log_ratio)
+
+                # fully numeric
+                if hasattr(r, '__len__') and not isinstance(r,(str,bytes)):
+                    func = sp.lambdify(r_sym, log_ratio, modules="numpy")
+                    val = func(r)
                 else:
-                    if log:
-                        return log_ratio
-                    else:
-                        return sp.exp(log_ratio)
+                    val = float(log_ratio.evalf())
+
+                return val if log else np.exp(val)
 
             except Exception as e:
-                print(f"⚠️ Symbolic computation failed: {e}. Falling back to numeric.")
+                raise RuntimeError(
+                    f"Symbolic computation failed: {e}. Falling back to numeric."
+                ) from e
 
         # ---- Numeric path ----
-        if self._is_symbolic:
-            raise ValueError("Cannot compute numeric MGF from a symbolic derivative.")
         if r is None:
             raise ValueError("For numeric evaluation, r must be provided.")
 
@@ -433,11 +513,7 @@ class MGFDerivative:
         """
         if self._is_symbolic:
             try:
-                q_is_symbol = isinstance(q, sp.Symbol)
-                if q_is_symbol:
-                    order = self.a + q
-                else:
-                    order = self.a + q
+                order = self.a + q
 
                 deriv_expr = mgfDerivative(
                     order=order,
@@ -447,40 +523,34 @@ class MGFDerivative:
                     simplify=self.simplify,
                     log=False
                 )
+
                 num_expr = deriv_expr.subs(t, -self.b)
-                denom_expr = self._expr.subs(t, -self.b)
+                denom_expr = self._evaluate_derivative(-self.b)
 
                 log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
-                if not q_is_symbol:
-                    subs_dict = {}
-                    for sym in log_ratio.free_symbols:
-                        if sym.name in self.params:
-                            subs_dict[sym] = self.params[sym.name]
-                    if subs_dict:
-                        log_ratio_sub = log_ratio.subs(subs_dict)
-                    else:
-                        log_ratio_sub = log_ratio
+                # substitute known parameters
+                if self.params is not None:
+                    log_ratio = log_ratio.subs(
+                        {
+                            sym: self.params[sym.name]
+                            for sym in log_ratio.free_symbols
+                            if sym.name in self.params
+                        }
+                    )
 
-                    try:
-                        log_val = float(log_ratio_sub.evalf())
-                        if log:
-                            return log_val
-                        else:
-                            return np.exp(log_val)
-                    except Exception:
-                        if log:
-                            return log_ratio
-                        else:
-                            return sp.exp(log_ratio)
-                else:
-                    if log:
-                        return log_ratio
-                    else:
-                        return sp.exp(log_ratio)
+                # symbol-numeric decision
+                if log_ratio.free_symbols:
+                    return log_ratio if log else sp.exp(log_ratio)
+
+                # fully numeric
+                val = float(log_ratio.evalf())
+                return val if log else np.exp(val)
 
             except Exception as e:
-                print(f"⚠️ Symbolic moment computation failed: {e}. Falling back to numeric.")
+                raise RuntimeError(
+                    f"Symbolic computation failed: {e}. Falling back to numeric."
+                ) from e
 
         # ---- Numeric path ----
         if self._is_symbolic:
@@ -521,6 +591,7 @@ class MGFDerivative:
         # ---- Try symbolic route (if derivative is symbolic) ----
         print("self._is_symbolic =", self._is_symbolic)
         print("type(self._is_symbolic) =", type(self._is_symbolic))
+
         if self._is_symbolic:
             try:
                 # Use 'r' as the MGF argument symbol (post_mgf expects a symbol)
@@ -546,10 +617,10 @@ class MGFDerivative:
 
         # ---- Backend (numeric) route ----
         def mgf_backend(t_val, xp=math, **params):
-            return self.post_mgf(t_val, log=False)
+            return self.post_mgf(t_val, log=self.log)
 
         def pdf_backend(theta_val, xp=math, **params):
-            return self.post_density(theta_val, log=False)
+            return self.post_density(theta_val, log=self.log)
 
         return mitMGFprior(
             name="posterior_prior",
@@ -584,7 +655,7 @@ class MGFDerivative:
             likelihood=likelihood,
             method=method,
             simplify=simplify,
-            log=log,
+            log=log, # new object's requested state
             **kwargs
         )
 
