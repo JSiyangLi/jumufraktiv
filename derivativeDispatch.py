@@ -25,7 +25,7 @@ from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 from jumufraktiv.symbols import t as t_sym
 
 def mgfDerivative_integer(
-    order: int,
+    order: int | sp.Expr,
     prior,
     method: str = "symbolic",
     t: float = None,        # parameter name is 't' (matches global symbol)
@@ -39,7 +39,7 @@ def mgfDerivative_integer(
 
     Parameters
     ----------
-    order : int
+    order : int | sp.Expr
         Non-negative derivative order.
 
     prior : mitMGFprior
@@ -397,18 +397,49 @@ def mgfDerivative(
         raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
     min_dev = 1.0 - max(d_vec)
 
-    # ---- Determine if order is integer ----
-    is_integer = abs(order - round(order)) < int_tol
+    # ---- Determine order type ----
+    if isinstance(order, sp.Basic):
+        order_type = "symbolic"
+    else:
+        if abs(order - round(order)) < int_tol:
+            order_type = "integer"
+        else:
+            order_type = "fractional"
 
     # ---- Resolve 'auto' method ----
     if method.lower() == 'auto':
-        if is_integer:
+        if order_type == "symbolic":
+            method = 'symbolic'
+        elif order_type == "integer":
             method = 'symbolic'
         else:
             method = 'scipy'
 
     # ---- Dispatch ----
-    if is_integer:
+    if order_type == "symbolic":
+        if method.lower() not in {'auto', 'symbolic'}:
+            raise ValueError(f"Invalid method '{method}' for symbolic order. Only 'symbolic' is allowed.")
+        
+        warnings.warn(
+            "Derivative order contains symbolic variables. "
+            "Using integerDeriv_symbolic() as a formal symbolic derivative. "
+            "The resulting expression is often the analytic continuation "
+            "to non-integer orders, but this is not guaranteed.",
+            UserWarning,
+        )
+        
+        return mgfDerivative_integer(
+            order=order,
+            prior=prior,
+            method="symbolic",
+            t=t,
+            simplify=simplify,
+            log=log,
+            symbolic_timeout=symbolic_timeout,
+            cgf_method=cgf_method,
+        )
+    
+    elif order_type == "integer":
         int_order = int(round(order))
         valid_int_methods = {'symbolic', 'bell', 'jax'}
         if method.lower() not in valid_int_methods:

@@ -13,6 +13,8 @@ t = sp.Symbol("t", real=True)
 # latent variable (parameter space)
 theta = sp.Symbol("theta", positive=True, real=True)
 
+# posterior MGF variable
+r = sp.Symbol("r", real=True)
 
 # ============================================================
 # Parameter symbol factory (important for extensibility)

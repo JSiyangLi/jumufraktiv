@@ -35,6 +35,8 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     RuntimeError
         If no 't' symbol is found in the MGF expression.
     """
+    if not isinstance(order, int):
+        raise TypeError("SymPy currently does not support symbolic differentiation for orders other than integers, including symbolic orders.")
     if order < 0:
         raise ValueError("Order of derivative must be non‑negative.")
 
