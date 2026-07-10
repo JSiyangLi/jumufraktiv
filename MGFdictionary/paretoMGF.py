@@ -120,6 +120,87 @@ def pareto_logpdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
 
 
 # ============================================================
+# Incomplete MGF (upper‑truncated at u)
+# ============================================================
+
+def pareto_imgf_symbolic(u_sym):
+    s = -t
+    return alpha * (s * xi)**alpha * (
+        sp.uppergamma(-alpha, s * xi) - sp.uppergamma(-alpha, s * u_sym)
+    )
+
+def pareto_logimgf_symbolic(u_sym):
+    return sp.log(pareto_imgf_symbolic(u_sym))
+
+
+def pareto_imgf(t_val, alpha_val, xi_val, u_val):
+    if np.any(t_val > 0):
+        raise ValueError("t must be ≤ 0")
+    if np.isscalar(t_val) and t_val == 0:
+        return 1.0 - (xi_val / u_val)**alpha_val
+    s = -t_val
+    a = -alpha_val
+    z1 = s * xi_val
+    z2 = s * u_val
+    gamma_a = sc.gamma(a)  # signed Γ(a)
+    diff = (sc.gammaincc(a, z1) - sc.gammaincc(a, z2)) * gamma_a
+    return alpha_val * (s * xi_val)**alpha_val * diff
+
+
+def pareto_logimgf(t_val, alpha_val, xi_val, u_val):
+    if np.any(t_val > 0):
+        raise ValueError("t must be ≤ 0")
+    if np.isscalar(t_val) and t_val == 0:
+        return np.log1p(-(xi_val / u_val)**alpha_val)
+    s = -t_val
+    a = -alpha_val
+    z1 = s * xi_val
+    z2 = s * u_val
+    reg1 = sc.gammaincc(a, z1)
+    reg2 = sc.gammaincc(a, z2)
+    diff = reg1 - reg2
+    # diff should be positive; use absolute for safety
+    sign = np.sign(diff)
+    log_val = (np.log(alpha_val) + alpha_val * np.log(s * xi_val) +
+               sc.gammaln(a) + np.log(np.abs(diff)))
+    return log_val
+
+
+# ---- JAX ----
+def pareto_imgf_jax(t_val, alpha_val, xi_val, u_val):
+    def compute(t):
+        s = -t
+        a = -alpha_val
+        z1 = s * xi_val
+        z2 = s * u_val
+        gamma_a = jnp.exp(jax_gammaln(a)) * jnp.sign(jnp.gamma(a))
+        reg1 = jax_gammaincc(a, z1)
+        reg2 = jax_gammaincc(a, z2)
+        diff = (reg1 - reg2) * gamma_a
+        return alpha_val * (s * xi_val)**alpha_val * diff
+    return jnp.where(t_val == 0.0,
+                     1.0 - (xi_val / u_val)**alpha_val,
+                     compute(t_val))
+
+def pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val):
+    def compute_log(t):
+        s = -t
+        a = -alpha_val
+        z1 = s * xi_val
+        z2 = s * u_val
+        reg1 = jax_gammaincc(a, z1)
+        reg2 = jax_gammaincc(a, z2)
+        diff = reg1 - reg2
+        log_abs_diff = jnp.log(jnp.abs(diff), where=diff != 0)
+        log_abs_diff = jnp.where(diff == 0, -jnp.inf, log_abs_diff)
+        return (jnp.log(alpha_val) + alpha_val * jnp.log(s * xi_val) +
+                jax_gammaln(a) + log_abs_diff)
+    return jnp.where(t_val == 0.0,
+                     jnp.log1p(-(xi_val / u_val)**alpha_val),
+                     compute_log(t_val))
+
+
+# ============================================================
 # Registry factory
 # ============================================================
 
@@ -152,6 +233,12 @@ def pareto_factory(params):
 
         pdf_func=lambda x: pareto_pdf(x, alpha_val, xi_val),
         logpdf_func=lambda x: pareto_logpdf(x, alpha_val, xi_val),
+        
+        # Incomplete MGF (truncated at u)
+        imgf=lambda t_val, u_val: pareto_imgf(t_val, alpha_val, xi_val, u_val),
+        logimgf=lambda t_val, u_val: pareto_logimgf(t_val, alpha_val, xi_val, u_val),
+        imgf_jax=lambda t_val, u_val: pareto_imgf_jax(t_val, alpha_val, xi_val, u_val),
+        logimgf_jax=lambda t_val, u_val: pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val),
 
         params=params,
     )

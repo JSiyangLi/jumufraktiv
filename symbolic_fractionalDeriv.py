@@ -27,6 +27,7 @@ def fractionalDeriv_symbolic(
     order: float,
     prior: mitMGFprior,
     simplify: bool = False,
+    complete: bool = True,
     timeout_seconds: float = 30.0
 ):
     """
@@ -44,6 +45,9 @@ def fractionalDeriv_symbolic(
         Prior object providing the symbolic MGF expression (mgf_sym).
     simplify : bool, optional
         If True, simplify the final expression.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF (prior.mgf_sym).
+        If False, differentiate the incomplete MGF (prior.imgf_sym).
     timeout_seconds : float, optional
         Timeout for each transform (default 30 seconds).
 
@@ -56,10 +60,15 @@ def fractionalDeriv_symbolic(
         raise ValueError("Fractional order must be positive.")
 
     # Get symbolic MGF expression from the prior object
-    if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
-        raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
+    if complete:
+        if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
+            raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
+        expr = prior.mgf_sym
+    else:
+        if not hasattr(prior, "imgf_sym") or prior.imgf_sym is None:
+            raise ValueError("Prior does not provide a symbolic incomplete MGF (imgf_sym).")
+        expr = prior.imgf_sym
 
-    expr = prior.mgf_sym
     # If it's a callable, call it to get the expression
     if callable(expr):
         expr = expr()

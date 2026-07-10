@@ -143,6 +143,7 @@ class MGFDerivative:
             method=self.method,
             t=None,
             simplify=self.simplify,
+            complete=True,
             log=False,
             **self._deriv_kwargs
         )
@@ -157,7 +158,7 @@ class MGFDerivative:
                     # Return (log_abs, sign)
                     if abs(numeric_val) < 1e-300:
                         return (-float('inf'), 1)
-                    return (math.log(abs(numeric_val)), 1 if numeric_val > 0 else -1)
+                    return (np.log(abs(numeric_val)), 1 if numeric_val > 0 else -1)
                 else:
                     # Return scalar
                     return numeric_val
@@ -227,7 +228,7 @@ class MGFDerivative:
             raise ValueError("Result is symbolic")
 
         if self.log:
-            return self._sign * math.exp(self.log_abs)
+            return self._sign * np.exp(self.log_abs)
 
         return self.value
 
@@ -254,7 +255,7 @@ class MGFDerivative:
                 return total_log_abs, self._sign
 
             else:
-                return math.exp(self.log_c) * self.value
+                return np.exp(self.log_c) * self.value
 
     # ========================================================
     # POSTERIOR DENSITY
@@ -339,7 +340,7 @@ class MGFDerivative:
         if self.log:
             log_denom = self.log_abs
         else:
-            log_denom = math.log(self.value)
+            log_denom = np.log(self.value)
 
         log_post = log_num - log_denom
 
@@ -377,6 +378,7 @@ class MGFDerivative:
                     method="symbolic",
                     t=-combined_b,
                     simplify=self.simplify,
+                    complete=True,
                     log=True
                 )
 
@@ -427,6 +429,7 @@ class MGFDerivative:
             method=self.method,
             t=-b_combined,
             simplify=self.simplify,
+            complete=True,
             log=True,
             **self._deriv_kwargs
         )
@@ -437,7 +440,7 @@ class MGFDerivative:
             sign_pred = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
             if log_pred == -float('inf'):
                 return 0.0
-            return sign_pred * math.exp(log_pred)
+            return sign_pred * np.exp(log_pred)
 
     # ========================================================
     # POSTERIOR MGF
@@ -515,6 +518,7 @@ class MGFDerivative:
             method=self.method,
             t=r_val - self.b,
             simplify=self.simplify,
+            complete=True,
             log=True,
             **self._deriv_kwargs
         )
@@ -526,80 +530,112 @@ class MGFDerivative:
         else:
             if log_ratio == -float('inf'):
                 return 0.0
-            return sign_ratio * math.exp(log_ratio)
+            return sign_ratio * np.exp(log_ratio)
 
     # ========================================================
     # POSTERIOR MOMENT
     # ========================================================
-    def post_raw_moment(self, q, numerator_method='auto', log=True):
+    def post_raw_moment(self, q=(1, 2, 3, 4), numerator_method='auto', log=True):
         """
         Compute the posterior moment of order q.
+
+        Parameters
+        ----------
+        q : scalar, iterable, or sympy Symbol, optional
+            Moment order(s). Default is (1, 2, 3, 4) (first four raw moments).
+            If a scalar, returns a single value.
+            If an iterable, returns a list of results (one per element).
+        numerator_method : str, optional
+            Method for derivative computation (passed to mgfDerivative).
+        log : bool, optional
+            If True, return log of the moments; otherwise return ordinary values.
+
+        Returns
+        -------
+        scalar or list
+            The computed moment(s).
         """
-        if self._is_symbolic:
-            try:
-                order = self.a + q
+        # ---- Determine if q is scalar ----
+        is_scalar = not hasattr(q, '__len__') or isinstance(q, (str, bytes))
+        q_list = [q] if is_scalar else list(q)
 
-                deriv_expr = mgfDerivative(
-                    order=order,
-                    prior=self.prior,
-                    method=numerator_method,
-                    t=None,
-                    simplify=self.simplify,
-                    log=False
-                )
+        # Warn if any order is not in the usual low‑order set
+        if any(qi not in (1, 2, 3, 4) for qi in q_list):
+            import warnings
+            warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
 
-                num_expr = deriv_expr.subs(t, -self.b)
-                denom_expr = self._evaluate_derivative(-self.b)
+        # ---- Helper to compute a single moment (reuses original logic) ----
+        def _compute_one(qi):
+            if self._is_symbolic:
+                try:
+                    order = self.a + qi
 
-                log_ratio = sp.log(num_expr) - sp.log(denom_expr)
-
-                # substitute known parameters
-                if self.params is not None:
-                    log_ratio = log_ratio.subs(
-                        {
-                            sym: self.params[sym.name]
-                            for sym in log_ratio.free_symbols
-                            if sym.name in self.params
-                        }
+                    deriv_expr = mgfDerivative(
+                        order=order,
+                        prior=self.prior,
+                        method=numerator_method,
+                        t=None,
+                        simplify=self.simplify,
+                        complete=True,
+                        log=False
                     )
 
-                # symbol-numeric decision
-                if log_ratio.free_symbols:
-                    return log_ratio if log else sp.exp(log_ratio)
+                    num_expr = deriv_expr.subs(t, -self.b)
+                    denom_expr = self._evaluate_derivative(-self.b)
 
-                # fully numeric
-                val = float(log_ratio.evalf())
-                return val if log else np.exp(val)
+                    log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
-            except Exception as e:
-                raise RuntimeError(
-                    f"Symbolic computation failed: {e}. Falling back to numeric."
-                ) from e
+                    if self.params is not None:
+                        log_ratio = log_ratio.subs(
+                            {
+                                sym: self.params[sym.name]
+                                for sym in log_ratio.free_symbols
+                                if sym.name in self.params
+                            }
+                        )
 
-        # ---- Numeric path ----
-        if not isinstance(q, (int, float)):
-            raise ValueError("For numeric evaluation, q must be numeric.")
+                    if log_ratio.free_symbols:
+                        return log_ratio if log else sp.exp(log_ratio)
 
-        order_num = self.a + q
-        log_abs_num, sign_num = mgfDerivative(
-            order=order_num,
-            prior=self.prior,
-            method=numerator_method,
-            t=-self.b,
-            simplify=self.simplify,
-            log=True,
-            **self._deriv_kwargs
-        )
+                    val = float(log_ratio.evalf())
+                    return val if log else np.exp(val)
 
-        log_ratio = log_abs_num - self.log_abs
-        sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Symbolic computation failed: {e}. Falling back to numeric."
+                    ) from e
 
-        if log:
-            return log_ratio
-        else:
-            if log_ratio == -float('inf'):
-                return 0.0
-            return sign_ratio * math.exp(log_ratio)
+            # ---- Numeric path ----
+            if not isinstance(qi, (int, float)):
+                raise ValueError("For numeric evaluation, q must be numeric.")
+
+            order_num = self.a + qi
+            log_abs_num, sign_num = mgfDerivative(
+                order=order_num,
+                prior=self.prior,
+                method=numerator_method,
+                t=-self.b,
+                simplify=self.simplify,
+                log=True,
+                complete=True,
+                **self._deriv_kwargs
+            )
+
+            log_ratio = log_abs_num - self.log_abs
+            sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
+
+            if log:
+                return log_ratio
+            else:
+                if log_ratio == -float('inf'):
+                    return 0.0
+                return sign_ratio * np.exp(log_ratio)
+
+        # ---- Compute all requested moments ----
+        results = [_compute_one(qi) for qi in q_list]
+
+        # Return scalar if input was scalar, else list
+        return results[0] if is_scalar else results
         
     def post_central_moment(self, order: int, log: bool = True, numerator_method: str = 'auto'):
         """
@@ -653,7 +689,7 @@ class MGFDerivative:
             if isinstance(central, (int, float)):
                 if central == 0:
                     return (-float('inf'), 1)
-                return (math.log(abs(central)), 1 if central > 0 else -1)
+                return (np.log(abs(central)), 1 if central > 0 else -1)
 
             # Symbolic case
             if isinstance(central, sp.Expr):
@@ -662,7 +698,7 @@ class MGFDerivative:
                     val = float(central.evalf())
                     if val == 0:
                         return (-float('inf'), 1)
-                    return (math.log(abs(val)), 1 if val > 0 else -1)
+                    return (np.log(abs(val)), 1 if val > 0 else -1)
                 # Otherwise return symbolic log_abs and sign
                 log_abs = sp.log(sp.Abs(central))
                 sign = sp.sign(central)
@@ -706,10 +742,10 @@ class MGFDerivative:
                 pass
 
         # ---- Backend (numeric) route ----
-        def mgf_backend(t_val, xp=math, **params):
+        def mgf_backend(t_val, xp=np, **params):
             return self.post_mgf(t_val, log=self.log)
 
-        def pdf_backend(theta_val, xp=math, **params):
+        def pdf_backend(theta_val, xp=np, **params):
             return self.post_density(theta_val, log=self.log)
 
         return mitMGFprior(

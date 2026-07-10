@@ -1,6 +1,7 @@
 import math
 import sympy as sp
 import jax.numpy as jnp
+import numpy as np
 from scipy.stats import gamma as scipy_gamma
 
 from jumufraktiv.logsum import logplus, logminus
@@ -36,13 +37,13 @@ def gamma_pdf_symbolic():
 def gamma_cgf(t_val: float, alpha_val: float, beta_val: float) -> float:
     if t_val >= beta_val:
         raise ValueError(f"t must be < beta ({beta_val})")
-    log_beta = math.log(beta_val)
-    log_beta_minus_t = math.log(beta_val - t_val)
+    log_beta = np.log(beta_val)
+    log_beta_minus_t = np.log(beta_val - t_val)
     log_ratio = logminus(log_beta, log_beta_minus_t)
     return alpha_val * log_ratio
 
 def gamma_mgf(t_val: float, alpha_val: float, beta_val: float) -> float:
-    return math.exp(gamma_cgf(t_val, alpha_val, beta_val))
+    return np.exp(gamma_cgf(t_val, alpha_val, beta_val))
 
 
 # ============================================================
@@ -65,6 +66,71 @@ def gamma_pdf(theta_val: float, alpha_val: float, beta_val: float) -> float:
 
 def gamma_logpdf(theta_val: float, alpha_val: float, beta_val: float) -> float:
     return scipy_gamma(a=alpha_val, scale=1.0 / beta_val).logpdf(theta_val)
+
+# ============================================================
+# Incomplete MGF (lower truncation at u) for Gamma distribution
+# ============================================================
+#   M(t; α, β, u) = ∫_0^u e^(tθ) p(θ) dθ
+#                 = (β/(β−t))^α * γ(α, (β−t)u) / Γ(α)
+#   where t < β.
+# ============================================================
+
+# ---- Symbolic ----
+def gamma_imgf_symbolic(u_sym):
+    """Symbolic expression for the incomplete MGF."""
+    return (beta / (beta - t)) ** alpha * (
+        sp.lowergamma(alpha, (beta - t) * u_sym) / sp.gamma(alpha)
+    )
+
+def gamma_logimgf_symbolic(u_sym):
+    """Symbolic log-incomplete MGF."""
+    return sp.log(gamma_imgf_symbolic(u_sym))
+
+
+# ---- Numeric (SciPy) ----
+from scipy.special import gammainc
+
+def gamma_imgf(t_val, alpha_val, beta_val, u_val):
+    """
+    Numeric incomplete MGF (vectorised).
+    Returns the ordinary-scale value.
+    """
+    s = beta_val - t_val
+    if np.any(s <= 0):
+        raise ValueError("t must be strictly less than beta for all elements")
+    reg_gamma = gammainc(alpha_val, s * u_val)   # γ(α, x)/Γ(α)
+    return (beta_val / s) ** alpha_val * reg_gamma
+
+def gamma_logimgf(t_val, alpha_val, beta_val, u_val):
+    """
+    Numeric log-incomplete MGF (vectorised).
+    Returns log of the incomplete MGF.
+    """
+    s = beta_val - t_val
+    if np.any(s <= 0):
+        raise ValueError("t must be strictly less than beta for all elements")
+    log_factor = alpha_val * (np.log(beta_val) - np.log(s))
+    reg_gamma = gammainc(alpha_val, s * u_val)
+    # log(reg_gamma) is -inf where reg_gamma == 0; that is correct.
+    return log_factor + np.log(reg_gamma)
+
+
+# ---- JAX ----
+import jax.numpy as jnp
+from jax.scipy.special import gammainc as jax_gammainc
+
+def gamma_imgf_jax(t_val, alpha_val, beta_val, u_val):
+    """JAX version of the incomplete MGF (JIT‑compatible, vectorised)."""
+    s = beta_val - t_val
+    reg_gamma = jax_gammainc(alpha_val, s * u_val)
+    return (beta_val / s) ** alpha_val * reg_gamma
+
+def gamma_logimgf_jax(t_val, alpha_val, beta_val, u_val):
+    """JAX version of the log-incomplete MGF (JIT‑compatible, vectorised)."""
+    s = beta_val - t_val
+    log_factor = alpha_val * (jnp.log(beta_val) - jnp.log(s))
+    reg_gamma = jax_gammainc(alpha_val, s * u_val)
+    return log_factor + jnp.log(reg_gamma)
 
 
 # ============================================================
@@ -94,13 +160,20 @@ def gamma_factory(params):
         pdf_sym=pdf_sym,
 
         mgf=lambda t_val: (beta_val / (beta_val - t_val)) ** alpha_val,
-        cgf=lambda t_val: alpha_val * (math.log(beta_val) - math.log(beta_val - t_val)),
+        cgf=lambda t_val: alpha_val * (np.log(beta_val) - np.log(beta_val - t_val)),
 
         mgf_jax=lambda t_val: (beta_val / (beta_val - t_val)) ** alpha_val,
         cgf_jax=lambda t_val: alpha_val * (jnp.log(beta_val) - jnp.log(beta_val - t_val)),
 
         pdf_func=lambda x: scipy_gamma(a=alpha_val, scale=1/beta_val).pdf(x),
         logpdf_func=lambda x: scipy_gamma(a=alpha_val, scale=1/beta_val).logpdf(x),
+        
+        # ---- Incomplete MGF (truncated at u) ----
+        # These are extra callables; they require both t and u.
+        imgf=lambda t_val, u_val: gamma_imgf(t_val, alpha_val, beta_val, u_val),
+        logimgf=lambda t_val, u_val: gamma_logimgf(t_val, alpha_val, beta_val, u_val),
+        imgf_jax=lambda t_val, u_val: gamma_imgf_jax(t_val, alpha_val, beta_val, u_val),
+        logimgf_jax=lambda t_val, u_val: gamma_logimgf_jax(t_val, alpha_val, beta_val, u_val),
 
         params=params,
     )

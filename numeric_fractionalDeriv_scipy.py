@@ -27,6 +27,7 @@ def fractionalDeriv_numeric_scipy_tan(
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
+    complete: bool = True,
     epsabs: float = 1e-8,
     epsrel: float = 1e-8,
     limit: int = 100,
@@ -51,6 +52,9 @@ def fractionalDeriv_numeric_scipy_tan(
         Method for computing integer derivatives: 'symbolic', 'bell', 'jax'.
     simplify : bool, optional
         Ignored for numeric; kept for interface consistency.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     epsabs, epsrel : float
         Tolerances for quad.
     limit : int
@@ -77,6 +81,7 @@ def fractionalDeriv_numeric_scipy_tan(
             method=method,
             t=t,
             simplify=simplify,
+            complete=complete,
             log=return_log
         )
         return result
@@ -98,6 +103,7 @@ def fractionalDeriv_numeric_scipy_tan(
                 method=method,
                 t=y,
                 simplify=simplify,
+                complete=complete,
                 log=True
             )
             if log_abs == -float('inf'):
@@ -144,6 +150,7 @@ def fractionalDeriv_numeric_scipy(
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
+    complete: bool = True,
     epsabs: float = 1e-8,
     epsrel: float = 1e-8,
     limit: int = 100,
@@ -168,6 +175,9 @@ def fractionalDeriv_numeric_scipy(
         'symbolic', 'jax', or 'bell' – method for computing the integer derivative.
     simplify : bool, optional
         Ignored for numeric; kept for interface consistency.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     epsabs, epsrel : float
         Tolerances for quad.
     limit : int
@@ -198,6 +208,7 @@ def fractionalDeriv_numeric_scipy(
             method=method,
             t=t,
             simplify=simplify,
+            complete=complete,
             log=return_log
         )
         return result
@@ -206,7 +217,7 @@ def fractionalDeriv_numeric_scipy(
     if use_tan:
         return fractionalDeriv_numeric_scipy_tan(
             order, prior, t, method, simplify,
-            epsabs, epsrel, limit, return_log
+            epsabs, epsrel, limit, return_log, complete
         )
 
     # ---- 3. Adaptive range method ----
@@ -222,6 +233,7 @@ def fractionalDeriv_numeric_scipy(
             method=method,
             t=y,
             simplify=simplify,
+            complete=complete,
             log=True
         )
         if log_abs == -float('inf'):
@@ -256,7 +268,7 @@ def fractionalDeriv_numeric_scipy(
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_scipy_tan(
                     order, prior, t, method, simplify,
-                    epsabs, epsrel, limit, return_log
+                    epsabs, epsrel, limit, return_log, complete
                 )
 
     # If we reached max_L without convergence
@@ -266,7 +278,7 @@ def fractionalDeriv_numeric_scipy(
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_scipy_tan(
             order, prior, t, method, simplify,
-            epsabs, epsrel, limit, return_log
+            epsabs, epsrel, limit, return_log, complete
         )
 
     result = factor * integral_valid
@@ -324,7 +336,8 @@ if __name__ == "__main__":
         method='symbolic',
         t=t_val,
         simplify=False,
-        log=True
+        log=True,
+        complete=True
     )
     deriv2 = sign2 * math.exp(log_abs2)
     print(f"\n  Ordinary 2nd derivative at t={t_val}: {deriv2:.6e}")

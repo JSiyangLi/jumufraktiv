@@ -26,6 +26,7 @@ def fractionalDeriv_numeric_mpmath_tan(
     t: float,
     method: str = "symbolic",
     simplify: bool = False,
+    complete: bool = True,
     return_log: bool = False,
     margin: float = 1e-12,
     max_u: float = 20.0,
@@ -48,6 +49,9 @@ def fractionalDeriv_numeric_mpmath_tan(
         Method for computing integer derivatives: 'symbolic', 'bell', 'jax'.
     simplify : bool, optional
         Ignored for numeric; kept for interface consistency.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
     margin : float
@@ -70,7 +74,8 @@ def fractionalDeriv_numeric_mpmath_tan(
             method=method,
             t=t,
             simplify=simplify,
-            log=True
+            log=True,
+            complete=complete
         )
         if return_log:
             return log_abs, sign
@@ -95,7 +100,8 @@ def fractionalDeriv_numeric_mpmath_tan(
                 method=method,
                 t=float(y),
                 simplify=simplify,
-                log=True
+                log=True,
+                complete=complete
             )
             if log_abs == -float('inf'):
                 return mpf(0.0)
@@ -136,6 +142,7 @@ def fractionalDeriv_numeric_mpmath(
     prior: mitMGFprior,
     t: float,
     method: str = "symbolic",
+    complete: bool = True,
     simplify: bool = False,
     return_log: bool = False,
     initial_L: float = 10.0,
@@ -159,6 +166,9 @@ def fractionalDeriv_numeric_mpmath(
         'symbolic', 'jax', or 'bell' – method for computing the integer derivative.
     simplify : bool, optional
         Ignored for numeric; kept for interface consistency.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
     initial_L : float
@@ -185,7 +195,8 @@ def fractionalDeriv_numeric_mpmath(
             method=method,
             t=t,
             simplify=simplify,
-            log=True
+            log=True,
+            complete=complete
         )
         if return_log:
             return log_abs, sign
@@ -198,7 +209,7 @@ def fractionalDeriv_numeric_mpmath(
     if use_tan:
         return fractionalDeriv_numeric_mpmath_tan(
             order, prior, t, method, simplify,
-            return_log, dps=dps
+            return_log, dps=dps, complete=complete
         )
 
     # ---- 3. Adaptive range method ----
@@ -215,6 +226,7 @@ def fractionalDeriv_numeric_mpmath(
             method=method,
             t=float(y),
             simplify=simplify,
+            complete=complete,
             log=True
         )
         if log_abs == -float('inf'):
@@ -248,7 +260,7 @@ def fractionalDeriv_numeric_mpmath(
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_mpmath_tan(
                     order, prior, t, method, simplify,
-                    return_log, dps=dps
+                    return_log, dps=dps, complete=complete
                 )
 
     # If we reached max_L without breaking, set final_L to last valid
@@ -259,7 +271,7 @@ def fractionalDeriv_numeric_mpmath(
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_mpmath_tan(
             order, prior, t, method, simplify,
-            return_log, dps=dps
+            return_log, dps=dps, complete=complete
         )
 
     # Now final_L should be set
@@ -326,7 +338,8 @@ if __name__ == "__main__":
         method='symbolic',
         t=t_val,
         simplify=False,
-        log=True
+        log=True,
+        complete=True
     )
     deriv2 = sign2 * float(exp(mpf(log_abs2)))
     print(f"\n  Ordinary 2nd derivative at t={t_val}: {deriv2:.6e}")

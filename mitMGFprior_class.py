@@ -69,14 +69,14 @@ class mitMGFprior:
 
             self.cgf_sym = sp.log(self.mgf_sym)
 
-            self.mgf = sp.lambdify(t, self.mgf_sym, modules="math")
-            self.cgf = sp.lambdify(t, self.cgf_sym, modules="math")
+            self.mgf = sp.lambdify(t, self.mgf_sym, modules="numpy")
+            self.cgf = sp.lambdify(t, self.cgf_sym, modules="numpy")
 
             self.mgf_jax = sp.lambdify(t, self.mgf_sym, modules="jax")
             self.cgf_jax = sp.lambdify(t, self.cgf_sym, modules="jax")
 
-            self.pdf_func = sp.lambdify(theta, self.pdf_sym, modules="math")
-            self.logpdf_func = lambda x: math.log(self.pdf_func(x))
+            self.pdf_func = sp.lambdify(theta, self.pdf_sym, modules="numpy")
+            self.logpdf_func = lambda x: np.log(self.pdf_func(x))
 
             return self
 
@@ -87,23 +87,23 @@ class mitMGFprior:
 
             params = self.params or {}
 
-            def mgf_math(tval):
-                return self.mgf_backend(tval, xp=math, **params)
+            def mgp_np(tval):
+                return self.mgf_backend(tval, xp=np, **params)
 
             def mgf_jax_fn(tval):
                 return self.mgf_backend(tval, xp=jnp, **params)
 
-            self.mgf = mgf_math
+            self.mgf = mgp_np
             self.mgf_jax = mgf_jax_fn
 
-            self.cgf = lambda tval: math.log(self.mgf(tval))
+            self.cgf = lambda tval: np.log(self.mgf(tval))
             self.cgf_jax = lambda tval: jnp.log(self.mgf_jax(tval))
 
             def pdf_math(x):
-                return self.pdf_backend(x, xp=math, **params)
+                return self.pdf_backend(x, xp=np, **params)
 
             self.pdf_func = pdf_math
-            self.logpdf_func = lambda x: math.log(pdf_math(x))
+            self.logpdf_func = lambda x: np.log(pdf_math(x))
 
             return self
 
@@ -169,10 +169,15 @@ class mitMGFprior:
         mgf_math = spec.get("mgf")
         cgf_math = spec.get("cgf")
         pdf_math = spec.get("pdf_func")
+        logpdf_math = spec.get("logpdf_func")
+        imgf_math = spec.get("imgf")
+        logimgf_math = spec.get("logimgf")
 
         # JAX backend (the spec already contains lambdified jax versions)
         mgf_jax = spec.get("mgf_jax")
         cgf_jax = spec.get("cgf_jax")
+        imgf_jax = spec.get("imgf_jax")
+        logimgf_jax = spec.get("logimgf_jax")
 
         if mgf_math is None or cgf_math is None or pdf_math is None:
             raise ValueError("Registry must provide numeric MGF, CGF, and PDF functions.")
@@ -195,12 +200,18 @@ class mitMGFprior:
         obj.mgf_jax = mgf_jax
         obj.cgf_jax = cgf_jax
         obj.pdf_func = pdf_math
-        obj.logpdf_func = spec.get("logpdf_func")
+        obj.logpdf_func = logpdf_math
+        obj.imgf = imgf_math
+        obj.logimgf = logimgf_math
+        obj.imgf_jax = imgf_jax
+        obj.logimgf_jax = logimgf_jax
 
         # Store symbolic outputs
         obj.mgf_sym_out = mgf_sym
         obj.cgf_sym = cgf_sym
         obj.pdf_sym_func = spec.get("pdf_sym_func")
+        obj.imgf_sym = imgf_sym
+        obj.logimgf_sym = logimgf_sym
 
         return obj
 
@@ -222,5 +233,30 @@ class mitMGFprior:
         for attr in required_attrs:
             val = getattr(obj, attr, None)
             if not callable(val):
+                return False
+        return True
+    
+    # ============================================================
+    # iMGF SUPPORT CHECK
+    # ============================================================
+    def has_iMGF(self) -> bool:
+        """
+        Check if this prior object has complete incomplete MGF (iMGF) support.
+
+        Returns True only if all six iMGF-related functions are present:
+        - imgf         (numeric ordinary)
+        - logimgf      (numeric log)
+        - imgf_jax     (JAX ordinary)
+        - logimgf_jax  (JAX log)
+        - imgf_sym     (symbolic ordinary)
+        - logimgf_sym  (symbolic log)
+        """
+        required_attrs = [
+            "imgf", "logimgf",
+            "imgf_jax", "logimgf_jax",
+            "imgf_sym", "logimgf_sym"
+        ]
+        for attr in required_attrs:
+            if getattr(self, attr, None) is None:
                 return False
         return True

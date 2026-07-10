@@ -10,18 +10,23 @@ from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t  # only t is needed for differentiation
 
 
-def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False):
+def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False, complete: bool = True):
     """
-    Returns the symbolic derivative of order `order` of the MGF w.r.t. t.
+    Returns the symbolic derivative of order `order` of the MGF (or incomplete MGF)
+    with respect to t.
 
     Parameters
     ----------
     order : int
         Order of differentiation (non‑negative integer).
     prior : mitMGFprior
-        Prior object providing the symbolic MGF expression (mgf_sym).
+        Prior object providing the symbolic MGF expression (mgf_sym) and optionally
+        the incomplete MGF expression (imgf_sym).
     simplify : bool, optional
         If True, simplify the resulting expression (default False).
+    complete : bool, optional
+        If True (default), differentiate the complete MGF (prior.mgf_sym).
+        If False, differentiate the incomplete MGF (prior.imgf_sym).
 
     Returns
     -------
@@ -31,22 +36,29 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     Raises
     ------
     ValueError
-        If order is negative.
+        If order is negative, or if `complete=False` and `imgf_sym` is missing.
     RuntimeError
-        If no 't' symbol is found in the MGF expression.
+        If no 't' symbol is found in the chosen expression.
+    TypeError
+        If order is not an integer.
     """
     if not isinstance(order, int):
         raise TypeError("SymPy currently does not support symbolic differentiation for orders other than integers, including symbolic orders.")
     if order < 0:
         raise ValueError("Order of derivative must be non‑negative.")
 
-    if not hasattr(prior, "mgf_sym") or prior.mgf_sym is None:
-        raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
-
-    expr = prior.mgf_sym
+    # Select the expression based on `complete`
+    if complete:
+        expr = getattr(prior, "mgf_sym", None)
+        if expr is None:
+            raise ValueError("Prior does not provide a symbolic MGF (mgf_sym).")
+    else:
+        expr = getattr(prior, "imgf_sym", None)
+        if expr is None:
+            raise ValueError("Prior does not provide a symbolic incomplete MGF (imgf_sym).")
 
     if t not in expr.free_symbols:
-        raise RuntimeError("Symbol 't' not found in the MGF expression.")
+        raise RuntimeError("Symbol 't' not found in the chosen expression.")
 
     derivative = sp.diff(expr, t, order)
 

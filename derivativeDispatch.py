@@ -31,6 +31,7 @@ def mgfDerivative_integer(
     t: float = None,        # parameter name is 't' (matches global symbol)
     simplify: bool = False,
     log: bool = True,
+    complete: bool = True,
     symbolic_timeout: float = 600.0,
     cgf_method: str = "auto",
 ):
@@ -56,6 +57,10 @@ def mgfDerivative_integer(
 
     simplify : bool, optional
         Whether to simplify symbolic derivatives.
+        
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
 
     log : bool, optional
         If True, numeric methods return (log_abs, sign).
@@ -87,6 +92,10 @@ def mgfDerivative_integer(
             "{'symbolic','bell','jax'}."
         )
 
+    if method == "bell" and not complete:
+        raise ValueError(
+            "Bell method does not support incomplete MGF (complete=False)."
+        )
     # ---------------------------------------------------------
     # symbolic differentiation
     # ---------------------------------------------------------
@@ -97,6 +106,7 @@ def mgfDerivative_integer(
             order=order,
             prior=prior,
             simplify=simplify,
+            complete=complete
         )
 
         # Return symbolic expression if no evaluation point given
@@ -117,7 +127,7 @@ def mgfDerivative_integer(
             log_abs = -math.inf
             sign = 1
         else:
-            log_abs = math.log(abs(val))
+            log_abs = np.log(abs(val))
             sign = 1 if val > 0 else -1
 
         return (log_abs, sign) if log else val
@@ -147,7 +157,7 @@ def mgfDerivative_integer(
         if log_abs == -math.inf:
             return 0.0
 
-        return sign * math.exp(log_abs)
+        return sign * np.exp(log_abs)
 
     # ---------------------------------------------------------
     # JAX backend
@@ -162,6 +172,7 @@ def mgfDerivative_integer(
         prior=prior,
         t=t,
         order=order,
+        complete=complete
     )
 
     if log:
@@ -170,7 +181,7 @@ def mgfDerivative_integer(
     if log_abs == -math.inf:
         return 0.0
 
-    return sign * math.exp(log_abs)
+    return sign * np.exp(log_abs)
 
 
 def mgfDerivative_fractional(
@@ -179,6 +190,7 @@ def mgfDerivative_fractional(
     method: str = "scipy",
     t: float = None,
     simplify: bool = False,
+    complete: bool = True,
     log: bool = True,
     integerDeriv_method: str = "symbolic",
     **kwargs
@@ -198,10 +210,7 @@ def mgfDerivative_fractional(
             - 'mpmath'  : uses mpmath.quad (high precision)
             - If method == "symbolic":
                 Performs the computation symbolically. If unresolved symbols remain after substitution, returns a SymPy expression.
-
-    Otherwise returns a numeric result
-    (float or (log_abs, sign) according to `log`).
-        Default 'scipy'.
+                Otherwise returns a numeric result(float or (log_abs, sign) according to `log`). Default 'scipy'.
     t : float, optional
         Evaluation point. Required for numeric methods ('scipy', 'mpmath').
     simplify : bool, optional
@@ -211,6 +220,9 @@ def mgfDerivative_fractional(
     integerDeriv_method : str, optional
         Method for integer derivatives used inside the numeric fractional integrators.
         One of 'symbolic', 'jax', or 'bell'. Default 'symbolic'.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     **kwargs : additional arguments passed to the underlying fractional function.
         For 'scipy' method: epsabs, epsrel, limit, initial_L, max_L, tol, use_tan.
         For 'mpmath' method: dps, margin, max_u, tol, use_tan.
@@ -240,6 +252,7 @@ def mgfDerivative_fractional(
             order=order,
             prior=prior,
             simplify=simplify,
+            complete=complete,
             **kwargs
         )
 
@@ -265,7 +278,7 @@ def mgfDerivative_fractional(
             log_abs = -math.inf
             sign = 1
         else:
-            log_abs = math.log(abs(value))
+            log_abs = np.log(abs(value))
             sign = 1 if value > 0 else -1
 
         return (log_abs, sign) if log else value
@@ -284,6 +297,7 @@ def mgfDerivative_fractional(
             method=integerDeriv_method,
             simplify=simplify,
             return_log=log,
+            complete=complete,
             **kwargs
         )
 
@@ -296,6 +310,7 @@ def mgfDerivative_fractional(
             method=integerDeriv_method,
             simplify=simplify,
             return_log=log,
+            complete=complete,
             **kwargs
         )
 
@@ -309,6 +324,7 @@ def mgfDerivative(
     method: str = "auto",
     t: float = None,
     simplify: bool = False,
+    complete: bool = True,
     log: bool = True,
     integer_method: str = "symbolic",
     use_interpolation: bool = True,
@@ -340,6 +356,9 @@ def mgfDerivative(
         Evaluation point. Required for numeric methods.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for 'symbolic' methods).
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF.
     log : bool, optional
         If True and output is numeric, return (log_abs, sign). If False, return the
         ordinary-scale value as a float.
@@ -434,6 +453,7 @@ def mgfDerivative(
             method="symbolic",
             t=t,
             simplify=simplify,
+            complete=complete,
             log=log,
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
@@ -452,7 +472,8 @@ def mgfDerivative(
             simplify=simplify,
             log=log,
             symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method
+            cgf_method=cgf_method,
+            complete=complete
         )
     else:
         # ---- Fractional order ----
@@ -490,6 +511,7 @@ def mgfDerivative(
                 d_vec=d_vec,
                 return_log=log,
                 integer_method=integer_method,
+                complete=complete,
                 **scipy_kwargs
             )
 
@@ -502,6 +524,7 @@ def mgfDerivative(
             simplify=simplify,
             log=log,
             integerDeriv_method=integer_method,
+            complete=complete,
             **kwargs
         )
 
@@ -618,7 +641,7 @@ if __name__ == "__main__":
     log_abs2, sign2 = mgfDerivative_integer(
         2, gamma_prior, method="symbolic", t=t_val, log=True
     )
-    deriv2 = sign2 * math.exp(log_abs2)
+    deriv2 = sign2 * np.exp(log_abs2)
     print(f"\nOrdinary 2nd derivative at t={t_val}: {deriv2:.6e}")
     print(f"Difference (scipy vs 2nd) on log scale: {abs(log_abs_frac - log_abs2):.2e}")
     if not math.isnan(val_frac_mpmath):
@@ -686,6 +709,6 @@ if __name__ == "__main__":
 
     # Analytic formula for exponential prior: D^α M(t) = λ * Γ(α+1) * (λ - t)^(-α-1)
     lambda_exp = gamma_prior_exp.params['beta']
-    log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
+    log_analytic = np.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * np.log(lambda_exp - t_interp)
     print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
     print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")

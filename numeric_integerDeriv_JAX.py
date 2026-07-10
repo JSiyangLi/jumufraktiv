@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax.experimental import jet
 
 
-def integerDeriv_numeric_jax(t, prior, order):
+def integerDeriv_numeric_jax(t, prior, order, complete: bool = True):
     """
     Compute integer derivative of an MGF using JAX jet.
 
@@ -19,6 +19,10 @@ def integerDeriv_numeric_jax(t, prior, order):
 
     order : int
         Derivative order.
+        
+    complete : bool, optional
+        If True (default), differentiate the complete MGF (prior.mgf_jax).
+        If False, differentiate the incomplete MGF (prior.imgf_jax).
 
     Returns
     -------
@@ -32,16 +36,20 @@ def integerDeriv_numeric_jax(t, prior, order):
     if order < 0:
         raise ValueError("Order must be non-negative.")
 
-    if not hasattr(prior, "mgf_jax") or prior.mgf_jax is None:
-        raise ValueError("Prior does not provide a JAX-compatible MGF (mgf_jax).")
-
-    mgf = prior.mgf_jax
+    if complete:
+        if not hasattr(prior, "mgf_jax") or prior.mgf_jax is None:
+            raise ValueError("Prior does not provide a JAX-compatible MGF (mgf_jax).")
+        expr = prior.mgf_jax
+    else:
+        if not hasattr(prior, "imgf_jax") or prior.imgf_jax is None:
+            raise ValueError("Prior does not provide a JAX-compatible incomplete MGF (imgf_jax).")
+        expr = prior.imgf_jax
 
     # ---------------------------------------------------------
     # Zeroth derivative
     # ---------------------------------------------------------
     if order == 0:
-        val = float(mgf(t))
+        val = float(expr(t))
 
         if abs(val) < 1e-300:
             return -float("inf"), 1
@@ -63,7 +71,7 @@ def integerDeriv_numeric_jax(t, prior, order):
     series_in = ((1.0,) + (0.0,) * (order - 1),)
 
     primal_out, series_out = jet.jet(
-        mgf,
+        expr,
         (t,),
         series_in,
     )
