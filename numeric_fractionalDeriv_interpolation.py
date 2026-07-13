@@ -21,6 +21,7 @@ def fractionalDeriv_interpolated(
     return_log: bool = True,
     complete: bool = True,
     integer_method: str = "symbolic",
+    u: float = None,                     # NEW: for incomplete MGF
     **kwargs
 ):
     """
@@ -54,6 +55,8 @@ def fractionalDeriv_interpolated(
     complete : bool, optional
         If True (default), differentiate the complete MGF.
         If False, differentiate the incomplete MGF.
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False). Default None.
     **kwargs : additional arguments passed to fractionalDeriv_numeric_scipy.
         e.g., epsrel, use_tan, epsabs, limit, etc.
 
@@ -79,6 +82,7 @@ def fractionalDeriv_interpolated(
             return_log=return_log,
             method=integer_method,
             complete=complete,
+            u=u,                     # pass u
             **kwargs
         )
 
@@ -101,6 +105,7 @@ def fractionalDeriv_interpolated(
             return_log=True,
             method=integer_method,
             complete=complete,
+            u=u,                     # pass u
             **kwargs
         )
         values.append((log_abs, sign))

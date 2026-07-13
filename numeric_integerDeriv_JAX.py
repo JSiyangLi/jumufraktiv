@@ -3,9 +3,10 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.experimental import jet
+from functools import partial
 
 
-def integerDeriv_numeric_jax(t, prior, order, complete: bool = True):
+def integerDeriv_numeric_jax(t, prior, order, complete: bool = True, u = None):
     """
     Compute integer derivative of an MGF using JAX jet.
 
@@ -40,10 +41,13 @@ def integerDeriv_numeric_jax(t, prior, order, complete: bool = True):
         if not hasattr(prior, "mgf_jax") or prior.mgf_jax is None:
             raise ValueError("Prior does not provide a JAX-compatible MGF (mgf_jax).")
         expr = prior.mgf_jax
+
     else:
+        if u is None:
+            raise ValueError("In this JAX computation, u must be supplied for incomplete MGF.")
         if not hasattr(prior, "imgf_jax") or prior.imgf_jax is None:
             raise ValueError("Prior does not provide a JAX-compatible incomplete MGF (imgf_jax).")
-        expr = prior.imgf_jax
+        expr = partial(prior.imgf_jax, u=u)
 
     # ---------------------------------------------------------
     # Zeroth derivative

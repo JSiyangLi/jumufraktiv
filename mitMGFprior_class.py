@@ -152,6 +152,7 @@ class mitMGFprior:
         # ---------------------------------------------------------
         mgf_sym = spec.get("mgf_sym")
         pdf_sym = spec.get("pdf_sym")
+        imgf_sym = spec.get("imgf_sym")
 
         if mgf_sym is None or pdf_sym is None:
             raise ValueError("Registry must contain mgf_sym and pdf_sym")
@@ -159,8 +160,10 @@ class mitMGFprior:
         if simplify:
             mgf_sym = sp.simplify(mgf_sym)
             pdf_sym = sp.simplify(pdf_sym)
+            imgf_sym = sp.simplify(imgf_sym) if imgf_sym is not None else None
 
         cgf_sym = sp.log(mgf_sym)
+        logimgf_sym = sp.log(imgf_sym) if imgf_sym is not None else None
 
         # ---------------------------------------------------------
         # Extract backend functions from the spec

@@ -30,7 +30,8 @@ def fractionalDeriv_numeric_mpmath_tan(
     return_log: bool = False,
     margin: float = 1e-12,
     max_u: float = 20.0,
-    dps: int = 50
+    dps: int = 50,
+    u: float = None                     # NEW: truncation point for incomplete MGF
 ):
     """
     Compute fractional derivative using scaled tan‑transform:
@@ -60,6 +61,8 @@ def fractionalDeriv_numeric_mpmath_tan(
         Maximum absolute value of u after transformation (default 20).
     dps : int
         Number of decimal digits for mpmath (default 50).
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False). Default None.
     """
     mp.dps = dps
 
@@ -75,7 +78,8 @@ def fractionalDeriv_numeric_mpmath_tan(
             t=t,
             simplify=simplify,
             log=True,
-            complete=complete
+            complete=complete,
+            u=u                         # pass u through
         )
         if return_log:
             return log_abs, sign
@@ -90,8 +94,8 @@ def fractionalDeriv_numeric_mpmath_tan(
     def integrand_theta(theta):
         try:
             tan_theta = tan(theta)
-            u = max_u * tan_theta
-            z = exp(u)
+            u_var = max_u * tan_theta
+            z = exp(u_var)
             y = t - z
             # Get derivative in log scale (Python float)
             log_abs, sign = mgfDerivative_integer(
@@ -101,13 +105,14 @@ def fractionalDeriv_numeric_mpmath_tan(
                 t=float(y),
                 simplify=simplify,
                 log=True,
-                complete=complete
+                complete=complete,
+                u=u                         # pass u through
             )
             if log_abs == -float('inf'):
                 return mpf(0.0)
             # log Jacobian: du/dtheta = max_u * (1 + tan^2)
             log_jacobian = log(max_u) + log(1 + tan_theta * tan_theta)
-            log_integrand = gamma_val * u + mpf(log_abs) + log_jacobian
+            log_integrand = gamma_val * u_var + mpf(log_abs) + log_jacobian
             # Return ordinary value
             return exp(log_integrand) * sign
         except Exception:
@@ -149,7 +154,8 @@ def fractionalDeriv_numeric_mpmath(
     max_L: float = 1e4,
     tol: float = 1e-8,           # tightened for better accuracy
     use_tan: bool = False,
-    dps: int = 50
+    dps: int = 50,
+    u: float = None                     # NEW: truncation point for incomplete MGF
 ):
     """
     Compute the Liouville‑Caputo fractional derivative using mpmath.
@@ -181,6 +187,8 @@ def fractionalDeriv_numeric_mpmath(
         If True, directly use the tan‑transform method.
     dps : int
         Number of decimal digits for mpmath (default 50).
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False). Default None.
     """
     mp.dps = dps
 
@@ -196,7 +204,8 @@ def fractionalDeriv_numeric_mpmath(
             t=t,
             simplify=simplify,
             log=True,
-            complete=complete
+            complete=complete,
+            u=u                         # pass u through
         )
         if return_log:
             return log_abs, sign
@@ -209,16 +218,16 @@ def fractionalDeriv_numeric_mpmath(
     if use_tan:
         return fractionalDeriv_numeric_mpmath_tan(
             order, prior, t, method, simplify,
-            return_log, dps=dps, complete=complete
+            return_log=return_log, dps=dps, complete=complete, u=u   # pass u
         )
 
     # ---- 3. Adaptive range method ----
     n = int(mp.floor(order))
     gamma_val = mpf((n + 1) - order)
 
-    def integrand(u):
-        u = mpf(u)
-        z = exp(u)
+    def integrand(u_var):
+        u_var = mpf(u_var)
+        z = exp(u_var)
         y = t - z
         log_abs, sign = mgfDerivative_integer(
             order=n + 1,
@@ -227,11 +236,12 @@ def fractionalDeriv_numeric_mpmath(
             t=float(y),
             simplify=simplify,
             complete=complete,
-            log=True
+            log=True,
+            u=u                         # pass u through
         )
         if log_abs == -float('inf'):
             return mpf(0.0)
-        log_integrand = gamma_val * u + mpf(log_abs)
+        log_integrand = gamma_val * u_var + mpf(log_abs)
         return exp(log_integrand) * sign
 
     L = initial_L
@@ -260,7 +270,7 @@ def fractionalDeriv_numeric_mpmath(
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_mpmath_tan(
                     order, prior, t, method, simplify,
-                    return_log, dps=dps, complete=complete
+                    return_log=return_log, dps=dps, complete=complete, u=u
                 )
 
     # If we reached max_L without breaking, set final_L to last valid
@@ -271,7 +281,7 @@ def fractionalDeriv_numeric_mpmath(
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_mpmath_tan(
             order, prior, t, method, simplify,
-            return_log, dps=dps, complete=complete
+            return_log=return_log, dps=dps, complete=complete, u=u
         )
 
     # Now final_L should be set

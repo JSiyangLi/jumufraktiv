@@ -19,7 +19,7 @@ import pandas as pd
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
-from jumufraktiv.symbols import t, theta, r
+from jumufraktiv.symbols import t, theta, r, u
 
 # ============================================================
 # Likelihood registry
@@ -142,6 +142,7 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=None,
+            u=None,
             simplify=self.simplify,
             complete=True,
             log=False,
@@ -231,6 +232,10 @@ class MGFDerivative:
             return self._sign * np.exp(self.log_abs)
 
         return self.value
+    
+    @property
+    def prior_has_iMGF(self) -> bool:
+        return self.prior.has_iMGF()
 
     # ========================================================
     # EVIDENCE
@@ -348,6 +353,104 @@ class MGFDerivative:
             return log_post
         else:
             return np.exp(log_post)
+        
+    # ========================================================
+    # POSTERIOR CUMULATIVE DENSITY
+    # ========================================================
+    def post_cdf(self, u_val=None, log=True):
+        """
+        Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold u.
+
+        If `self._is_symbolic` is True:
+            - If u_val is None or a sympy Symbol: returns a symbolic expression.
+            - If u_val is numeric: evaluates the expression numerically.
+            - Requires the prior's symbolic incomplete MGF (imgf_sym).
+        If `self._is_symbolic` is False: performs numeric evaluation using
+        the prior's numeric imgf/logimgf functions.
+        """
+        # ---- Ensure iMGF support ----
+        if not hasattr(self.prior, "has_iMGF") or not self.prior.has_iMGF():
+            raise RuntimeError("Prior does not support incomplete MGF (iMGF).")
+
+        # ---- Symbolic path (self._is_symbolic) ----
+        if self._is_symbolic:
+            try:
+                # Numerator: derivative of incomplete MGF as a symbolic expression
+                num_expr = mgfDerivative(
+                    order=self.a,
+                    prior=self.prior,
+                    method="symbolic",       # force symbolic
+                    t=None,                 # return expression
+                    simplify=self.simplify,
+                    complete=False,          # use incomplete MGF
+                    log=False,
+                    **self._deriv_kwargs
+                )
+                # Evaluate at t = -b
+                num_expr = num_expr.subs(t_sym, -self.b)
+
+                # Denominator: symbolic derivative of complete MGF at t = -b
+                denom_expr = self._deriv.subs(t_sym, -self.b)
+
+                # Log of ratio
+                log_cdf_expr = sp.log(num_expr) - sp.log(denom_expr)
+
+                # Substitute known hyperparameters
+                if self.params is not None:
+                    subs_dict = {sym: self.params[sym.name] 
+                                for sym in log_cdf_expr.free_symbols 
+                                if sym.name in self.params}
+                    if subs_dict:
+                        log_cdf_expr = log_cdf_expr.subs(subs_dict)
+
+                # Substitute u if numeric
+                if u_val is not None and not isinstance(u_val, sp.Symbol):
+                    log_cdf_expr = log_cdf_expr.subs(u_sym, u_val)
+
+                # Final symbol‑numeric resolution
+                if log_cdf_expr.free_symbols:
+                    return log_cdf_expr if log else sp.exp(log_cdf_expr)
+
+                # Fully numeric: evaluate to float
+                val = float(log_cdf_expr.evalf())
+                return val if log else float(sp.exp(val))
+
+            except Exception as e:
+                raise RuntimeError(f"Symbolic posterior CDF computation failed: {e}") from e
+
+        # ---- Numeric path (self._is_symbolic is False) ----
+        if u_val is None:
+            raise ValueError("For numeric evaluation, u must be provided.")
+
+        if self.prior.imgf is None or self.prior.logimgf is None:
+            raise ValueError("Prior does not provide numeric imgf/logimgf functions.")
+
+        # Numerator: numeric derivative of incomplete MGF at t = -b, with u=u_val
+        log_abs_num, sign_num = mgfDerivative(
+            order=self.a,
+            prior=self.prior,
+            method=self.method,
+            t=-self.b,
+            simplify=self.simplify,
+            complete=False,
+            log=True,
+            u=u_val,                     # pass the truncation point
+            **self._deriv_kwargs
+        )
+
+        # Denominator (already stored)
+        if self.log:
+            log_denom = self.log_abs
+        else:
+            log_denom = np.log(abs(self.value)) if self.value != 0 else -np.inf
+
+        log_ratio = log_abs_num - log_denom
+        sign_ratio = sign_num * (self._sign if self._sign is not None else 1.0)
+
+        if log:
+            return log_ratio
+        else:
+            return 0.0 if log_ratio == -float('inf') else sign_ratio * np.exp(log_ratio)
 
     # ========================================================
     # POSTERIOR PREDICTIVE
@@ -377,6 +480,7 @@ class MGFDerivative:
                     prior=self.prior,
                     method="symbolic",
                     t=-combined_b,
+                    u=None,
                     simplify=self.simplify,
                     complete=True,
                     log=True
@@ -428,6 +532,7 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=-b_combined,
+            u=None,
             simplify=self.simplify,
             complete=True,
             log=True,
@@ -517,6 +622,7 @@ class MGFDerivative:
             prior=self.prior,
             method=self.method,
             t=r_val - self.b,
+            u=None,
             simplify=self.simplify,
             complete=True,
             log=True,
@@ -533,7 +639,7 @@ class MGFDerivative:
             return sign_ratio * np.exp(log_ratio)
 
     # ========================================================
-    # POSTERIOR MOMENT
+    # POSTERIOR RAW MOMENT
     # ========================================================
     def post_raw_moment(self, q=(1, 2, 3, 4), numerator_method='auto', log=True):
         """
@@ -575,6 +681,7 @@ class MGFDerivative:
                         prior=self.prior,
                         method=numerator_method,
                         t=None,
+                        u=None,
                         simplify=self.simplify,
                         complete=True,
                         log=False
@@ -615,6 +722,7 @@ class MGFDerivative:
                 prior=self.prior,
                 method=numerator_method,
                 t=-self.b,
+                u=None,
                 simplify=self.simplify,
                 log=True,
                 complete=True,
@@ -636,7 +744,10 @@ class MGFDerivative:
 
         # Return scalar if input was scalar, else list
         return results[0] if is_scalar else results
-        
+    
+    # ========================================================
+    # POSTERIOR CENTRAL MOMENT
+    # ======================================================== 
     def post_central_moment(self, order: int, log: bool = True, numerator_method: str = 'auto'):
         """
         Compute the central moment of order `order` (1, 2, 3, or 4).

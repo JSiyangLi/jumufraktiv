@@ -22,13 +22,14 @@ from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
 from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
 from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 
-from jumufraktiv.symbols import t as t_sym
+from jumufraktiv.symbols import t as t_sym, u as u_sym   # <-- import canonical u
 
 def mgfDerivative_integer(
     order: int | sp.Expr,
     prior,
     method: str = "symbolic",
-    t: float = None,        # parameter name is 't' (matches global symbol)
+    t: float = None,
+    u: float = None,          # optional for incomplete MGF
     simplify: bool = False,
     log: bool = True,
     complete: bool = True,
@@ -42,66 +43,40 @@ def mgfDerivative_integer(
     ----------
     order : int | sp.Expr
         Non-negative derivative order.
-
     prior : mitMGFprior
-        Prior object containing symbolic and/or backend MGF/PDF
-        representations.
-
+        Prior object containing symbolic and/or backend MGF/PDF representations.
     method : {"symbolic", "bell", "jax"}, optional
         Derivative backend.
-
     t : float, optional
-        Evaluation point (uses the global canonical 't' symbol).
-        If omitted for the symbolic method, the symbolic derivative is
-        returned.
-
+        Evaluation point for the MGF (uses canonical symbol 't').
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False).
+        For symbolic method, if provided, substitutes the canonical 'u' symbol.
     simplify : bool, optional
         Whether to simplify symbolic derivatives.
-        
     complete : bool, optional
         If True (default), differentiate the complete MGF.
         If False, differentiate the incomplete MGF.
-
     log : bool, optional
         If True, numeric methods return (log_abs, sign).
-        Otherwise they return the ordinary derivative.
-
-    symbolic_timeout : float, optional
-        Maximum symbolic differentiation time used by the Bell backend.
-
-    cgf_method : {"auto","jet","grad"}, optional
-        Method used by the Bell backend for CGF derivatives.
+        Otherwise return the ordinary derivative as float.
+    symbolic_timeout, cgf_method : passed to Bell backend.
 
     Returns
     -------
-    sympy.Expr
-        If symbolic differentiation is requested without evaluation.
-
-    (log_abs, sign)
-        If log=True.
-
-    float
-        If log=False.
+    sympy.Expr, (log_abs, sign), or float
     """
-
     method = method.lower()
-
     if method not in {"symbolic", "bell", "jax"}:
-        raise ValueError(
-            "method must be one of "
-            "{'symbolic','bell','jax'}."
-        )
+        raise ValueError("method must be one of {'symbolic','bell','jax'}.")
 
     if method == "bell" and not complete:
-        raise ValueError(
-            "Bell method does not support incomplete MGF (complete=False)."
-        )
-    # ---------------------------------------------------------
-    # symbolic differentiation
-    # ---------------------------------------------------------
+        raise ValueError("Bell method does not support incomplete MGF (complete=False).")
 
+    # ---------------------------------------------------------
+    # Symbolic differentiation
+    # ---------------------------------------------------------
     if method == "symbolic":
-
         expr = integerDeriv_symbolic(
             order=order,
             prior=prior,
@@ -109,20 +84,20 @@ def mgfDerivative_integer(
             complete=complete
         )
 
-        # Return symbolic expression if no evaluation point given
-        if t is None:
+        # If evaluation point t is provided, substitute it
+        if t is not None:
+            expr = expr.subs(t_sym, t)
+
+        # If incomplete and u is provided, substitute the canonical u
+        if not complete and u is not None:
+            expr = expr.subs(u_sym, u)
+
+        # Return symbolic if any free symbols remain
+        if expr.free_symbols:
             return expr
 
-        # Substitute the numeric t
-        val = expr.subs(t_sym, t).evalf()
-
-        # If there are still free symbols (e.g., hyperparameters), return the expression
-        if val.free_symbols:
-            return val
-
-        # Otherwise, evaluate to float
-        val = float(val)
-
+        # Fully numeric: evaluate
+        val = float(expr.evalf())
         if abs(val) < 1e-300:
             log_abs = -math.inf
             sign = 1
@@ -135,14 +110,9 @@ def mgfDerivative_integer(
     # ---------------------------------------------------------
     # Bell polynomial backend
     # ---------------------------------------------------------
-
     if method == "bell":
-
         if t is None:
-            raise ValueError(
-                "t must be supplied for method='bell'."
-            )
-
+            raise ValueError("t must be supplied for method='bell'.")
         log_abs, sign = integerDeriv_numeric_bell(
             prior=prior,
             t=t,
@@ -150,38 +120,26 @@ def mgfDerivative_integer(
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
         )
-
         if log:
             return log_abs, sign
-
-        if log_abs == -math.inf:
-            return 0.0
-
-        return sign * np.exp(log_abs)
+        return 0.0 if log_abs == -math.inf else sign * np.exp(log_abs)
 
     # ---------------------------------------------------------
     # JAX backend
     # ---------------------------------------------------------
-
     if t is None:
-        raise ValueError(
-            "t must be supplied for method='jax'."
-        )
-
+        raise ValueError("t must be supplied for method='jax'.")
+    # Pass u to the JAX function (which expects it for incomplete MGF)
     log_abs, sign = integerDeriv_numeric_jax(
         prior=prior,
         t=t,
         order=order,
-        complete=complete
+        complete=complete,
+        u=u,                     # <-- added
     )
-
     if log:
         return log_abs, sign
-
-    if log_abs == -math.inf:
-        return 0.0
-
-    return sign * np.exp(log_abs)
+    return 0.0 if log_abs == -math.inf else sign * np.exp(log_abs)
 
 
 def mgfDerivative_fractional(
@@ -193,6 +151,7 @@ def mgfDerivative_fractional(
     complete: bool = True,
     log: bool = True,
     integerDeriv_method: str = "symbolic",
+    u: float = None,          # truncation point for incomplete MGF
     **kwargs
 ):
     """
@@ -201,51 +160,35 @@ def mgfDerivative_fractional(
     Parameters
     ----------
     order : float
-        Fractional order (positive). If integer, it will still work (returns ordinary derivative).
+        Fractional order (positive).
     prior : mitMGFprior
-        Prior object containing the MGF and its functions.
-    method : str, optional
-        One of:
-            - 'scipy'   : uses scipy.integrate.quad (adaptive range, with fallback to tan)
-            - 'mpmath'  : uses mpmath.quad (high precision)
-            - If method == "symbolic":
-                Performs the computation symbolically. If unresolved symbols remain after substitution, returns a SymPy expression.
-                Otherwise returns a numeric result(float or (log_abs, sign) according to `log`). Default 'scipy'.
+        Prior object.
+    method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
+        Computation backend.
     t : float, optional
-        Evaluation point. Required for numeric methods ('scipy', 'mpmath').
-    simplify : bool, optional
-        If True, simplify the symbolic expression (only for method='symbolic').
-    log : bool, optional
-        If True and result is numeric, returns (log_abs, sign); else returns ordinary float.
-    integerDeriv_method : str, optional
-        Method for integer derivatives used inside the numeric fractional integrators.
-        One of 'symbolic', 'jax', or 'bell'. Default 'symbolic'.
-    complete : bool, optional
-        If True (default), differentiate the complete MGF.
-        If False, differentiate the incomplete MGF.
-    **kwargs : additional arguments passed to the underlying fractional function.
-        For 'scipy' method: epsabs, epsrel, limit, initial_L, max_L, tol, use_tan.
-        For 'mpmath' method: dps, margin, max_u, tol, use_tan.
-        For 'symbolic' method: timeout_seconds (to limit computation time).
-        (Refer to the docstrings of the respective functions for details.)
+        Evaluation point (required for numeric methods).
+    simplify : bool, default False
+        Simplify symbolic expressions (method='symbolic').
+    complete : bool, default True
+        If True, differentiate complete MGF; if False, incomplete MGF.
+    log : bool, default True
+        If True, numeric output is (log_abs, sign); else ordinary float.
+    integerDeriv_method : str, default 'symbolic'
+        Method for integer derivatives inside integrators.
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False).
+    **kwargs : passed to underlying functions.
 
     Returns
     -------
-    If method == 'symbolic':
-        sympy.Expr (symbolic expression for the fractional derivative).
-    Else:
-        if log=True: (log_abs, sign)
-        else: float (ordinary value)
+    sympy.Expr, (log_abs, sign), or float
     """
-    # ---- Handle symbolic method ----
+    # ---- Symbolic path ----
     if method.lower() == "symbolic":
-
         warnings.warn(
-            "⚠️ Warning: Symbolic computation of fractional derivatives "
-            "can be very slow and inefficient. "
-            "Consider using 'scipy' or 'mpmath' for numerical evaluation."
+            "Symbolic fractional derivatives can be very slow. "
+            "Consider 'scipy' or 'mpmath' instead."
         )
-
         from symbolic_fractionalDeriv import fractionalDeriv_symbolic
 
         expr = fractionalDeriv_symbolic(
@@ -255,39 +198,30 @@ def mgfDerivative_fractional(
             complete=complete,
             **kwargs
         )
-
         if expr is None:
             return None
 
-        # If no evaluation point is supplied,
-        # remain symbolic.
-        if t is None:
-            return expr
+        # Substitute t and u if provided
+        if t is not None:
+            expr = expr.subs(t_sym, t)
+        if not complete and u is not None:
+            expr = expr.subs(u_sym, u)
 
-        # Substitute t.
-        expr = expr.subs(t_sym, t).evalf()
-
-        # Still symbolic?
+        # Final resolution
         if expr.free_symbols:
             return expr
-
-        # Fully numeric from here.
-        value = float(expr)
-
+        value = float(expr.evalf())
         if abs(value) < 1e-300:
-            log_abs = -math.inf
-            sign = 1
-        else:
-            log_abs = np.log(abs(value))
-            sign = 1 if value > 0 else -1
-
+            return (-math.inf, 1) if log else 0.0
+        log_abs = math.log(abs(value))
+        sign = 1 if value > 0 else -1
         return (log_abs, sign) if log else value
 
-    # ---- Numeric methods require t ----
+    # ---- Numeric paths require t ----
     if t is None or math.isnan(t):
         raise ValueError(f"For method '{method}', t must be provided.")
 
-    # ---- Dispatch to scipy or mpmath ----
+    # ---- scipy ----
     if method.lower() == "scipy":
         from jumufraktiv.numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
         return fractionalDeriv_numeric_scipy(
@@ -298,10 +232,12 @@ def mgfDerivative_fractional(
             simplify=simplify,
             return_log=log,
             complete=complete,
+            u=u,
             **kwargs
         )
 
-    elif method.lower() == "mpmath":
+    # ---- mpmath ----
+    if method.lower() == "mpmath":
         from jumufraktiv.numeric_fractionalDeriv_mpmath import fractionalDeriv_numeric_mpmath
         return fractionalDeriv_numeric_mpmath(
             order=order,
@@ -311,12 +247,11 @@ def mgfDerivative_fractional(
             simplify=simplify,
             return_log=log,
             complete=complete,
+            u=u,
             **kwargs
         )
 
-    else:
-        raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
-
+    raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
 
 def mgfDerivative(
     order: float,
@@ -330,6 +265,7 @@ def mgfDerivative(
     use_interpolation: bool = True,
     d_vec: tuple = (0.8, 0.9, 0.95),
     int_tol: float = 1e-12,
+    u: float = None,          # <-- NEW: truncation point for incomplete MGF
     **kwargs
 ):
     """
@@ -354,6 +290,9 @@ def mgfDerivative(
         and 'scipy' for fractional orders.
     t : float, optional
         Evaluation point. Required for numeric methods.
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False).
+        Required for numeric evaluation when complete=False. Default None.
     simplify : bool, optional
         If True, simplify the symbolic expression (only for 'symbolic' methods).
     complete : bool, optional
@@ -394,7 +333,7 @@ def mgfDerivative(
     Returns
     -------
     Depending on the method and order:
-        - If method='symbolic' and no numeric evaluation (t is None or not provided):
+        - If method='symbolic' and some symbols not substituted:
             sympy.Expr (symbolic expression)
         - If numeric evaluation (log=True): tuple (log_abs, sign)
         - If numeric evaluation (log=False): float (ordinary value)
@@ -405,7 +344,7 @@ def mgfDerivative(
         If order is invalid, method is invalid for the order type, required arguments missing,
         or d_vec does not have exactly 3 elements or any element >= 1.
     """
-    # ---- Extract cgf_method and symbolic_timeout from kwargs ----
+    # ---- Extract and pop method‑specific kwargs ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
     symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
 
@@ -438,7 +377,6 @@ def mgfDerivative(
     if order_type == "symbolic":
         if method.lower() not in {'auto', 'symbolic'}:
             raise ValueError(f"Invalid method '{method}' for symbolic order. Only 'symbolic' is allowed.")
-        
         warnings.warn(
             "Derivative order contains symbolic variables. "
             "Using integerDeriv_symbolic() as a formal symbolic derivative. "
@@ -446,7 +384,6 @@ def mgfDerivative(
             "to non-integer orders, but this is not guaranteed.",
             UserWarning,
         )
-        
         return mgfDerivative_integer(
             order=order,
             prior=prior,
@@ -455,10 +392,11 @@ def mgfDerivative(
             simplify=simplify,
             complete=complete,
             log=log,
+            u=u,                     # pass through
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
         )
-    
+
     elif order_type == "integer":
         int_order = int(round(order))
         valid_int_methods = {'symbolic', 'bell', 'jax'}
@@ -470,11 +408,13 @@ def mgfDerivative(
             method=method,
             t=t,
             simplify=simplify,
+            complete=complete,
             log=log,
+            u=u,                     # pass through
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
-            complete=complete
         )
+
     else:
         # ---- Fractional order ----
         valid_frac_methods = {'scipy', 'mpmath', 'symbolic'}
@@ -512,6 +452,7 @@ def mgfDerivative(
                 return_log=log,
                 integer_method=integer_method,
                 complete=complete,
+                u=u,                     # pass through (requires updating fractionalDeriv_interpolated)
                 **scipy_kwargs
             )
 
@@ -522,9 +463,10 @@ def mgfDerivative(
             method=method,
             t=t,
             simplify=simplify,
+            complete=complete,
             log=log,
             integerDeriv_method=integer_method,
-            complete=complete,
+            u=u,                     # pass through
             **kwargs
         )
 
@@ -712,3 +654,62 @@ if __name__ == "__main__":
     log_analytic = np.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * np.log(lambda_exp - t_interp)
     print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
     print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")
+    
+    # ===== Incomplete MGF (iMGF) example =====
+    print("\n" + "=" * 60)
+    print("Incomplete MGF (iMGF) derivative example")
+    print("=" * 60)
+
+    # Use Gamma prior (which has numeric iMGF functions registered)
+    u_val = 2.0
+    t_val_i = -1.0
+    order_i = 1.5  # fractional
+
+    # Numeric derivative of incomplete MGF (ordinary scale)
+    try:
+        val_imgf = mgfDerivative(
+            order=order_i,
+            prior=gamma_prior,
+            method='scipy',
+            t=t_val_i,
+            complete=False,
+            u=u_val,
+            log=False,
+            epsrel=1e-10,
+            integer_method='symbolic'
+        )
+        print(f"Numeric derivative of incomplete MGF (ordinary): {val_imgf:.6e}")
+    except Exception as e:
+        print(f"Failed (ordinary): {e}")
+
+    # Numeric derivative (log scale)
+    try:
+        log_abs_imgf, sign_imgf = mgfDerivative(
+            order=order_i,
+            prior=gamma_prior,
+            method='scipy',
+            t=t_val_i,
+            complete=False,
+            u=u_val,
+            log=True,
+            epsrel=1e-10,
+            integer_method='symbolic'
+        )
+        print(f"Numeric derivative of incomplete MGF (log): log|val| = {log_abs_imgf:.6f}, sign = {sign_imgf}")
+    except Exception as e:
+        print(f"Failed (log): {e}")
+
+    # Symbolic integer derivative of incomplete MGF (uses imgf_sym if available)
+    try:
+        val_imgf_int = mgfDerivative(
+            order=2,
+            prior=gamma_prior,
+            method='symbolic',
+            t=t_val_i,
+            complete=False,
+            u=u_val,
+            log=False
+        )
+        print(f"Symbolic integer derivative of incomplete MGF: {val_imgf_int:.6e}")
+    except Exception as e:
+        print(f"Symbolic integer failed: {e}")

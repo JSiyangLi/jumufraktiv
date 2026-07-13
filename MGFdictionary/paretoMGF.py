@@ -15,7 +15,7 @@ from torch.special import gammaincc as torch_gammaincc
 
 from jumufraktiv.logsum import logplus, logminus
 from jumufraktiv.registry import register_prior, make_prior_spec
-from jumufraktiv.symbols import t, theta, param
+from jumufraktiv.symbols import t, theta, param, u
 
 
 # ============================================================
@@ -213,12 +213,16 @@ def pareto_factory(params):
     mgf_sym = alpha * expint(alpha + 1, -xi * t)
     cgf_sym = sp.log(alpha) + sp.log(expint(alpha + 1, -xi * t))
     pdf_sym = alpha * xi**alpha / theta**(alpha + 1)
+    imgf_sym = pareto_imgf_symbolic(u)
+    logimgf_sym = sp.log(imgf_sym)
 
     # Substitute numeric parameter values
     subs_map = {alpha: alpha_val, xi: xi_val}
     mgf_sym = mgf_sym.subs(subs_map)
     cgf_sym = cgf_sym.subs(subs_map)
     pdf_sym = pdf_sym.subs(subs_map)
+    imgf_sym = imgf_sym.subs(subs_map)
+    logimgf_sym = logimgf_sym.subs(subs_map)
 
     return make_prior_spec(
         mgf_sym=mgf_sym,
@@ -235,6 +239,8 @@ def pareto_factory(params):
         logpdf_func=lambda x: pareto_logpdf(x, alpha_val, xi_val),
         
         # Incomplete MGF (truncated at u)
+        imgf_sym=imgf_sym,
+        logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: pareto_imgf(t_val, alpha_val, xi_val, u_val),
         logimgf=lambda t_val, u_val: pareto_logimgf(t_val, alpha_val, xi_val, u_val),
         imgf_jax=lambda t_val, u_val: pareto_imgf_jax(t_val, alpha_val, xi_val, u_val),

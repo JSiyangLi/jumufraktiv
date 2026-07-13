@@ -33,12 +33,11 @@ def fractionalDeriv_numeric_scipy_tan(
     limit: int = 100,
     return_log: bool = False,
     margin: float = 1e-10,
-    max_u: float = 20.0
+    max_u: float = 20.0,
+    u: float = None                      # NEW: truncation point for incomplete MGF
 ):
     """
-    Compute fractional derivative using a scaled tan‑transform:
-        u = max_u * tan(theta)
-    with theta in (-pi/2, pi/2). The integration limits are fixed.
+    Compute fractional derivative using a scaled tan‑transform.
 
     Parameters
     ----------
@@ -65,6 +64,8 @@ def fractionalDeriv_numeric_scipy_tan(
         Offset from the asymptotes to avoid infinities.
     max_u : float
         Maximum absolute value of u after transformation (default 20).
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False). Default None.
 
     Returns
     -------
@@ -82,7 +83,8 @@ def fractionalDeriv_numeric_scipy_tan(
             t=t,
             simplify=simplify,
             complete=complete,
-            log=return_log
+            log=return_log,
+            u=u                         # pass u through
         )
         return result
 
@@ -93,8 +95,8 @@ def fractionalDeriv_numeric_scipy_tan(
         # Compute u = max_u * tan(theta)
         try:
             tan_theta = math.tan(theta)
-            u = max_u * tan_theta
-            z = math.exp(u)
+            u_var = max_u * tan_theta
+            z = math.exp(u_var)
             y = t - z
             # Get derivative in log scale (always log=True)
             log_abs, sign = mgfDerivative_integer(
@@ -104,20 +106,20 @@ def fractionalDeriv_numeric_scipy_tan(
                 t=y,
                 simplify=simplify,
                 complete=complete,
-                log=True
+                log=True,
+                u=u                         # pass u through
             )
             if log_abs == -float('inf'):
                 return 0.0
             # log Jacobian: du/dtheta = max_u * (1 + tan^2)
             log_jacobian = math.log(max_u) + math.log1p(tan_theta * tan_theta)
-            log_integrand = gamma_val * u + log_abs + log_jacobian
+            log_integrand = gamma_val * u_var + log_abs + log_jacobian
             if log_integrand > 700:
                 return 0.0
             if log_integrand < -745:
                 return 0.0
             return sign * math.exp(log_integrand)
         except Exception:
-            # If anything fails (e.g., math range error), treat as zero
             return 0.0
 
     a = -math.pi/2 + margin
@@ -158,7 +160,8 @@ def fractionalDeriv_numeric_scipy(
     initial_L: float = 10.0,
     max_L: float = 1e4,
     tol: float = 1e-6,
-    use_tan: bool = False
+    use_tan: bool = False,
+    u: float = None                      # NEW: truncation point for incomplete MGF
 ):
     """
     Compute the Liouville‑Caputo fractional derivative of the MGF.
@@ -192,6 +195,8 @@ def fractionalDeriv_numeric_scipy(
         Relative tolerance for stopping when integral stabilises.
     use_tan : bool
         If True, directly use the tan‑transform method.
+    u : float, optional
+        Truncation point for incomplete MGF (used when complete=False). Default None.
 
     Returns
     -------
@@ -209,23 +214,24 @@ def fractionalDeriv_numeric_scipy(
             t=t,
             simplify=simplify,
             complete=complete,
-            log=return_log
+            log=return_log,
+            u=u                         # pass u through
         )
         return result
 
     # ---- 2. If use_tan=True, directly call tan version ----
     if use_tan:
         return fractionalDeriv_numeric_scipy_tan(
-            order, prior, t, method, simplify,
-            epsabs, epsrel, limit, return_log, complete
+            order, prior, t, method, simplify=simplify,
+            epsabs=epsabs, epsrel=epsrel, limit=limit, return_log=return_log, complete=complete, u=u
         )
 
     # ---- 3. Adaptive range method ----
     n = math.floor(order)
     gamma_val = (n + 1) - order
 
-    def integrand(u):
-        z = math.exp(u)
+    def integrand(u_var):
+        z = math.exp(u_var)
         y = t - z
         log_abs, sign = mgfDerivative_integer(
             order=n + 1,
@@ -234,11 +240,12 @@ def fractionalDeriv_numeric_scipy(
             t=y,
             simplify=simplify,
             complete=complete,
-            log=True
+            log=True,
+            u=u                         # pass u through
         )
         if log_abs == -float('inf'):
             return 0.0
-        log_integrand = gamma_val * u + log_abs
+        log_integrand = gamma_val * u_var + log_abs
         if log_integrand > 700:
             return 0.0
         if log_integrand < -745:
@@ -268,7 +275,7 @@ def fractionalDeriv_numeric_scipy(
                 print("  No valid adaptive result; falling back to tan‑transform...")
                 return fractionalDeriv_numeric_scipy_tan(
                     order, prior, t, method, simplify,
-                    epsabs, epsrel, limit, return_log, complete
+                    epsabs=epsabs, epsrel=epsrel, limit=limit, return_log=return_log, complete=complete, u=u
                 )
 
     # If we reached max_L without convergence
@@ -278,7 +285,7 @@ def fractionalDeriv_numeric_scipy(
         print("Adaptive method failed to produce a result; falling back to tan‑transform...")
         return fractionalDeriv_numeric_scipy_tan(
             order, prior, t, method, simplify,
-            epsabs, epsrel, limit, return_log, complete
+            epsabs=epsabs, epsrel=epsrel, limit=limit, return_log=return_log, complete=complete, u=u
         )
 
     result = factor * integral_valid
@@ -290,7 +297,6 @@ def fractionalDeriv_numeric_scipy(
             return math.log(abs(result)), 1 if result > 0 else -1
     else:
         return result
-
 
 # ===== Example usage =====
 if __name__ == "__main__":
