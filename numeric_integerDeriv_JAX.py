@@ -1,53 +1,36 @@
-import math
 import jax
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from jax.experimental import jet
-from functools import partial
+import math
 
+jax.config.update("jax_enable_x64", True)
 
-def integerDeriv_numeric_jax(t, prior, order, complete: bool = True, u = None):
-    """
-    Compute integer derivative of an MGF using JAX jet.
-
-    Parameters
-    ----------
-    t : float
-        Evaluation point.
-
-    prior : mitMGFprior
-        Prior object providing `mgf_jax(t)`.
-
-    order : int
-        Derivative order.
-        
-    complete : bool, optional
-        If True (default), differentiate the complete MGF (prior.mgf_jax).
-        If False, differentiate the incomplete MGF (prior.imgf_jax).
-
-    Returns
-    -------
-    log_abs : float
-        log(|d^order/dt^order M(t)|)
-
-    sign : int
-        sign of derivative
-    """
+def integerDeriv_numeric_jax(
+    t,
+    prior,
+    order,
+    complete: bool = True,
+    u=None
+):
 
     if order < 0:
         raise ValueError("Order must be non-negative.")
 
+    # ---------------------------------------------------------
+    # Select function
+    # ---------------------------------------------------------
     if complete:
-        if not hasattr(prior, "mgf_jax") or prior.mgf_jax is None:
-            raise ValueError("Prior does not provide a JAX-compatible MGF (mgf_jax).")
+        if prior.mgf_jax is None:
+            raise ValueError("Prior does not provide a JAX-compatible MGF.")
         expr = prior.mgf_jax
 
     else:
         if u is None:
-            raise ValueError("In this JAX computation, u must be supplied for incomplete MGF.")
-        if not hasattr(prior, "imgf_jax") or prior.imgf_jax is None:
-            raise ValueError("Prior does not provide a JAX-compatible incomplete MGF (imgf_jax).")
-        expr = partial(prior.imgf_jax, u=u)
+            raise ValueError("u must be supplied for incomplete MGF.")
+        if prior.imgf_jax is None:
+            raise ValueError("Prior does not provide a JAX-compatible incomplete MGF.")
+
+        expr = lambda t_val: prior.imgf_jax(t_val, u)
 
     # ---------------------------------------------------------
     # Zeroth derivative
@@ -58,42 +41,53 @@ def integerDeriv_numeric_jax(t, prior, order, complete: bool = True, u = None):
         if abs(val) < 1e-300:
             return -float("inf"), 1
 
-        return math.log(abs(val)), (1 if val > 0 else -1)
+        return math.log(abs(val)), 1 if val > 0 else -1
 
     # ---------------------------------------------------------
-    # JAX jet setup
+    # Try Jet first
     # ---------------------------------------------------------
-    #
-    # jet returns:
-    #   primal_out = f(t)
-    #   series_out[k] = f^(k+1)(t) / (k+1)!
-    #
-    # So:
-    #   f^(n)(t) = series_out[n-1] * n!
-    #
+    try:
 
-    series_in = ((1.0,) + (0.0,) * (order - 1),)
+        series_in = ((1.0,) + (0.0,) * (order - 1),)
 
-    primal_out, series_out = jet.jet(
-        expr,
-        (t,),
-        series_in,
-    )
+        _, series_out = jet.jet(
+            expr,
+            (t,),
+            series_in,
+        )
 
-    coef = float(series_out[order - 1])
+        coef = float(series_out[order - 1])
 
+    except Exception as e:
+
+        msg = str(e).lower()
+
+        unsupported = (
+            isinstance(e, KeyError)
+            or "jet" in msg
+            or "primitive" in msg
+            or "not implemented" in msg
+            or "igamma" in msg
+        )
+
+        if not unsupported:
+            raise
+
+        print(f"⚠️ Jet failed ({type(e).__name__}: {e}). Falling back to grad().")
+
+        deriv = expr
+        for _ in range(order):
+            deriv = jax.grad(deriv)
+
+        coef = float(deriv(t))
+
+    # ---------------------------------------------------------
+    # Return result
+    # ---------------------------------------------------------
     if abs(coef) < 1e-300:
         return -float("inf"), 1
 
-    # ---------------------------------------------------------
-    # reconstruct derivative magnitude
-    # ---------------------------------------------------------
-    # IMPORTANT: jet already encodes factorial scaling
-    log_abs = math.log(abs(coef)) #+ math.lgamma(order + 1)
-
-    sign = 1 if coef > 0 else -1
-
-    return log_abs, sign
+    return math.log(abs(coef)), (1 if coef > 0 else -1)
 
 
 if __name__ == "__main__":

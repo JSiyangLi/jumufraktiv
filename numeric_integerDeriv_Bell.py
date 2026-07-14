@@ -15,7 +15,6 @@ import jax
 jax.config.update("jax_enable_x64", True)
 from jax import grad
 
-# New import for mitMGFprior
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.logsum import logplus, logminus, logplusvec
 from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
@@ -23,11 +22,9 @@ from jax.experimental import jet
 import jax.numpy as jnp
 
 
-# ===== Helper: CGF derivatives =====
+# ===== Helper: CGF derivatives (unchanged) =====
 def cgf_derivatives_jet(cgf_func, t, order):
-    """
-    Compute derivatives of the CGF using JAX's jet (Taylor mode).
-    """
+    """Compute derivatives of the CGF using JAX's jet (Taylor mode)."""
     if order == 0:
         return [], []
 
@@ -48,9 +45,7 @@ def cgf_derivatives_jet(cgf_func, t, order):
 
 
 def cgf_derivatives_grad(cgf_func, t, order):
-    """
-    Compute derivatives of the CGF using nested jax.grad (reverse mode).
-    """
+    """Compute derivatives of the CGF using nested jax.grad (reverse mode)."""
     log_abs = []
     signs = []
     f = cgf_func
@@ -67,9 +62,7 @@ def cgf_derivatives_grad(cgf_func, t, order):
 
 
 def cgf_derivatives_auto(cgf_func, t, order):
-    """
-    Try jet first; if it fails due to missing rules, fall back to grad.
-    """
+    """Try jet first; if it fails due to missing rules, fall back to grad."""
     try:
         return cgf_derivatives_jet(cgf_func, t, order)
     except Exception as e:
@@ -88,13 +81,7 @@ def cgf_derivatives_auto(cgf_func, t, order):
 
 # ===== Bell polynomial (log‑space, sign‑aware) =====
 def bell_polynomial_log(n: int, logv: list, vsign: list):
-    """
-    Compute log |B_n(v1,...,vn)| and sign of B_n.
-    Uses recurrence:
-        B_0 = 1,
-        B_n = sum_{k=1}^n C(n-1, k-1) v_k B_{n-k}
-    All operations done in log‑space to avoid overflow/underflow.
-    """
+    """Compute log |B_n(v1,...,vn)| and sign of B_n."""
     if n == 0:
         return 0.0, 1
 
@@ -147,17 +134,19 @@ def integerDeriv_numeric_bell(
     prior: mitMGFprior,
     order: int,
     symbolic_timeout: float = 600.0,
-    cgf_method: str = 'auto'
+    cgf_method: str = 'auto',
+    complete: bool = True,
+    u: float = None
 ):
     """
-    Compute the order‑th derivative of M(t) at t using Bell polynomials.
+    Compute the order‑th derivative of M(t) or imgf(t,u) using Bell polynomials.
 
     Parameters
     ----------
     t : float
         Evaluation point.
     prior : mitMGFprior
-        Prior object providing symbolic and numeric CGF functions.
+        Prior object providing symbolic and numeric CGF/iMGF functions.
     order : int
         Derivative order (>= 0).
     symbolic_timeout : float, optional
@@ -165,11 +154,12 @@ def integerDeriv_numeric_bell(
         computation. If exceeded, fall back to JAX. Default 600.
     cgf_method : str, optional
         Method for computing CGF derivatives in the numeric path.
-        Options:
-            - 'auto': try jet, fall back to grad on failure (default)
-            - 'jet': force JAX Taylor mode (jet)
-            - 'grad': force nested jax.grad (reverse mode)
-        If 'jet' or 'grad', the symbolic path is skipped entirely.
+        Options: 'auto', 'jet', 'grad'. Default 'auto'.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF.
+        If False, differentiate the incomplete MGF (imgf) at truncation u.
+    u : float, optional
+        Truncation point for incomplete MGF (required if complete=False).
 
     Returns
     -------
@@ -178,46 +168,85 @@ def integerDeriv_numeric_bell(
     if order < 0:
         raise ValueError("Order must be non‑negative.")
 
-    # ----- 1. Build symbolic CGF expression -----
-    cgf_sym = prior.cgf_sym
-    if cgf_sym is None:
-        raise ValueError("Prior does not provide a symbolic CGF (cgf_sym).")
+    # ------------------------------------------------------------
+    # 1. Select symbolic expression and numeric function
+    #    based on `complete`
+    # ------------------------------------------------------------
+    if complete:
+        cgf_expr = prior.cgf_sym
+        if cgf_expr is None:
+            raise ValueError("Prior does not provide a symbolic CGF (cgf_sym).")
+        if callable(cgf_expr):
+            cgf_expr = cgf_expr()
+        if not isinstance(cgf_expr, sp.Expr):
+            raise TypeError("cgf_sym must be a SymPy expression.")
 
-    if callable(cgf_sym):
-        cgf_sym = cgf_sym()
+        cgf_func = prior.cgf_jax
+        if cgf_func is None:
+            raise ValueError("Prior does not provide cgf_jax for numeric path.")
 
-    if not isinstance(cgf_sym, sp.Expr):
-        raise TypeError("cgf_sym must be a SymPy expression.")
+    else:
+        if u is None:
+            raise ValueError("u must be provided when complete=False.")
 
-    t_sym = next((s for s in cgf_sym.free_symbols if s.name == 't'), None)
-    if t_sym is None:
-        raise RuntimeError("No symbol 't' found in the CGF expression.")
+        # Symbolic log(imgf) if imgf_sym exists
+        if prior.imgf_sym is not None:
+            cgf_expr = sp.log(prior.imgf_sym)
+        else:
+            cgf_expr = None
+            print("No imgf_sym; symbolic path will be skipped.")
+
+        # Numeric function: prefer logimgf_jax, else log(imgf_jax)
+        if prior.logimgf_jax is not None:
+            cgf_func = lambda t_val: prior.logimgf_jax(t_val, u)
+        elif prior.imgf_jax is not None:
+            cgf_func = lambda t_val: jnp.log(prior.imgf_jax(t_val, u))
+        else:
+            raise ValueError("Prior does not provide imgf_jax or logimgf_jax for iMGF.")
+
+    # ------------------------------------------------------------
+    # 2. Extract the symbol 't' from the expression (if symbolic)
+    # ------------------------------------------------------------
+    t_sym = None
+    if cgf_expr is not None:
+        for s in cgf_expr.free_symbols:
+            if s.name == 't':
+                t_sym = s
+                break
+        if t_sym is None:
+            raise RuntimeError("No symbol 't' found in the CGF expression.")
 
     params = prior.params or {}
 
-    # ----- 2. Decision: force JAX if user explicitly requested jet/grad -----
+    # ------------------------------------------------------------
+    # 3. Decision: force JAX if user explicitly requested jet/grad
+    # ------------------------------------------------------------
     if cgf_method.lower() in ('jet', 'grad'):
         use_symbolic = False
         print(f"Decision: Forced JAX numeric path (cgf_method='{cgf_method}')")
     else:
-        # Run the low-order test only if method is 'auto'
-        decision = suggest_method_integerDeriv(
-            cgf_sym, t_sym, order,
-            test_order=min(order, 2),
-            timeout=1.0,
-            return_decision=True
-        )
-        use_symbolic = decision['recommend_symbolic']
-        print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
+        if cgf_expr is not None:
+            decision = suggest_method_integerDeriv(
+                cgf_expr, t_sym, order,
+                test_order=min(order, 2),
+                timeout=1.0,
+                return_decision=True
+            )
+            use_symbolic = decision['recommend_symbolic']
+            print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
+        else:
+            use_symbolic = False
+            print("No symbolic expression; using numeric (JAX) path.")
 
-    # Flag to track numeric path
     use_jax = not use_symbolic
 
-    # ----- 3. Try symbolic path (with timeout) -----
+    # ------------------------------------------------------------
+    # 4. Try symbolic path (with timeout)
+    # ------------------------------------------------------------
     if use_symbolic:
         try:
             subs_dict = {}
-            for sym in cgf_sym.free_symbols:
+            for sym in cgf_expr.free_symbols:
                 if sym.name in params:
                     subs_dict[sym] = float(params[sym.name])
 
@@ -231,12 +260,24 @@ def integerDeriv_numeric_bell(
                         f"Symbolic computation exceeded {symbolic_timeout:.1f} seconds."
                     )
 
-                deriv_expr = sp.diff(cgf_sym, t_sym, k)
+                deriv_expr = sp.diff(cgf_expr, t_sym, k)
+                # Substitute t and numeric params
                 if t == 0:
                     val = sp.limit(deriv_expr, t_sym, 0, dir='-').subs(subs_dict).evalf()
                 else:
                     val = deriv_expr.subs({t_sym: t}).subs(subs_dict).evalf()
-                val = float(val)
+
+                # ---- CRITICAL FIX: substitute u for incomplete MGF ----
+                if not complete and u is not None:
+                    from jumufraktiv.symbols import u as u_sym
+                    if u_sym in val.free_symbols:
+                        val = val.subs(u_sym, u)
+                # -------------------------------------------------------
+
+                try:
+                    val = float(val)
+                except Exception:
+                    raise ValueError("Symbolic derivative still contains free symbols; falling back to JAX")
 
                 if abs(val) < sys.float_info.epsilon:
                     kappa_log_abs.append(-float('inf'))
@@ -245,7 +286,11 @@ def integerDeriv_numeric_bell(
                     kappa_log_abs.append(math.log(abs(val)))
                     kappa_sign.append(1 if val > 0 else -1)
 
-            cgf_t = prior.cgf(t)
+            # Get the zeroth cumulant: CGF value
+            if complete:
+                cgf_t = prior.cgf(t)
+            else:
+                cgf_t = float(cgf_func(t))
 
             log_abs_B, sign_B = bell_polynomial_log(order, kappa_log_abs, kappa_sign)
             result = cgf_t + log_abs_B
@@ -264,13 +309,11 @@ def integerDeriv_numeric_bell(
                 print(f"⚠️ Symbolic path failed: {e}. Falling back to JAX.")
             use_jax = True
 
-    # ----- 4. Numeric (JAX) path -----
+    # ------------------------------------------------------------
+    # 5. Numeric (JAX) path
+    # ------------------------------------------------------------
     if use_jax:
         print("Using JAX numeric path...")
-        cgf_func = prior.cgf_jax
-        if cgf_func is None:
-            raise ValueError("Prior does not provide cgf_jax.")
-
         if cgf_method == 'jet':
             kappa_log_abs, kappa_sign = cgf_derivatives_jet(cgf_func, t, order)
         elif cgf_method == 'grad':
@@ -289,8 +332,10 @@ def integerDeriv_numeric_bell(
 if __name__ == "__main__":
     import time
     import math
+    import numpy as np
     import jumufraktiv.MGFdictionary  # ensures priors are registered
     from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.symbols import t as t_sym, u as u_sym
 
     print("=" * 60)
     print("Testing integerDeriv_numeric_bell() for Gamma prior (orders 0–3)")
@@ -303,6 +348,43 @@ if __name__ == "__main__":
     for n in range(4):
         log_abs, sign = integerDeriv_numeric_bell(t_val, gamma_prior, n)
         print(f"Gamma M^{{{n}}}({t_val}) : log|.| = {log_abs:.4f}, sign = {sign}")
+
+    # ---- JAX branch for complete MGF (auto mode) ----
+    print("\n--- JAX branch for complete MGF (auto mode) ---")
+    try:
+        log_abs_jax_complete, sign_jax_complete = integerDeriv_numeric_bell(
+            t=t_val,
+            prior=gamma_prior,
+            order=3,
+            symbolic_timeout=600.0,
+            cgf_method='auto',
+            complete=True,
+            u=None
+        )
+        val_jax_complete = sign_jax_complete * math.exp(log_abs_jax_complete)
+        print(f"  auto mode: log|val| = {log_abs_jax_complete:.6f}, sign = {sign_jax_complete}")
+        print(f"    ordinary: {val_jax_complete:.6e}")
+    except Exception as e:
+        print(f"  JAX auto for complete failed: {e}")
+        
+    # ---- JAX branch for complete MGF (forced) ----
+    print("\n--- JAX branch for complete MGF (forced) ---")
+    for cgf_method in ['jet', 'grad']:
+        try:
+            log_abs_jax_comp, sign_jax_comp = integerDeriv_numeric_bell(
+                t=t_val,
+                prior=gamma_prior,
+                order=3,
+                symbolic_timeout=600.0,
+                cgf_method=cgf_method,
+                complete=True,
+                u=None
+            )
+            val_jax_comp = sign_jax_comp * math.exp(log_abs_jax_comp)
+            print(f"  cgf_method={cgf_method}: log|val| = {log_abs_jax_comp:.6f}, sign = {sign_jax_comp}")
+            print(f"    ordinary: {val_jax_comp:.6e}")
+        except Exception as e:
+            print(f"  cgf_method={cgf_method} failed: {e}")
 
     # ---- High‑order test: 50th derivative of Gamma with very small parameters ----
     print("\n" + "=" * 60)
@@ -320,7 +402,7 @@ if __name__ == "__main__":
     start = time.time()
     log_abs, sign = integerDeriv_numeric_bell(
         t_small, small_prior, order_test,
-        symbolic_timeout=600.0   # 10 minutes
+        symbolic_timeout=600.0
     )
     elapsed = time.time() - start
 
@@ -329,7 +411,6 @@ if __name__ == "__main__":
     print(f"  sign       = {sign}")
     print(f"  Time       = {elapsed:.3f} seconds")
 
-    # Analytical check
     log_falling = math.lgamma(alpha_small + order_test) - math.lgamma(alpha_small)
     log_expected = (log_falling
                     + alpha_small * math.log(beta_small)
@@ -340,3 +421,81 @@ if __name__ == "__main__":
         print("  ✅ Matches analytical formula.")
     else:
         print("  ⚠️  Difference is not negligible – check precision.")
+
+    # ---- Bell method for incomplete MGF (iMGF) ----
+    print("\n" + "=" * 60)
+    print("Testing Bell method for incomplete MGF (Gamma prior, truncated at u)")
+    print("=" * 60)
+
+    u_val = 2.0
+    t_val_imgf = -1.0
+    order_imgf = 3
+
+    # ----- Symbolic reference (directly from imgf_sym) -----
+    try:
+        imgf_sym = gamma_prior.imgf_sym
+        if imgf_sym is None:
+            raise ValueError("imgf_sym not available")
+
+        # Build substitution dict for hyperparameters
+        subs_dict = {}
+        for sym in imgf_sym.free_symbols:
+            if sym.name in gamma_prior.params:
+                subs_dict[sym] = float(gamma_prior.params[sym.name])
+
+        # Differentiate symbolically
+        deriv_sym = sp.diff(imgf_sym, t_sym, order_imgf)
+        # Evaluate at t and u
+        val_sym = deriv_sym.subs({t_sym: t_val_imgf, u_sym: u_val}).subs(subs_dict).evalf()
+        if val_sym.free_symbols:
+            raise ValueError("Symbolic expression still has free symbols")
+
+        val_ref = float(val_sym)
+        log_abs_ref = math.log(abs(val_ref))
+        sign_ref = 1 if val_ref > 0 else -1
+        print(f"Symbolic reference (ordinary): {val_ref:.6e}")
+        print(f"Symbolic reference (log): log|val| = {log_abs_ref:.6f}, sign = {sign_ref}")
+
+    except Exception as e:
+        print(f"Symbolic reference failed: {e}")
+        val_ref = None
+
+    # ----- Bell method (direct call to integerDeriv_numeric_bell) -----
+    try:
+        log_abs_bell, sign_bell = integerDeriv_numeric_bell(
+            t=t_val_imgf,
+            prior=gamma_prior,
+            order=order_imgf,
+            symbolic_timeout=600.0,
+            cgf_method='auto',
+            complete=False,
+            u=u_val
+        )
+        val_bell = sign_bell * math.exp(log_abs_bell)
+        print(f"Bell (log): log|val| = {log_abs_bell:.6f}, sign = {sign_bell}")
+        print(f"Bell (ordinary): {val_bell:.6e}")
+        if val_ref is not None:
+            print(f"Difference (Bell - symbolic): {abs(val_bell - val_ref):.2e}")
+    except Exception as e:
+        print(f"Bell method failed: {e}")
+            
+    # ---- JAX branch for incomplete MGF (forced) ----
+    print("\n--- JAX branch for iMGF (forced) ---")
+    for cgf_method in ['jet', 'grad']:
+        try:
+            log_abs_jax, sign_jax = integerDeriv_numeric_bell(
+                t=t_val_imgf,
+                prior=gamma_prior,
+                order=order_imgf,
+                symbolic_timeout=600.0,
+                cgf_method=cgf_method,
+                complete=False,
+                u=u_val
+            )
+            val_jax = sign_jax * math.exp(log_abs_jax)
+            print(f"  cgf_method={cgf_method}: log|val| = {log_abs_jax:.6f}, sign = {sign_jax}")
+            print(f"    ordinary: {val_jax:.6e}")
+            if val_ref is not None:
+                print(f"    diff vs symbolic: {abs(val_jax - val_ref):.2e}")
+        except Exception as e:
+            print(f"  cgf_method={cgf_method} failed: {e}")

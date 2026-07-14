@@ -180,13 +180,19 @@ class MGFDerivative:
     # RESULT STORAGE
     # ========================================================
     def _store_result(self, result):
+        """
+        Store the result of evaluating the derivative at t = -b.
 
+        The derivative at -b is the normalising constant of the posterior.
+        It must be positive (since it represents the marginal likelihood).
+        If the sign is negative, an error is raised.
+        """
         # ----------------------------------------------------
         # Symbolic state
         # ----------------------------------------------------
         if isinstance(result, sp.Expr):
             self._result_expr = result
-            self._is_symbolic = True # Was the already-evaluated value DM(−b) symbolic?
+            self._is_symbolic = True
             self.log_abs = None
             self._sign = None
             self.value = None
@@ -204,9 +210,17 @@ class MGFDerivative:
                 raise TypeError(
                     "Expected (log_abs, sign) tuple when log=True."
                 )
-            self.log_abs, self._sign = result
+            log_abs, sign = result
+            # Sign must be positive for the normalising constant
+            if sign == -1:
+                raise ValueError(
+                    "Derivative at t=-b is negative. "
+                    "This suggests a numerical issue or invalid likelihood/prior. "
+                    "Posterior density cannot be negative."
+                )
+            self.log_abs = log_abs
+            self._sign = sign
             self.value = None
-
         else:
             # Expect ordinary numeric value
             if isinstance(result, tuple):
@@ -214,8 +228,14 @@ class MGFDerivative:
                     "Expected numeric value when log=False, "
                     "but received (log_abs, sign)."
                 )
-
-            self.value = float(result)
+            value = float(result)
+            if value < 0:
+                raise ValueError(
+                    "Derivative at t=-b is negative. "
+                    "This suggests a numerical issue or invalid likelihood/prior. "
+                    "Posterior density cannot be negative."
+                )
+            self.value = value
             self.log_abs = None
             self._sign = None
 
@@ -265,6 +285,7 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR DENSITY
     # ========================================================
+        
     def post_density(self, theta_val=None, log=True):
         """
         Compute the posterior density (or log-density) at given θ.

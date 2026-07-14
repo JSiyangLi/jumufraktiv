@@ -14,7 +14,7 @@ where n = floor(α), γ = n+1-α.
 
 All arithmetic is performed with the precision specified by mp.dps.
 """
-
+import math
 from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
@@ -108,7 +108,7 @@ def fractionalDeriv_numeric_mpmath_tan(
                 complete=complete,
                 u=u                         # pass u through
             )
-            if log_abs == -float('inf'):
+            if not math.isfinite(log_abs):
                 return mpf(0.0)
             # log Jacobian: du/dtheta = max_u * (1 + tan^2)
             log_jacobian = log(max_u) + log(1 + tan_theta * tan_theta)
@@ -239,7 +239,7 @@ def fractionalDeriv_numeric_mpmath(
             log=True,
             u=u                         # pass u through
         )
-        if log_abs == -float('inf'):
+        if not math.isfinite(log_abs):
             return mpf(0.0)
         log_integrand = gamma_val * u_var + mpf(log_abs)
         return exp(log_integrand) * sign
@@ -356,3 +356,66 @@ if __name__ == "__main__":
     print(f"  Relative diff (adaptive vs 2nd): {abs(result_adaptive - deriv2) / abs(deriv2):.2e}")
     print(f"  Relative diff (tan vs 2nd):      {abs(result_tan - deriv2) / abs(deriv2):.2e}")
     print(f"  Relative diff (adaptive vs tan): {abs(result_adaptive - result_tan) / abs(result_tan):.2e}")
+    
+        # ---- Incomplete MGF (iMGF) fractional derivative test ----
+    print("\n" + "=" * 60)
+    print("Testing mpmath fractional derivative for iMGF (Gamma prior, truncated at u)")
+    print("=" * 60)
+
+    u_val = 2.0
+    t_val_imgf = -1.0
+    frac_order_imgf = 1.5
+
+    gamma_prior_imgf = mitMGFprior.from_registry(
+        "gamma",
+        params={"alpha": 2.0, "beta": 3.0}
+    )
+
+    print(f"  order={frac_order_imgf}, t={t_val_imgf}, u={u_val}, alpha=2, beta=3")
+
+    # ---- Adaptive method ----
+    try:
+        result_adaptive = fractionalDeriv_numeric_mpmath(
+            order=frac_order_imgf,
+            prior=gamma_prior_imgf,
+            t=t_val_imgf,
+            method='symbolic',
+            return_log=False,
+            complete=False,
+            u=u_val,
+            dps=60,
+            tol=1e-10
+        )
+        print(f"  Adaptive result (ordinary): {result_adaptive:.6e}")
+    except Exception as e:
+        print(f"  Adaptive failed: {e}")
+        result_adaptive = None
+
+    # ---- Tan‑transform method ----
+    try:
+        result_tan = fractionalDeriv_numeric_mpmath(
+            order=frac_order_imgf,
+            prior=gamma_prior_imgf,
+            t=t_val_imgf,
+            method='symbolic',
+            return_log=False,
+            use_tan=True,
+            complete=False,
+            u=u_val,
+            dps=60
+        )
+        print(f"  Tan‑transform result (ordinary): {result_tan:.6e}")
+    except Exception as e:
+        print(f"  Tan‑transform failed: {e}")
+        result_tan = None
+
+    # ---- Compare adaptive vs tan ----
+    if result_adaptive is not None and result_tan is not None:
+        diff_abs = abs(result_adaptive - result_tan)
+        rel_diff = diff_abs / max(abs(result_adaptive), abs(result_tan), 1e-300)
+        print(f"  Absolute diff (adaptive vs tan): {diff_abs:.2e}")
+        print(f"  Relative diff: {rel_diff:.2e}")
+        if rel_diff < 1e-6:
+            print("  ✅ Good agreement between adaptive and tan.")
+        else:
+            print("  ⚠️  Significant difference – check precision.")
