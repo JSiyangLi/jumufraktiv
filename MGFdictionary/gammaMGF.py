@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 from scipy.stats import gamma as scipy_gamma
 
-from jumufraktiv.logsum import logplus, logminus
+from jumufraktiv.logsum import logminus
 from jumufraktiv.registry import register_prior, make_prior_spec
 from jumufraktiv.symbols import t, theta, param, u
 

@@ -13,7 +13,6 @@ from jax.scipy.special import gammaln as jax_gammaln, gammaincc as jax_gammaincc
 import torch
 from torch.special import gammaincc as torch_gammaincc
 
-from jumufraktiv.logsum import logplus, logminus
 from jumufraktiv.registry import register_prior, make_prior_spec
 from jumufraktiv.symbols import t, theta, param, u
 

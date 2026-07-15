@@ -16,7 +16,6 @@ import jax.numpy as jnp
 import scipy.stats as stats
 import numpy as np
 
-from jumufraktiv.logsum import logplus, logminus
 from jumufraktiv.registry import register_prior, make_prior_spec
 from jumufraktiv.symbols import t, theta, param
 

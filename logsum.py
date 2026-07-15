@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 def logplus(x: float, y: float) -> float:
     """
@@ -10,15 +11,21 @@ def logplus(x: float, y: float) -> float:
     else:
         return y + math.log1p(math.exp(x - y))
 
-def logminus(x: float, y: float) -> float:
+def logminus(x, y):
     """
     Compute log(exp(x) - exp(y)) in a numerically stable way.
-    Returns log(exp(x) - exp(y)). Returns NaN if x <= y.
+    Returns -inf if x <= y.
+    Works for scalars, lists, and arrays.
     """
-    if x > y:
-        return x + math.log1p(-math.exp(y - x))  # log1p(-exp(d)) is stable when d is negative
-    else:
-        return float('nan')
+    x = np.asarray(x)
+    y = np.asarray(y)
+    result = np.where(x > y,
+                      x + np.log1p(-np.exp(y - x)),
+                      -np.inf)
+    # If both inputs were scalar, return a Python float
+    if result.shape == ():
+        return float(result)
+    return result
 
 def logplusvec(vals) -> float:
     """

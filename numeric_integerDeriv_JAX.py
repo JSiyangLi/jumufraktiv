@@ -2,15 +2,17 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import jet
 import math
+import numpy as np
 
 jax.config.update("jax_enable_x64", True)
 
-def integerDeriv_numeric_jax(
+def _integerDeriv_numeric_jax_scalar(
     t,
     prior,
     order,
     complete: bool = True,
-    u=None
+    u=None,
+    jax_mode: str = "auto"
 ):
 
     if order < 0:
@@ -36,58 +38,146 @@ def integerDeriv_numeric_jax(
     # Zeroth derivative
     # ---------------------------------------------------------
     if order == 0:
-        val = float(expr(t))
+        val = expr(t)
 
         if abs(val) < 1e-300:
-            return -float("inf"), 1
-
-        return math.log(abs(val)), 1 if val > 0 else -1
-
+            return -jnp.inf, 1
+        sign = jnp.where(val >= 0, 1, -1)
+        return jnp.log(jnp.abs(val)), sign
+    
     # ---------------------------------------------------------
-    # Try Jet first
+    # Select JAX differentiation strategy
     # ---------------------------------------------------------
-    try:
+    if jax_mode in ("auto", "jet"):
 
-        series_in = ((1.0,) + (0.0,) * (order - 1),)
+        try:
+            series_in = ((1.0,) + (0.0,) * (order - 1),)
 
-        _, series_out = jet.jet(
-            expr,
-            (t,),
-            series_in,
-        )
+            _, series_out = jet.jet(
+                expr,
+                (t,),
+                series_in,
+            )
 
-        coef = float(series_out[order - 1])
+            coef = series_out[order - 1]
 
-    except Exception as e:
+        except Exception as e:
 
-        msg = str(e).lower()
+            if jax_mode == "jet":
+                raise
 
-        unsupported = (
-            isinstance(e, KeyError)
-            or "jet" in msg
-            or "primitive" in msg
-            or "not implemented" in msg
-            or "igamma" in msg
-        )
+            # auto mode: fallback to grad only for jet failures
+            msg = str(e).lower()
 
-        if not unsupported:
-            raise
+            unsupported = (
+                isinstance(e, KeyError)
+                or "jet" in msg
+                or "primitive" in msg
+                or "not implemented" in msg
+                or "igamma" in msg
+            )
 
-        print(f"⚠️ Jet failed ({type(e).__name__}: {e}). Falling back to grad().")
+            if not unsupported:
+                raise
+
+            print(f"⚠️ Jet failed ({type(e).__name__}: {e}). Falling back to grad().")
+
+            deriv = expr
+            for _ in range(order):
+                deriv = jax.grad(deriv)
+
+            coef = deriv(t)
+
+
+    elif jax_mode == "grad":
 
         deriv = expr
         for _ in range(order):
             deriv = jax.grad(deriv)
 
-        coef = float(deriv(t))
+        coef = deriv(t)
+
+
+    else:
+        raise ValueError(
+            f"Unknown jax_mode='{jax_mode}'. "
+            "Expected 'auto', 'jet', or 'grad'."
+        )
 
     # ---------------------------------------------------------
     # Return result
     # ---------------------------------------------------------
-    if abs(coef) < 1e-300:
-        return -float("inf"), 1
+    eps = 1e-300
 
-    return math.log(abs(coef)), (1 if coef > 0 else -1)
+    is_zero = jnp.abs(coef) < eps
+
+    log_abs = jnp.where(
+        is_zero,
+        -jnp.inf,
+        jnp.log(jnp.abs(coef))
+    )
+
+    sign = jnp.where(
+        is_zero,
+        1,
+        jnp.where(coef >= 0, 1, -1)
+    )
+
+    return log_abs, sign
+
+
+def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
+    """
+    Evaluate a fixed-order derivative at one or more t values.
+
+    Parameters
+    ----------
+    order : int
+        Must be scalar.
+        
+    t : scalar or array-like
+        Evaluation point(s).
+
+    Returns
+    -------
+    (log_abs, sign)
+        Scalars if t is scalar.
+        Arrays if t is array-like.
+    """
+    
+    # This backend only vectorises over t.
+    if np.ndim(order) != 0:
+        raise ValueError(
+            "integerDeriv_numeric_jax only accepts a scalar order. "
+            "Vectorisation over derivative orders is handled by mgfDerivative_integer()."
+        )
+
+    # scalar
+    if np.ndim(t) == 0:
+        return _integerDeriv_numeric_jax_scalar(
+            float(t),
+            prior,
+            order,
+            complete=complete,
+            u=u
+        )
+
+    # vector
+    t = jnp.asarray(t)
+
+    vmapped = jax.vmap(
+        lambda x: _integerDeriv_numeric_jax_scalar(
+            x,
+            prior,
+            order,
+            complete=complete,
+            u=u
+        )
+    )
+
+    log_abs, sign = vmapped(t)
+
+    return np.asarray(log_abs), np.asarray(sign)
 
 
 if __name__ == "__main__":
@@ -182,3 +272,29 @@ if __name__ == "__main__":
     print("\nSpecial function comparison:")
     print("JAX:", jsp.gammaincc(-alpha_test, z))
     print("SciPy:", sc.gammaincc(-alpha_test, z))
+    
+    # ---------------------------------------------------------
+    # Vectorised test: evaluate derivative at multiple t values
+    # ---------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("Vectorised test: evaluate derivative at an array of t")
+    print("=" * 60)
+
+    t_vals = np.linspace(-0.5, 0.5, 5)
+    order_vec = 2
+
+    log_abs_vec, sign_vec = integerDeriv_numeric_jax(t_vals, gamma_prior, order_vec)
+
+    print(f"t values: {t_vals}")
+    print(f"log|deriv|: {log_abs_vec}")
+    print(f"sign: {sign_vec}")
+
+    # Optional: test incomplete MGF if supported
+    if gamma_prior.has_iMGF():
+        print("\nVectorised incomplete MGF test:")
+        u_val = 2.0
+        log_abs_imgf, sign_imgf = integerDeriv_numeric_jax(
+            t_vals, gamma_prior, order_vec, complete=False, u=u_val
+        )
+        print(f"log|deriv| (iMGF): {log_abs_imgf}")
+        print(f"sign (iMGF): {sign_imgf}")
