@@ -16,25 +16,17 @@ from jumufraktiv.mitMGFprior_class import mitMGFprior
 def fractionalDeriv_interpolated(
     order: float,
     prior: mitMGFprior,
-    t: float,
+    t: float | np.ndarray | list,
     d_vec: tuple = (0.8, 0.9, 0.95),
     return_log: bool = True,
     complete: bool = True,
     integer_method: str = "symbolic",
-    u: float = None,                     # NEW: for incomplete MGF
+    u: float = None,
     **kwargs
 ):
     """
     Compute fractional derivative using cubic interpolation for orders
-    approaching an integer from below.
-
-    The user supplies `d_vec` as complements of deviations. For example,
-    d_vec = (0.8, 0.9, 0.95) means the actual deviations are (0.2, 0.1, 0.05).
-    The interpolation points are n - dev1, n - dev2, n - dev3, n, where
-    dev_i = 1 - d_i.
-
-    The interpolation is used for orders within (n - min_dev, n),
-    where min_dev = min(1 - d_i).
+    approaching an integer from below. Supports vectorized t.
 
     Parameters
     ----------
@@ -42,8 +34,8 @@ def fractionalDeriv_interpolated(
         Target fractional order (non‑integer, typically just below an integer).
     prior : mitMGFprior
         Prior object providing the MGF and its functions.
-    t : float
-        Evaluation point.
+    t : float or array-like
+        Evaluation point(s).
     d_vec : tuple, optional
         Three complements of deviations (default (0.8, 0.9, 0.95)).
         Actual deviations are 1 - d_i.
@@ -63,18 +55,26 @@ def fractionalDeriv_interpolated(
     Returns
     -------
     float or tuple (log_abs, sign)
-        The interpolated derivative value (or log‑absolute and sign).
+        If t is scalar, returns scalar or tuple.
+        If t is array, returns arrays.
     """
-    # ---- Convert d_vec from complements to actual deviations ----
+    # ---- Validate d_vec ----
     if len(d_vec) != 3:
         raise ValueError("d_vec must have exactly 3 elements.")
     actual_dev = tuple(1.0 - d for d in d_vec)
     if any(dev <= 0 for dev in actual_dev):
         raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
 
-    # Determine the integer n such that order < n
+    # ---- Convert t to array ----
+    t_arr = np.asarray(t)
+    scalar_input = t_arr.ndim == 0
+    if scalar_input:
+        t_arr = np.array([t])
+    batch = len(t_arr)
+
+    # ---- Determine interpolation orders ----
     if order == int(order):
-        # Exact integer: compute directly
+        # Exact integer: compute directly for all t
         return fractionalDeriv_numeric_scipy(
             order=order,
             prior=prior,
@@ -82,65 +82,86 @@ def fractionalDeriv_interpolated(
             return_log=return_log,
             method=integer_method,
             complete=complete,
-            u=u,                     # pass u
+            u=u,
             **kwargs
         )
 
     n = int(np.ceil(order))
     if n <= 0:
         raise ValueError(f"Integer n = {n} must be positive.")
-    # Ensure order > n - max(actual_dev) so that interpolation is valid
-    if order <= n - max(actual_dev):
-        raise ValueError(f"order {order} is not within (n - max(actual_dev), n). "
+    min_dev = min(actual_dev)
+    if order <= n - min_dev:
+        raise ValueError(f"order {order} is not within (n - min_dev, n). "
                          f"Consider using direct integration.")
 
-    # ---- Compute values at interpolation points ----
+    # ---- Fixed interpolation x‑values ----
     orders_compute = [n - dev for dev in actual_dev] + [n]
-    values = []
-    for alpha in orders_compute:
-        log_abs, sign = fractionalDeriv_numeric_scipy(
+    x_vals = np.array(orders_compute)   # length 4
+
+    # ---- Compute log_abs and sign for all interpolation orders in one go ----
+    # We will compute for each alpha in orders_compute, but vectorized over t.
+    log_abs_matrix = np.zeros((len(orders_compute), batch))
+    sign_matrix = np.zeros((len(orders_compute), batch), dtype=int)
+
+    for idx, alpha in enumerate(orders_compute):
+        log_abs_alpha, sign_alpha = fractionalDeriv_numeric_scipy(
             order=alpha,
             prior=prior,
-            t=t,
+            t=t_arr,
             return_log=True,
             method=integer_method,
             complete=complete,
-            u=u,                     # pass u
+            u=u,
             **kwargs
         )
-        values.append((log_abs, sign))
+        log_abs_matrix[idx, :] = log_abs_alpha
+        sign_matrix[idx, :] = sign_alpha
 
-    # ---- Sort by order (ascending) ----
-    sorted_pairs = sorted(zip(orders_compute, values), key=lambda x: x[0])
-    x_vals = np.array([p[0] for p in sorted_pairs])
-    y_vals = np.array([p[1][0] for p in sorted_pairs])  # log_abs
-    sign_vals = [p[1][1] for p in sorted_pairs]
-    sign_final = sign_vals[-1]   # sign at the integer
+    # ---- For each t, interpolate log_abs at the target order ----
+    # We'll use CubicSpline per t (only 4 points, so loop is fine)
+    from scipy.interpolate import CubicSpline
+    log_abs_interp = np.zeros(batch)
+    for i in range(batch):
+        y_vals = log_abs_matrix[:, i]
+        spline = CubicSpline(x_vals, y_vals, bc_type='natural')
+        log_abs_interp[i] = float(spline(order))
 
-    # ---- Cubic interpolation of log_abs ----
-    spline = CubicSpline(x_vals, y_vals, bc_type='natural')
-    log_abs_interp = float(spline(order))
+    # ---- Sign: take sign at the highest interpolation order (n) ----
+    sign_final = sign_matrix[-1, :]   # sign at order n
 
     # ---- Return ----
     if return_log:
-        return log_abs_interp, sign_final
+        if scalar_input:
+            return log_abs_interp[0], int(sign_final[0])
+        else:
+            return log_abs_interp, sign_final
     else:
-        if log_abs_interp == -float('inf'):
-            return 0.0
-        return sign_final * np.exp(log_abs_interp)
+        # Ordinary scale
+        result = sign_final * np.exp(log_abs_interp)
+        # Handle -inf
+        result[np.isneginf(log_abs_interp)] = 0.0
+        if scalar_input:
+            return float(result[0])
+        else:
+            return result
 
 
 # ===== Example usage =====
 if __name__ == "__main__":
     import math
+    import numpy as np
     import jumufraktiv.MGFdictionary  # ensures priors are registered
     from jumufraktiv.mitMGFprior_class import mitMGFprior
 
-    # Build a Gamma prior (Exponential(0.9) is Gamma(1, 0.9))
+    # ---- Build Gamma prior (Exponential(0.9) is Gamma(1, 0.9)) ----
     gamma_prior = mitMGFprior.from_registry(
         "gamma",
         params={"alpha": 1.0, "beta": 0.9}
     )
+
+    print("=" * 60)
+    print("Scalar t test")
+    print("=" * 60)
 
     t_val = -1.0
     order_target = 1.999
@@ -161,3 +182,29 @@ if __name__ == "__main__":
     log_analytic = math.log(lambda_exp) + math.lgamma(order_target + 1) - (order_target + 1) * math.log(lambda_exp - t_val)
     print(f"Analytic log|deriv|      = {log_analytic:.6f}")
     print(f"Difference (interp - analytic) = {log_abs_interp - log_analytic:.2e}")
+
+    # ---- Vectorized t test ----
+    print("\n" + "=" * 60)
+    print("Vectorized t test (multiple evaluation points)")
+    print("=" * 60)
+
+    t_vals = np.linspace(-2.0, -0.5, 5)   # 5 points
+    print(f"  t values: {t_vals}")
+
+    # Interpolated values for all t (vectorized)
+    log_abs_vec, sign_vec = fractionalDeriv_interpolated(
+        order=order_target,
+        prior=gamma_prior,
+        t=t_vals,
+        d_vec=(0.8, 0.9, 0.95),
+        integer_method='symbolic',
+        epsrel=1e-10
+    )
+
+    # Analytical values
+    log_analytic_vec = np.log(lambda_exp) + math.lgamma(order_target + 1) - (order_target + 1) * np.log(lambda_exp - t_vals)
+
+    print("\n  Results:")
+    print(f"    {'t':>8} {'interp log':>14} {'analytic log':>14} {'diff':>14}")
+    for t_val, log_int, log_ana in zip(t_vals, log_abs_vec, log_analytic_vec):
+        print(f"    {t_val:8.3f} {log_int:14.6f} {log_ana:14.6f} {log_int - log_ana:14.2e}")

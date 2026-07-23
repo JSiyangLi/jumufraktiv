@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import math
 import sympy as sp
-from MGFderivative_class import MGFDerivative
+from MGFDerivative_class import MGFDerivative
 from like_stats.Poisson import readyPoisson, cPoisson
 from like_stats.Gamma import readyGamma, cGamma
 

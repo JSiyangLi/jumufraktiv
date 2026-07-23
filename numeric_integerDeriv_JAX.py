@@ -128,54 +128,73 @@ def _integerDeriv_numeric_jax_scalar(
 
 def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
     """
-    Evaluate a fixed-order derivative at one or more t values.
+    Evaluate a fixed-order derivative at one or more (t, u) points.
 
     Parameters
     ----------
     order : int
         Must be scalar.
-        
     t : scalar or array-like
         Evaluation point(s).
+    u : scalar or array-like, optional
+        Upper limit(s) for the incomplete MGF.  Vectorises elementwise with t.
 
     Returns
     -------
     (log_abs, sign)
-        Scalars if t is scalar.
-        Arrays if t is array-like.
+        Scalars if both inputs are scalar.
+        Arrays if either input is array-like.
     """
-    
-    # This backend only vectorises over t.
     if np.ndim(order) != 0:
         raise ValueError(
             "integerDeriv_numeric_jax only accepts a scalar order. "
             "Vectorisation over derivative orders is handled by mgfDerivative_integer()."
         )
 
-    # scalar
-    if np.ndim(t) == 0:
+    t_is_scalar = np.ndim(t) == 0
+    u_is_scalar = u is None or np.ndim(u) == 0
+
+    # Both scalar – fast path
+    if t_is_scalar and u_is_scalar:
         return _integerDeriv_numeric_jax_scalar(
             float(t),
             prior,
             order,
             complete=complete,
-            u=u
+            u=float(u) if u is not None else None,
         )
 
-    # vector
-    t = jnp.asarray(t)
-
-    vmapped = jax.vmap(
-        lambda x: _integerDeriv_numeric_jax_scalar(
-            x,
-            prior,
-            order,
-            complete=complete,
-            u=u
+    # At least one is an array – vmap over the non-scalar argument(s)
+    if t_is_scalar:
+        # Vectorise over u only
+        u_arr = jnp.asarray(u)
+        vmapped = jax.vmap(
+            lambda u_val: _integerDeriv_numeric_jax_scalar(
+                t, prior, order, complete=complete, u=u_val
+            )
         )
-    )
+        log_abs, sign = vmapped(u_arr)
 
-    log_abs, sign = vmapped(t)
+    elif u_is_scalar:
+        # Vectorise over t only (original behaviour)
+        t_arr = jnp.asarray(t)
+        vmapped = jax.vmap(
+            lambda t_val: _integerDeriv_numeric_jax_scalar(
+                t_val, prior, order, complete=complete, u=u
+            )
+        )
+        log_abs, sign = vmapped(t_arr)
+
+    else:
+        # Vectorise over both t and u elementwise
+        t_arr = jnp.asarray(t)
+        u_arr = jnp.asarray(u)
+        vmapped = jax.vmap(
+            lambda t_val, u_val: _integerDeriv_numeric_jax_scalar(
+                t_val, prior, order, complete=complete, u=u_val
+            )
+        )
+        log_abs, sign = vmapped(t_arr, u_arr)
 
     return np.asarray(log_abs), np.asarray(sign)
 
@@ -289,12 +308,72 @@ if __name__ == "__main__":
     print(f"log|deriv|: {log_abs_vec}")
     print(f"sign: {sign_vec}")
 
-    # Optional: test incomplete MGF if supported
+    # ---------------------------------------------------------
+    # Vectorised tests for u (incomplete MGF)
+    # ---------------------------------------------------------
     if gamma_prior.has_iMGF():
-        print("\nVectorised incomplete MGF test:")
-        u_val = 2.0
-        log_abs_imgf, sign_imgf = integerDeriv_numeric_jax(
-            t_vals, gamma_prior, order_vec, complete=False, u=u_val
+        print("\n" + "=" * 60)
+        print("Vectorised u tests (incomplete MGF)")
+        print("=" * 60)
+
+        order_imgf = 2
+        t_scalar = 0.1
+
+        # 1) Scalar t, array u
+        print("\n--- Scalar t, array u ---")
+        u_arr = np.array([0.5, 1.0, 2.0, 5.0])
+        log_abs_sTuA, sign_sTuA = integerDeriv_numeric_jax(
+            t_scalar, gamma_prior, order_imgf, complete=False, u=u_arr
         )
-        print(f"log|deriv| (iMGF): {log_abs_imgf}")
-        print(f"sign (iMGF): {sign_imgf}")
+        print(f"t = {t_scalar}, u = {u_arr}")
+        print(f"log|deriv|: {log_abs_sTuA}")
+        print(f"sign: {sign_sTuA}")
+
+        # 2) Array t, scalar u
+        print("\n--- Array t, scalar u ---")
+        u_scalar = 2.0
+        log_abs_aTsU, sign_aTsU = integerDeriv_numeric_jax(
+            t_vals, gamma_prior, order_imgf, complete=False, u=u_scalar
+        )
+        print(f"t = {t_vals}, u = {u_scalar}")
+        print(f"log|deriv|: {log_abs_aTsU}")
+        print(f"sign: {sign_aTsU}")
+
+        # 3) Array t, array u (elementwise)
+        print("\n--- Array t, array u (elementwise) ---")
+        t_arr = np.linspace(-0.2, 0.2, 4)
+        u_arr_zipped = np.array([0.5, 1.0, 2.0, 5.0])
+        log_abs_aTaU, sign_aTaU = integerDeriv_numeric_jax(
+            t_arr, gamma_prior, order_imgf, complete=False, u=u_arr_zipped
+        )
+        print(f"t = {t_arr}")
+        print(f"u = {u_arr_zipped}")
+        print(f"log|deriv|: {log_abs_aTaU}")
+        print(f"sign: {sign_aTaU}")
+
+        # 4) Consistency check: vectorised result == loop of scalar calls
+        print("\n--- Consistency check (vectorised vs scalar loop) ---")
+        log_abs_loop = []
+        sign_loop = []
+        for tt, uu in zip(t_arr, u_arr_zipped):
+            la, s = integerDeriv_numeric_jax(
+                tt, gamma_prior, order_imgf, complete=False, u=uu
+            )
+            log_abs_loop.append(float(la))
+            sign_loop.append(int(s))
+
+        log_abs_loop = np.array(log_abs_loop)
+        sign_loop = np.array(sign_loop)
+
+        max_diff_log = np.max(np.abs(log_abs_aTaU - log_abs_loop))
+        signs_match = np.array_equal(sign_aTaU, sign_loop)
+
+        print(f"Max log-abs difference: {max_diff_log:.2e}")
+        print(f"Signs match: {signs_match}")
+        if max_diff_log < 1e-10 and signs_match:
+            print("  ✅ Vectorised u matches scalar loop.")
+        else:
+            print("  ⚠️ Mismatch between vectorised and scalar loop.")
+
+    else:
+        print("\nSkipping incomplete-MGF tests: prior does not provide imgf_jax.")

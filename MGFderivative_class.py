@@ -290,35 +290,45 @@ class MGFDerivative:
         """
         Compute the posterior density (or log-density) at given θ.
 
-        If `self.is_symbolic` is True:
+        If `self._deriv_is_symbolic` is True:
             - If theta_val is None or a sympy Symbol: returns a symbolic expression.
-            - If theta_val is numeric: evaluates the expression numerically.
+            - If theta_val is numeric (scalar or array): evaluates the expression numerically.
             - Uses the prior's symbolic PDF if available.
-        If `self.is_symbolic` is False: performs numeric evaluation.
+        If `self._deriv_is_symbolic` is False: performs numeric evaluation (vectorized).
+
+        Parameters
+        ----------
+        theta_val : scalar, array-like, or sympy Symbol, optional
+            Evaluation point(s). If array, must be convertible to numpy array.
+        log : bool, optional
+            If True, return log-density; else ordinary density.
+
+        Returns
+        -------
+        scalar, np.ndarray, or sympy.Expr
+            If theta_val is scalar and numeric: returns scalar.
+            If theta_val is array-like: returns array.
+            If theta_val is symbolic or has free symbols: returns sympy.Expr.
         """
+        # ---- Symbolic path ----
         if self._deriv_is_symbolic and (theta_val is None or isinstance(theta_val, sp.Symbol)):
             try:
-                denom_expr = self._deriv.subs(t, -self.b) # .subs(t, -self.b) must and only appear with _deriv_is_symbolic True.
+                denom_expr = self._deriv.subs(t, -self.b)
 
                 if theta_val is None or isinstance(theta_val, sp.Symbol):
                     theta_sym = theta if theta_val is None else theta_val
-
                 else:
                     theta_sym = theta
 
                 pdf_sym = self.prior.pdf_sym
                 if pdf_sym is None:
                     raise ValueError("No symbolic PDF available for this prior.")
-                
                 if callable(pdf_sym):
                     pdf_sym = pdf_sym()
-                    
                 if not isinstance(pdf_sym, sp.Expr):
                     raise TypeError("pdf_sym must be a SymPy expression.")
 
                 log_prior = sp.log(pdf_sym)
-                
-                # Substitute numeric parameters if they exist
                 if self.params is not None:
                     subs_dict = {}
                     for sym in pdf_sym.free_symbols:
@@ -330,50 +340,97 @@ class MGFDerivative:
                 log_num = log_prior + self.a * sp.log(theta_sym) - self.b * theta_sym
                 log_post = log_num - sp.log(denom_expr)
 
-                # resolve theta if numeric
+                # Handle numeric theta_val (scalar or array)
                 if theta_val is not None and not isinstance(theta_val, sp.Symbol):
+                    # Convert to array if not already
+                    theta_arr = np.asarray(theta_val)
+                    scalar_input = theta_arr.ndim == 0
+                    if scalar_input:
+                        theta_arr = np.array([theta_val])
+                    batch = len(theta_arr)
 
-                    evaluated = log_post.subs(theta_sym, theta_val).evalf()
+                    # Pre-allocate results
+                    results_log = np.zeros(batch)
+                    results_sym = [None] * batch  # store expressions if any remain symbolic
 
-                    if evaluated.free_symbols:
-                        return evaluated if log else sp.exp(evaluated)
+                    for idx, t_val in enumerate(theta_arr):
+                        evaluated = log_post.subs(theta_sym, t_val).evalf()
+                        if evaluated.free_symbols:
+                            # If any free symbols remain, we cannot fully numericize.
+                            # For scalar, return expression; for array, raise error.
+                            if batch == 1:
+                                return evaluated if log else sp.exp(evaluated)
+                            else:
+                                # Store expression and continue; later we may raise or return mixed.
+                                results_sym[idx] = evaluated
+                        else:
+                            results_log[idx] = float(evaluated)
+                            results_sym[idx] = None  # numeric
 
-                    return float(evaluated) if log else float(sp.exp(evaluated))
-
+                    # Check if any symbolic results remain
+                    if any(r is not None for r in results_sym):
+                        # For array input with mixed symbolic/numeric, we cannot return a uniform array.
+                        # We'll raise an error to avoid confusion.
+                        raise ValueError(
+                            "Vectorized symbolic evaluation failed: some theta values "
+                            "still have free symbols. Use scalar symbolic input."
+                        )
+                    else:
+                        # All numeric
+                        if log:
+                            return results_log[0] if scalar_input else results_log
+                        else:
+                            dens = np.exp(results_log)
+                            return float(dens[0]) if scalar_input else dens
                 else:
+                    # theta_val is None or Symbol: return expression
                     return log_post if log else sp.exp(log_post)
 
             except Exception as e:
-                raise RuntimeError(
-                    f"Symbolic posterior density computation failed: {e}"
-                ) from e
+                raise RuntimeError(f"Symbolic posterior density computation failed: {e}") from e
 
-        # ---- Numeric path ----
+        # ---- Numeric path (vectorized) ----
         if theta_val is None:
             raise ValueError("For numeric evaluation, theta must be provided.")
 
-        # Get log prior density from the prior object
+        # Ensure theta_val is a numpy array
+        if not isinstance(theta_val, np.ndarray):
+            theta_arr = np.asarray(theta_val)
+            scalar_input = theta_arr.ndim == 0
+            if scalar_input:
+                theta_arr = np.array([theta_val])
+        else:
+            theta_arr = theta_val
+            scalar_input = theta_arr.ndim == 0
+            if scalar_input:
+                theta_arr = np.array([theta_val])
+
+        # Get log prior density (vectorized)
         if self.prior.logpdf_func is not None:
-            log_prior = self.prior.logpdf_func(theta_val)
+            log_prior = self.prior.logpdf_func(theta_arr)
         elif self.prior.pdf_func is not None:
-            log_prior = np.log(self.prior.pdf_func(theta_val))
+            prior_pdf = self.prior.pdf_func(theta_arr)
+            if np.any(prior_pdf <= 0):
+                raise ValueError("Prior PDF must be positive for all theta values.")
+            log_prior = np.log(prior_pdf)
         else:
             raise ValueError("No numeric PDF function available for this prior.")
 
-        log_num = log_prior + self.a * np.log(theta_val) - self.b * theta_val
-        # reconstruct normalization constant
-
-        if self.log:
-            log_denom = self.log_abs
-        else:
-            log_denom = np.log(self.value)
-
+        log_num = log_prior + self.a * np.log(theta_arr) - self.b * theta_arr
+        log_denom = self.log_abs if self.log else np.log(self.value)
         log_post = log_num - log_denom
 
-        if log:
-            return log_post
+        # Check numerical validity of log-posterior
+        if np.any(np.isnan(log_post)):
+            raise ValueError("NaN encountered in log-posterior.")
+        if np.any(np.isinf(log_post)):
+            raise ValueError("Inf encountered in log-posterior.")
+
+        # Output: scalar or array
+        if scalar_input:
+            return float(log_post[0]) if log else float(np.exp(log_post[0]))
         else:
-            return np.exp(log_post)
+            return log_post if log else np.exp(log_post)
         
     # ========================================================
     # POSTERIOR CUMULATIVE DENSITY
@@ -574,45 +631,56 @@ class MGFDerivative:
     def post_mgf(self, r_val, log=True):
         """
         Compute the posterior moment-generating function (MGF) at given r.
+        Supports scalar, array‑like, and symbolic `r_val`.
+
+        Parameters
+        ----------
+        r_val : scalar, array-like, or sympy.Symbol
+            Evaluation point(s). If array-like, must be convertible to NumPy array.
+        log : bool, optional
+            If True, return log-MGF; else ordinary MGF.
+
+        Returns
+        -------
+        scalar, np.ndarray, or sympy.Expr
+            If r_val is scalar numeric: returns scalar.
+            If r_val is array-like: returns array.
+            If r_val is symbolic or has free symbols: returns sympy.Expr.
         """
-        # ---- Symbolic path (if derivative is symbolic) ----
+        # ---- Symbolic path ----
         if self._deriv_is_symbolic:
             try:
                 # Build symbolic expression using the canonical `r`
-                num_expr = self._deriv.subs(t, r - self.b) # .subs(t, -self.b) must and only appear with _deriv_is_symbolic True.
+                num_expr = self._deriv.subs(t, r - self.b)
                 denom_expr = self._deriv.subs(t, -self.b)
-
                 log_ratio = sp.log(num_expr) - sp.log(denom_expr)
 
                 # Substitute known numeric parameters
                 if self.params is not None:
                     log_ratio = log_ratio.subs(
-                        {
-                            sym: self.params[sym.name]
-                            for sym in log_ratio.free_symbols
-                            if sym.name in self.params
-                        }
+                        {sym: self.params[sym.name]
+                        for sym in log_ratio.free_symbols
+                        if sym.name in self.params}
                     )
 
                 # ---- Handle different input types for r_val ----
 
-                # Case 1: r_val is a SymPy symbol (e.g., for update())
+                # Case 1: r_val is a SymPy symbol
                 if isinstance(r_val, sp.Symbol):
                     if log_ratio.free_symbols:
                         return log_ratio if log else sp.exp(log_ratio)
-                    # If no symbols remain (unlikely), evaluate to float
+                    # Fully numeric (unlikely): evaluate to scalar
                     val = float(log_ratio.evalf())
                     return val if log else np.exp(val)
 
                 # Case 2: r_val is array-like (numeric)
                 if hasattr(r_val, '__len__') and not isinstance(r_val, (str, bytes)):
-                    # Check if any free symbols remain besides `r`
                     free_after_params = log_ratio.free_symbols - {r}
                     if free_after_params:
                         raise RuntimeError(
-                        "Cannot evaluate MGF numerically for array `r` because "
-                        "hyperparameters are symbolic. Use numeric hyperparameters."
-                    )
+                            "Cannot evaluate MGF numerically for array `r` because "
+                            "hyperparameters are symbolic. Use numeric hyperparameters."
+                        )
                     # Lambdify with respect to the canonical `r`
                     func = sp.lambdify(r, log_ratio, modules="numpy")
                     val = func(r_val)
@@ -620,165 +688,212 @@ class MGFDerivative:
 
                 # Case 3: r_val is scalar numeric (int, float, or None)
                 if r_val is not None:
-                    # Substitute the canonical `r` with the numeric value
                     log_ratio = log_ratio.subs(r, r_val)
 
                 # Symbol‑numeric decision
                 if log_ratio.free_symbols:
                     return log_ratio if log else sp.exp(log_ratio)
 
-                # Fully numeric (scalar)
+                # Fully numeric scalar
                 val = float(log_ratio.evalf())
                 return val if log else np.exp(val)
 
             except Exception as e:
                 raise RuntimeError(f"Symbolic computation failed: {e}") from e
 
-        # ---- Numeric path (if derivative is not symbolic) ----
+        # ---- Numeric path (vectorised) ----
         if r_val is None:
             raise ValueError("For numeric evaluation, r must be provided.")
+
+        # Ensure input is a NumPy array for consistent handling
+        r_arr = np.asarray(r_val)
+        scalar_input = r_arr.ndim == 0
+        if scalar_input:
+            r_arr = np.array([r_val])
 
         log_abs_num, sign_num = mgfDerivative(
             order=self.a,
             prior=self.prior,
             method=self.method,
-            t=r_val - self.b,
+            t=r_arr - self.b,          # vectorised
             u=None,
             simplify=self.simplify,
             complete=True,
             log=True,
             **self._deriv_kwargs
         )
+
         log_ratio = log_abs_num - self.log_abs
-        sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
+        sign_ratio = sign_num * (self._sign if self._sign is not None else 1)
 
         if log:
-            return log_ratio
+            if scalar_input:
+                return float(log_ratio[0])
+            else:
+                return log_ratio
         else:
-            if log_ratio == -float('inf'):
-                return 0.0
-            return sign_ratio * np.exp(log_ratio)
+            # Handle -inf cases
+            result = sign_ratio * np.exp(log_ratio)
+            result[log_ratio == -np.inf] = 0.0
+            if scalar_input:
+                return float(result[0])
+            else:
+                return result
 
     # ========================================================
     # POSTERIOR RAW MOMENT
     # ========================================================
-    def post_raw_moment(self, q=(1, 2, 3, 4), numerator_method='auto', log=True):
+    def post_raw_moment(self, q, numerator_method='auto', log=True):
         """
         Compute the posterior moment of order q.
 
         Parameters
         ----------
-        q : scalar, iterable, or sympy Symbol, optional
-            Moment order(s). Default is (1, 2, 3, 4) (first four raw moments).
-            If a scalar, returns a single value.
-            If an iterable, returns a list of results (one per element).
+        q : scalar or array-like
+            Moment order(s). If array-like, returns array of results.
         numerator_method : str, optional
-            Method for derivative computation (passed to mgfDerivative).
+            Method for derivative computation.
         log : bool, optional
-            If True, return log of the moments; otherwise return ordinary values.
+            If True, return log of the moments; otherwise ordinary values.
 
         Returns
         -------
-        scalar or list
-            The computed moment(s).
+        scalar, np.ndarray, or sympy.Expr
+            If q is scalar numeric: scalar.
+            If q is array-like: np.ndarray.
+            If q is symbolic and scalar: sympy.Expr.
         """
-        # ---- Determine if q is scalar ----
-        is_scalar = not hasattr(q, '__len__') or isinstance(q, (str, bytes))
-        q_list = [q] if is_scalar else list(q)
+        # ---- Determine if q is array-like ----
+        if hasattr(q, '__len__') and not isinstance(q, (str, bytes, sp.Basic)):
+            q_arr = np.asarray(q)
+            is_array = True
+        else:
+            is_array = False
 
-        # Warn if any order is not in the usual low‑order set
-        if any(qi not in (1, 2, 3, 4) for qi in q_list):
-            import warnings
-            warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
+        # ---- Warn if any high-order (not in {1,2,3,4}) ----
+        if is_array:
+            if any(qi not in (1, 2, 3, 4) for qi in q_arr):
+                import warnings
+                warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
+        else:
+            if q not in (1, 2, 3, 4):
+                import warnings
+                warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
 
-        # ---- Helper to compute a single moment (reuses original logic) ----
-        def _compute_one(qi):
-            if self._is_symbolic:
-                try:
-                    order = self.a + qi
+        # ---- Symbolic path ----
+        if self._is_symbolic:
+            try:
+                if is_array:
+                    # Compute symbolic derivatives for all orders at once
+                    deriv_exprs = mgfDerivative(
+                        order=q_arr,
+                        prior=self.prior,
+                        method=numerator_method,
+                        t=None,
+                        simplify=self.simplify,
+                        log=False,
+                        complete=True
+                    )
+                    # deriv_exprs is a list of sympy.Expr (one per order)
+                    log_ratios = []
+                    for deriv_expr in deriv_exprs:
+                        num_expr = deriv_expr.subs(t, -self.b)
+                        denom_expr = self._evaluate_derivative(-self.b)
+                        log_ratio = sp.log(num_expr) - sp.log(denom_expr)
+                        if self.params is not None:
+                            log_ratio = log_ratio.subs(
+                                {sym: self.params[sym.name]
+                                for sym in log_ratio.free_symbols
+                                if sym.name in self.params}
+                            )
+                        log_ratios.append(log_ratio)
 
+                    # Check if any free symbols remain
+                    if any(r.free_symbols for r in log_ratios):
+                        # Return list of expressions
+                        return log_ratios if log else [sp.exp(r) for r in log_ratios]
+                    else:
+                        # All numeric
+                        vals = [float(r.evalf()) for r in log_ratios]
+                        return np.array(vals) if log else np.exp(vals)
+                else:
+                    # Scalar q
+                    order = self.a + q
                     deriv_expr = mgfDerivative(
                         order=order,
                         prior=self.prior,
                         method=numerator_method,
                         t=None,
-                        u=None,
                         simplify=self.simplify,
-                        complete=True,
-                        log=False
+                        log=False,
+                        complete=True
                     )
-
                     num_expr = deriv_expr.subs(t, -self.b)
                     denom_expr = self._evaluate_derivative(-self.b)
-
                     log_ratio = sp.log(num_expr) - sp.log(denom_expr)
-
                     if self.params is not None:
                         log_ratio = log_ratio.subs(
-                            {
-                                sym: self.params[sym.name]
-                                for sym in log_ratio.free_symbols
-                                if sym.name in self.params
-                            }
+                            {sym: self.params[sym.name]
+                            for sym in log_ratio.free_symbols
+                            if sym.name in self.params}
                         )
-
                     if log_ratio.free_symbols:
                         return log_ratio if log else sp.exp(log_ratio)
-
                     val = float(log_ratio.evalf())
                     return val if log else np.exp(val)
 
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Symbolic computation failed: {e}. Falling back to numeric."
-                    ) from e
+            except Exception as e:
+                raise RuntimeError(f"Symbolic computation failed: {e}. Falling back to numeric.") from e
 
-            # ---- Numeric path ----
-            if not isinstance(qi, (int, float)):
-                raise ValueError("For numeric evaluation, q must be numeric.")
+        # ---- Numeric path (vectorized) ----
+        if is_array:
+            orders = self.a + q_arr
+        else:
+            orders = self.a + q
 
-            order_num = self.a + qi
-            log_abs_num, sign_num = mgfDerivative(
-                order=order_num,
-                prior=self.prior,
-                method=numerator_method,
-                t=-self.b,
-                u=None,
-                simplify=self.simplify,
-                log=True,
-                complete=True,
-                **self._deriv_kwargs
-            )
+        log_abs_num, sign_num = mgfDerivative(
+            order=orders,
+            prior=self.prior,
+            method=numerator_method,
+            t=-self.b,
+            simplify=self.simplify,
+            log=True,
+            complete=True,
+            **self._deriv_kwargs
+        )
 
-            log_ratio = log_abs_num - self.log_abs
-            sign_ratio = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
+        log_ratio = log_abs_num - self.log_abs
+        sign_ratio = sign_num * (self._sign if self._sign is not None else 1)
 
-            if log:
+        if log:
+            if is_array:
                 return log_ratio
             else:
-                if log_ratio == -float('inf'):
+                return float(log_ratio)
+        else:
+            result = sign_ratio * np.exp(log_ratio)
+            if is_array:
+                result[log_ratio == -np.inf] = 0.0
+                return result
+            else:
+                if log_ratio == -np.inf:
                     return 0.0
-                return sign_ratio * np.exp(log_ratio)
-
-        # ---- Compute all requested moments ----
-        results = [_compute_one(qi) for qi in q_list]
-
-        # Return scalar if input was scalar, else list
-        return results[0] if is_scalar else results
+                return float(result)
     
     # ========================================================
     # POSTERIOR CENTRAL MOMENT
     # ======================================================== 
-    def post_central_moment(self, order: int, log: bool = True, numerator_method: str = 'auto'):
+    def post_central_moment(self, order=None, log=True, numerator_method='auto'):
         """
-        Compute the central moment of order `order` (1, 2, 3, or 4).
+        Compute central moments of order(s) 1, 2, 3, or 4.
 
         Parameters
         ----------
-        order : int
-            Central moment order (1, 2, 3, or 4).
+        order : int or list of ints, optional
+            Central moment order(s). If None (default), computes all four (1,2,3,4).
+            If an integer, returns a single result.
         log : bool, optional
-            If True, return (log_abs, sign) where log_abs = log|central moment|.
+            If True, return (log_abs, sign) for each central moment.
             If False, return the ordinary central moment (float or sympy.Expr).
         numerator_method : str, optional
             Method for computing the numerator derivative in raw moments.
@@ -786,60 +901,84 @@ class MGFDerivative:
 
         Returns
         -------
-        If log=True:
-            - (log_abs, sign) where log_abs is float or sympy.Expr, sign is int or sympy.Expr.
-        If log=False:
-            - float or sympy.Expr (ordinary central moment).
+        If order is an integer:
+            - If log=True: (log_abs, sign) where log_abs is float or sympy.Expr,
+            sign is int or sympy.Expr.
+            - If log=False: float or sympy.Expr (ordinary central moment).
+        If order is None or a list:
+            - A dictionary {order: result} where each result is as above.
         """
-        if order not in {1, 2, 3, 4}:
-            raise ValueError("order must be 1, 2, 3, or 4.")
+        # Determine which orders to compute
+        if order is None:
+            orders = [1, 2, 3, 4]
+            single_order = False
+        elif isinstance(order, int):
+            orders = [order]
+            single_order = True
+        else:
+            # Assume iterable of ints
+            orders = list(order)
+            single_order = False
 
-        # ---- Compute raw moments (ordinary scale) ----
-        raw = {0: 1}   # μ'_0 = 1
-        for k in range(1, order + 1):
-            raw[k] = self.post_raw_moment(k, log=False, numerator_method=numerator_method)
+        # Validate orders
+        for o in orders:
+            if o not in {1, 2, 3, 4}:
+                raise ValueError(f"Order {o} is not supported. Must be 1, 2, 3, or 4.")
 
-        # ---- Mean ----
-        mu1 = raw[1]
+        # ---- Fetch all needed raw moments in one vectorized call ----
+        max_order = max(orders)
+        # We need raw moments up to max_order (including 0)
+        q_all = list(range(0, max_order + 1))   # e.g., [0,1,2,3,4]
+        raw_all = self.post_raw_moment(q_all, log=False, numerator_method=numerator_method)
+        # raw_all is an array or list of raw moments for orders 0..max_order.
+        # Ensure it's a list for indexing.
+        if not isinstance(raw_all, (list, np.ndarray)):
+            # If scalar? But q_all is array, so raw_all should be array.
+            raw_all = [raw_all]
+        raw = {i: raw_all[i] for i in range(max_order + 1)}
 
-        # ---- Compute central moment using binomial expansion ----
-        # μ_k = Σ_{j=0}^k C(k, j) * μ'_j * (-μ_1)^{k-j}
-        central = 0
-        import math
-        for j in range(0, order + 1):
-            coeff = math.comb(order, j)
-            term = coeff * raw[j] * ((-mu1) ** (order - j))
-            central += term
-
-        # For order 1, central moment is always 0
-        if order == 1:
+        # ---- Compute central moments for the requested orders ----
+        results = {}
+        for o in orders:
+            # μ_o = Σ_{j=0}^o C(o, j) * μ'_j * (-μ_1)^{o-j}
             central = 0
+            for j in range(0, o + 1):
+                coeff = math.comb(o, j)
+                term = coeff * raw[j] * ((-raw[1]) ** (o - j))
+                central += term
 
-        # ---- Handle log vs ordinary ----
-        if log:
-            # Numeric case
-            if isinstance(central, (int, float)):
-                if central == 0:
-                    return (-float('inf'), 1)
-                return (np.log(abs(central)), 1 if central > 0 else -1)
+            # For order 1, central moment is always 0
+            if o == 1:
+                central = 0
 
-            # Symbolic case
-            if isinstance(central, sp.Expr):
-                # If all symbols are resolved, evaluate numerically
-                if not central.free_symbols:
-                    val = float(central.evalf())
-                    if val == 0:
-                        return (-float('inf'), 1)
-                    return (np.log(abs(val)), 1 if val > 0 else -1)
-                # Otherwise return symbolic log_abs and sign
-                log_abs = sp.log(sp.Abs(central))
-                sign = sp.sign(central)
-                return (log_abs, sign)
+            # ---- Handle log vs ordinary for this order ----
+            if log:
+                if isinstance(central, (int, float)):
+                    if central == 0:
+                        result = (-float('inf'), 1)
+                    else:
+                        result = (np.log(abs(central)), 1 if central > 0 else -1)
+                elif isinstance(central, sp.Expr):
+                    if not central.free_symbols:
+                        val = float(central.evalf())
+                        if val == 0:
+                            result = (-float('inf'), 1)
+                        else:
+                            result = (np.log(abs(val)), 1 if val > 0 else -1)
+                    else:
+                        result = (sp.log(sp.Abs(central)), sp.sign(central))
+                else:
+                    raise TypeError(f"Unexpected type for central moment: {type(central)}")
+            else:
+                result = central
 
-            raise TypeError(f"Unexpected type for central moment: {type(central)}")
+            results[o] = result
 
-        # ---- Ordinary scale ----
-        return central
+        # ---- Return ----
+        if single_order:
+            return results[orders[0]]
+        else:
+            return results
 
     # ========================================================
     # SEQUENTIAL UPDATING

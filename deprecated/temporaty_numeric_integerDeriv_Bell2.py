@@ -261,6 +261,9 @@ def integerDeriv_numeric_bell(
                     )
 
                 deriv_expr = sp.diff(cgf_expr, t_sym, k)
+                # DEBUG
+                print(f"derivative expression{deriv_expr}")
+                # -----
                 # Substitute t and numeric params
                 if t == 0:
                     val = sp.limit(deriv_expr, t_sym, 0, dir='-').subs(subs_dict).evalf()
@@ -273,6 +276,12 @@ def integerDeriv_numeric_bell(
                     if u_sym in val.free_symbols:
                         val = val.subs(u_sym, u)
                 # -------------------------------------------------------
+
+                # ---- DEBUG: print scalar derivative value ----
+                print(f"DEBUG k={k}, val={float(val)}")
+                print(f"DEBUG k={k}, val={repr(val)}")
+                print(f"DEBUG k={k}, val={type(val)}")
+                # ---------------------------------------------
 
                 try:
                     val = float(val)
@@ -326,7 +335,6 @@ def integerDeriv_numeric_bell(
         return cgf_t + log_abs_B, sign_B
 
     raise RuntimeError("No path was executed.")
-
 
 # ===== Example usage =====
 if __name__ == "__main__":

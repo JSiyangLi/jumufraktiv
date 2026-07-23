@@ -28,8 +28,8 @@ def mgfDerivative_integer(
     order: int | sp.Expr,
     prior,
     method: str = "symbolic",
-    t: float = None,
-    u: float = None,          # optional for incomplete MGF
+    t: float | np.ndarray | list | None = None,
+    u: float | None = None,
     simplify: bool = False,
     log: bool = True,
     complete: bool = True,
@@ -47,11 +47,12 @@ def mgfDerivative_integer(
         Prior object containing symbolic and/or backend MGF/PDF representations.
     method : {"symbolic", "bell", "jax"}, optional
         Derivative backend.
-    t : float, optional
-        Evaluation point for the MGF (uses canonical symbol 't').
+    t : float or array-like, optional
+        Evaluation point(s). For method='symbolic', can be scalar or array.
+        For method='bell' or 'jax', can be an array (vectorized).
     u : float, optional
         Truncation point for incomplete MGF (used when complete=False).
-        For symbolic method, if provided, substitutes the canonical 'u' symbol.
+        For symbolic method, substitutes the canonical 'u' symbol.
     simplify : bool, optional
         Whether to simplify symbolic derivatives.
     complete : bool, optional
@@ -64,14 +65,18 @@ def mgfDerivative_integer(
 
     Returns
     -------
-    sympy.Expr, (log_abs, sign), or float
+    If t is None or symbolic expression has free symbols:
+        sympy.Expr
+    Else:
+        If log=True: (log_abs, sign) or arrays for vector input.
+        If log=False: float or array.
     """
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
         raise ValueError("method must be one of {'symbolic','bell','jax'}.")
 
     # ---------------------------------------------------------
-    # Symbolic differentiation
+    # Symbolic differentiation (loops over t if array)
     # ---------------------------------------------------------
     if method == "symbolic":
         expr = integerDeriv_symbolic(
@@ -81,31 +86,59 @@ def mgfDerivative_integer(
             complete=complete
         )
 
-        # If evaluation point t is provided, substitute it
-        if t is not None:
-            expr = expr.subs(t_sym, t)
-
-        # If incomplete and u is provided, substitute the canonical u
-        if not complete and u is not None:
-            expr = expr.subs(u_sym, u)
-
-        # Return symbolic if any free symbols remain
-        if expr.free_symbols:
+        # If no t provided, return symbolic expression
+        if t is None:
             return expr
 
-        # Fully numeric: evaluate
-        val = float(expr.evalf())
-        if abs(val) < 1e-300:
-            log_abs = -math.inf
-            sign = 1
-        else:
-            log_abs = np.log(abs(val))
-            sign = 1 if val > 0 else -1
+        # Handle scalar vs array t
+        t_arr = np.atleast_1d(t)
+        scalar_input = np.isscalar(t)
 
-        return (log_abs, sign) if log else val
+        # Pre‑allocate results
+        results_log_abs = np.zeros_like(t_arr, dtype=float)
+        results_sign = np.ones_like(t_arr, dtype=int)
+
+        for idx, t_val in enumerate(t_arr):
+            # Substitute t
+            val_expr = expr.subs(t_sym, t_val)
+
+            # Substitute u if incomplete
+            if not complete and u is not None:
+                val_expr = val_expr.subs(u_sym, u)
+
+            # If any free symbols remain, return the expression (not a loop result)
+            if val_expr.free_symbols:
+                # If we have multiple t values and some expression is still symbolic, raise error
+                if len(t_arr) > 1:
+                    raise ValueError(
+                        f"Symbolic expression still has free symbols at t={t_val}: {val_expr.free_symbols}. "
+                        "Cannot vectorize symbolic evaluation."
+                    )
+                # For scalar, return the expression
+                return val_expr
+
+            # Numeric evaluation
+            val = float(val_expr.evalf())
+            if abs(val) < 1e-300:
+                results_log_abs[idx] = -np.inf
+                results_sign[idx] = 1
+            else:
+                results_log_abs[idx] = np.log(abs(val))
+                results_sign[idx] = 1 if val > 0 else -1
+
+        # Return scalar or arrays
+        if scalar_input:
+            log_abs_val = results_log_abs[0]
+            sign_val = results_sign[0]
+            return (log_abs_val, sign_val) if log else (sign_val * np.exp(log_abs_val))
+        else:
+            if log:
+                return results_log_abs, results_sign
+            else:
+                return results_sign * np.exp(results_log_abs)
 
     # ---------------------------------------------------------
-    # Bell polynomial backend
+    # Bell polynomial backend (vectorized)
     # ---------------------------------------------------------
     if method == "bell":
         if t is None:
@@ -115,46 +148,47 @@ def mgfDerivative_integer(
             t=t,
             order=order,
             symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method,
+            cgf_mode=cgf_method,
             complete=complete,
-            u=u,  # <-- added for incomplete MGF
+            u=u,
         )
         if log:
             return log_abs, sign
         return 0.0 if log_abs == -math.inf else sign * np.exp(log_abs)
 
     # ---------------------------------------------------------
-    # JAX backend
+    # JAX backend (vectorized)
     # ---------------------------------------------------------
-    if t is None:
-        raise ValueError("t must be supplied for method='jax'.")
-    # Pass u to the JAX function (which expects it for incomplete MGF)
-    log_abs, sign = integerDeriv_numeric_jax(
-        prior=prior,
-        t=t,
-        order=order,
-        complete=complete,
-        u=u,                     # <-- added
-    )
-    if log:
-        return log_abs, sign
-    return 0.0 if log_abs == -math.inf else sign * np.exp(log_abs)
+    if method == "jax":
+        if t is None:
+            raise ValueError("t must be supplied for method='jax'.")
+        log_abs, sign = integerDeriv_numeric_jax(
+            prior=prior,
+            t=t,
+            order=order,
+            complete=complete,
+            u=u,
+        )
+        if log:
+            return log_abs, sign
+        return 0.0 if log_abs == -math.inf else sign * np.exp(log_abs)
 
 
 def mgfDerivative_fractional(
     order: float,
     prior,
     method: str = "scipy",
-    t: float = None,
+    t: float | np.ndarray | list | None = None,
     simplify: bool = False,
     complete: bool = True,
     log: bool = True,
     integerDeriv_method: str = "symbolic",
-    u: float = None,          # truncation point for incomplete MGF
+    u: float = None,
     **kwargs
 ):
     """
     Unified interface for fractional derivatives of the MGF.
+    Supports vectorized t for numeric methods; symbolic method loops over t.
 
     Parameters
     ----------
@@ -164,8 +198,8 @@ def mgfDerivative_fractional(
         Prior object.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend.
-    t : float, optional
-        Evaluation point (required for numeric methods).
+    t : float or array-like, optional
+        Evaluation point(s) (required for numeric methods).
     simplify : bool, default False
         Simplify symbolic expressions (method='symbolic').
     complete : bool, default True
@@ -181,6 +215,9 @@ def mgfDerivative_fractional(
     Returns
     -------
     sympy.Expr, (log_abs, sign), or float
+        If t is scalar and method='symbolic', returns sympy.Expr or scalar.
+        If t is array and method='symbolic', returns array of results.
+        For numeric methods, returns scalar or arrays matching t shape.
     """
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
@@ -200,25 +237,73 @@ def mgfDerivative_fractional(
         if expr is None:
             return None
 
-        # Substitute t and u if provided
-        if t is not None:
-            expr = expr.subs(t_sym, t)
-        if not complete and u is not None:
-            expr = expr.subs(u_sym, u)
-
-        # Final resolution
-        if expr.free_symbols:
+        # If t is not provided, return symbolic expression
+        if t is None:
             return expr
-        value = float(expr.evalf())
-        if abs(value) < 1e-300:
-            return (-math.inf, 1) if log else 0.0
-        log_abs = math.log(abs(value))
-        sign = 1 if value > 0 else -1
-        return (log_abs, sign) if log else value
+
+        # Detect if t is scalar or array
+        t_arr = np.asarray(t)
+        scalar_input = t_arr.ndim == 0
+        if scalar_input:
+            t_arr = np.array([t])
+        batch = len(t_arr)
+
+        # Pre-allocate results
+        if log:
+            log_abs_vals = np.zeros(batch)
+            sign_vals = np.ones(batch, dtype=int)
+        else:
+            val_vals = np.zeros(batch)
+
+        # Loop over t values
+        for idx, t_val in enumerate(t_arr):
+            # Substitute t and u
+            expr_sub = expr.subs(t_sym, t_val)
+            if not complete and u is not None:
+                expr_sub = expr_sub.subs(u_sym, u)
+
+            # If free symbols remain, we cannot proceed for vector input
+            if expr_sub.free_symbols:
+                if batch > 1:
+                    raise ValueError(
+                        f"Symbolic expression still has free symbols at t={t_val}: {expr_sub.free_symbols}. "
+                        "Cannot vectorize symbolic evaluation."
+                    )
+                # Scalar input: return expression
+                return expr_sub
+
+            # Numeric evaluation
+            value = float(expr_sub.evalf())
+            if log:
+                if abs(value) < 1e-300:
+                    log_abs_vals[idx] = -np.inf
+                    sign_vals[idx] = 1
+                else:
+                    log_abs_vals[idx] = math.log(abs(value))
+                    sign_vals[idx] = 1 if value > 0 else -1
+            else:
+                val_vals[idx] = value
+
+        # Return scalar or arrays
+        if scalar_input:
+            if log:
+                return log_abs_vals[0], int(sign_vals[0])
+            else:
+                return float(val_vals[0])
+        else:
+            if log:
+                return log_abs_vals, sign_vals
+            else:
+                return val_vals
 
     # ---- Numeric paths require t ----
-    if t is None or math.isnan(t):
+    if t is None or (isinstance(t, float) and math.isnan(t)):
         raise ValueError(f"For method '{method}', t must be provided.")
+
+    # Convert to array for consistent handling (underlying functions accept arrays)
+    t_arr = np.asarray(t)
+    # If scalar, we can pass scalar to underlying functions (they can handle it)
+    # The underlying functions already accept arrays.
 
     # ---- scipy ----
     if method.lower() == "scipy":
@@ -253,10 +338,10 @@ def mgfDerivative_fractional(
     raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
 
 def mgfDerivative(
-    order: float,
+    order: float | np.ndarray | list | sp.Basic,
     prior,
     method: str = "auto",
-    t: float = None,
+    t: float | np.ndarray | list | None = None,
     simplify: bool = False,
     complete: bool = True,
     log: bool = True,
@@ -264,97 +349,109 @@ def mgfDerivative(
     use_interpolation: bool = True,
     d_vec: tuple = (0.8, 0.9, 0.95),
     int_tol: float = 1e-12,
-    u: float = None,          # <-- NEW: truncation point for incomplete MGF
+    u: float = None,
     **kwargs
 ):
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
+    Supports vectorized t and vectorized order (array of orders).
 
-    This function automatically detects whether the derivative order is integer
-    or fractional and dispatches to the appropriate method (integer or fractional).
-    For integer orders, it can use symbolic, Bell-polynomial, or JAX methods.
-    For fractional orders, it can use scipy, mpmath, or symbolic methods.
+    If `order` is array-like, each order is processed independently.
+    If `t` is also array-like, the results are stacked: for each order,
+    an array over t is produced, and then stacked along a new axis.
 
     Parameters
     ----------
-    order : float
-        Derivative order (integer or fractional). If within `int_tol` of an integer,
-        it is treated as integer.
+    order : float or array-like or sp.Basic
+        Derivative order(s). If array-like, each element is processed separately.
     prior : mitMGFprior
-        Prior object containing the MGF and its functions.
+        Prior object.
     method : str, optional
-        For integer order: one of 'symbolic', 'bell', 'jax'.
-        For fractional order: one of 'scipy', 'mpmath', 'symbolic'.
-        Special value: 'auto' (default) chooses 'symbolic' for integer orders,
-        and 'scipy' for fractional orders.
-    t : float, optional
-        Evaluation point. Required for numeric methods.
-    u : float, optional
-        Truncation point for incomplete MGF (used when complete=False).
-        Required for numeric evaluation when complete=False. Default None.
+        Derivative backend.
+    t : float or array-like, optional
+        Evaluation point(s). If array-like, vectorized over t.
     simplify : bool, optional
-        If True, simplify the symbolic expression (only for 'symbolic' methods).
+        If True, simplify symbolic expressions.
     complete : bool, optional
-        If True (default), differentiate the complete MGF.
-        If False, differentiate the incomplete MGF.
+        If True, differentiate complete MGF; else incomplete.
     log : bool, optional
-        If True and output is numeric, return (log_abs, sign). If False, return the
-        ordinary-scale value as a float.
+        If True, return (log_abs, sign) for numeric outputs.
     integer_method : str, optional
-        For fractional order only: method to compute the integer derivative inside
-        the fractional integrator. One of 'symbolic', 'jax', or 'bell'.
-        Default 'symbolic'.
+        For fractional orders: method for integer derivatives.
     use_interpolation : bool, optional
-        If True, use cubic interpolation for orders near an integer from below.
-        Default True.
+        If True, use cubic interpolation for near‑integer orders.
     d_vec : tuple, optional
-        Three values in (0,1) that are complements of deviations. For example,
-        d_vec = (0.8, 0.9, 0.95) gives actual deviations (0.2, 0.1, 0.05) via `dev = 1 - d`.
-        The interpolation points are n - dev1, n - dev2, n - dev3, n.
-        Interpolation is used only for orders in `(n - min_dev, n)` where
-        `min_dev = min(dev_i) = 1 - max(d_vec)`.
-        Must have exactly 3 elements.
+        Complements of deviations for interpolation.
     int_tol : float, optional
-        Tolerance for detecting integer order. If |order - round(order)| < int_tol,
-        the order is treated as integer. Default 1e-12.
-    **kwargs : additional keyword arguments passed to the underlying functions.
-        For integer methods (via mgfDerivative_integer):
-            symbolic_timeout : float, optional
-                Maximum time (seconds) allowed for symbolic CGF derivative computation
-                in the 'bell' method. If exceeded, falls back to JAX. Default 600.
-            cgf_method : str, optional
-                For 'bell' method only. Method to compute CGF derivatives in the numeric path.
-                Options: 'auto' (try jet, fallback to grad), 'jet' (force Taylor mode),
-                'grad' (force nested grad). Default 'auto'.
-        For fractional 'scipy' and 'mpmath' methods: epsabs, epsrel, limit, etc.
-        For fractional 'symbolic': timeout_seconds, etc.
+        Tolerance for treating order as integer.
+    u : float, optional
+        Truncation point for incomplete MGF.
+    **kwargs : passed to underlying functions.
 
     Returns
     -------
-    Depending on the method and order:
-        - If method='symbolic' and some symbols not substituted:
-            sympy.Expr (symbolic expression)
-        - If numeric evaluation (log=True): tuple (log_abs, sign)
-        - If numeric evaluation (log=False): float (ordinary value)
-
-    Raises
-    ------
-    ValueError
-        If order is invalid, method is invalid for the order type, required arguments missing,
-        or d_vec does not have exactly 3 elements or any element >= 1.
+    If order is scalar:
+        - If log=True: (log_abs, sign) where log_abs and sign are scalars or arrays
+          (depending on t).
+        - If log=False: scalar or array.
+    If order is array-like:
+        - If log=True: (log_abs_array, sign_array) where the arrays have shape
+          (len(order), ...) matching the t shape.
+        - If log=False: array of shape (len(order), ...).
     """
-    # ---- Extract and pop method‑specific kwargs ----
+    # ---- Validate d_vec (independent of order) ----
+    if len(d_vec) != 3:
+        raise ValueError("d_vec must have exactly 3 elements.")
+    if any(d >= 1 for d in d_vec):
+        raise ValueError("All elements of d_vec must be < 1.")
+
+    # ---- Dispatch for array-like order ----
+    if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
+        order_list = list(order)
+        results = []
+        for o in order_list:
+            res = mgfDerivative(
+                order=o,
+                prior=prior,
+                method=method,
+                t=t,
+                simplify=simplify,
+                complete=complete,
+                log=log,
+                integer_method=integer_method,
+                use_interpolation=use_interpolation,
+                d_vec=d_vec,
+                int_tol=int_tol,
+                u=u,
+                **kwargs
+            )
+            results.append(res)
+
+        # Restructure results based on log flag
+        if log:
+            # results is list of tuples (log_abs, sign)
+            # Each log_abs/sign could be scalar or array depending on t
+            # We'll stack them along a new first axis
+            log_abs_vals = [r[0] for r in results]
+            sign_vals = [r[1] for r in results]
+            # If first element is scalar, stack into 1D arrays
+            if np.isscalar(log_abs_vals[0]):
+                return np.array(log_abs_vals), np.array(sign_vals)
+            else:
+                # Stack along new axis (axis=0)
+                return np.stack(log_abs_vals, axis=0), np.stack(sign_vals, axis=0)
+        else:
+            # results is list of scalars or arrays
+            if np.isscalar(results[0]):
+                return np.array(results)
+            else:
+                return np.stack(results, axis=0)
+
+    # ---- Continue with scalar order (original logic) ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
     symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
 
-    # ---- Validate d_vec ----
-    if len(d_vec) != 3:
-        raise ValueError("d_vec must have exactly 3 elements (e.g., (0.8, 0.9, 0.95)).")
-    if any(d >= 1 for d in d_vec):
-        raise ValueError("All elements of d_vec must be < 1 (to get positive deviations).")
-    min_dev = 1.0 - max(d_vec)
-
-    # ---- Determine order type ----
+    # Determine order type
     if isinstance(order, sp.Basic):
         order_type = "symbolic"
     else:
@@ -363,7 +460,7 @@ def mgfDerivative(
         else:
             order_type = "fractional"
 
-    # ---- Resolve 'auto' method ----
+    # Resolve 'auto' method
     if method.lower() == 'auto':
         if order_type == "symbolic":
             method = 'symbolic'
@@ -372,7 +469,7 @@ def mgfDerivative(
         else:
             method = 'scipy'
 
-    # ---- Dispatch ----
+    # Dispatch
     if order_type == "symbolic":
         if method.lower() not in {'auto', 'symbolic'}:
             raise ValueError(f"Invalid method '{method}' for symbolic order. Only 'symbolic' is allowed.")
@@ -391,7 +488,7 @@ def mgfDerivative(
             simplify=simplify,
             complete=complete,
             log=log,
-            u=u,                     # pass through
+            u=u,
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
         )
@@ -409,13 +506,13 @@ def mgfDerivative(
             simplify=simplify,
             complete=complete,
             log=log,
-            u=u,                     # pass through
+            u=u,
             symbolic_timeout=symbolic_timeout,
             cgf_method=cgf_method,
         )
 
     else:
-        # ---- Fractional order ----
+        # Fractional order
         valid_frac_methods = {'scipy', 'mpmath', 'symbolic'}
         if method.lower() in {'jax', 'bell'}:
             print(f"Note: For fractional order, 'method' should be one of {valid_frac_methods}. "
@@ -430,19 +527,18 @@ def mgfDerivative(
         if integer_method.lower() not in valid_int_methods:
             raise ValueError(f"Invalid integer_method '{integer_method}'. Choose from {valid_int_methods}.")
 
-        # ---- Check if interpolation should be used ----
+        # Check interpolation
         n = int(np.ceil(order))
-        if use_interpolation and order > n - min_dev:
+        if use_interpolation and order > n - (1.0 - max(d_vec)):
             if method.lower() != 'scipy':
                 print(f"⚠️ Interpolation triggered for order {order}. "
-                      f"Overriding method '{method}' with 'scipy' (interpolation points use scipy).")
+                      f"Overriding method '{method}' with 'scipy'.")
             scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
             scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
             try:
                 from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
             except ImportError as e:
                 raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
-            # Interpolation expects a prior object (no params)
             return fractionalDeriv_interpolated(
                 order=order,
                 prior=prior,
@@ -451,11 +547,11 @@ def mgfDerivative(
                 return_log=log,
                 integer_method=integer_method,
                 complete=complete,
-                u=u,                     # pass through (requires updating fractionalDeriv_interpolated)
+                u=u,
                 **scipy_kwargs
             )
 
-        # ---- Otherwise, use standard fractional method ----
+        # Standard fractional method
         return mgfDerivative_fractional(
             order=order,
             prior=prior,
@@ -465,7 +561,7 @@ def mgfDerivative(
             complete=complete,
             log=log,
             integerDeriv_method=integer_method,
-            u=u,                     # pass through
+            u=u,
             **kwargs
         )
 
@@ -474,428 +570,186 @@ if __name__ == "__main__":
     import math
     import numpy as np
     import sympy as sp
-    import pandas as pd
     import jumufraktiv.MGFdictionary  # registers priors
     from jumufraktiv.mitMGFprior_class import mitMGFprior
     from scipy.special import gammainc, gamma
 
     # ------------------------------------------------------------------
     # Exact analytical reference for incomplete Gamma MGF derivatives
-    # Works for any real order (integer or fractional).
     # ------------------------------------------------------------------
     def exact_imgf_deriv(order, t, alpha, beta, u):
-        """
-        Exact derivative of the incomplete Gamma MGF:
-        D^order M_inc(t) = (β^α / Γ(α)) * (β - t)^(-(α+order)) * γ(α+order, (β-t)u)
-        where γ is the lower incomplete gamma function.
-        This formula holds for any real order (positive).
-        """
         z = beta - t
-        # lowergamma(a, x) = Γ(a) * gammainc(a, x)
         lower_gamma_val = gamma(alpha + order) * gammainc(alpha + order, z * u)
         return (beta**alpha / gamma(alpha)) * (z**(-(alpha + order))) * lower_gamma_val
 
     # ---- Create Gamma priors ----
     gamma_prior = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 2.0, "beta": 3.0}
-    )
-    gamma_prior_small = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 1e-5, "beta": 1e-5}
+        "gamma", params={"alpha": 2.0, "beta": 3.0}
     )
     gamma_prior_exp = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 1.0, "beta": 0.9}
+        "gamma", params={"alpha": 1.0, "beta": 0.9}
     )
 
-    # ------------------------------------------------------------------
-    # 1. Symbolic vs. reference (sanity check)
-    # ------------------------------------------------------------------
+    # ============================================================
+    # 1. Sanity check: symbolic vs analytical (iMGF)
+    # ============================================================
     print("=" * 60)
-    print("Sanity check: symbolic vs. analytical reference")
+    print("Sanity check: symbolic vs. analytical (iMGF)")
     print("=" * 60)
-    t_chk = -1.0
-    u_chk = 2.0
-    alpha_chk = 2.0
-    beta_chk = 3.0
-    order_chk = 2
-
-    # Symbolic via mgfDerivative
+    t_chk, u_chk, alpha_chk, beta_chk, order_chk = -1.0, 2.0, 2.0, 3.0, 2
     val_sym = mgfDerivative(
-        order=order_chk,
-        prior=gamma_prior,
-        method='symbolic',
-        t=t_chk,
-        complete=False,
-        u=u_chk,
-        log=False
+        order=order_chk, prior=gamma_prior, method='symbolic',
+        t=t_chk, complete=False, u=u_chk, log=False
     )
-    print(f"Symbolic derivative (order={order_chk}): {val_sym:.6e}")
-
-    # Analytical
     val_ref = exact_imgf_deriv(order_chk, t_chk, alpha_chk, beta_chk, u_chk)
-    print(f"Analytical reference:                  {val_ref:.6e}")
+    print(f"Symbolic: {val_sym:.6e}, Analytical: {val_ref:.6e}")
     print(f"Difference: {abs(val_sym - val_ref):.2e}")
-    if abs(val_sym - val_ref) < 1e-12:
-        print("✅ Symbolic matches analytical.")
-    else:
-        print("⚠️  Discrepancy – check implementation.")
+    print("✅" if abs(val_sym - val_ref) < 1e-12 else "⚠️ Discrepancy")
 
-    # ------------------------------------------------------------------
-    # 2. Integer derivative examples (complete MGF)
-    # ------------------------------------------------------------------
+    # ============================================================
+    # 2. Integer derivatives (complete MGF)
+    # ============================================================
     print("\n" + "=" * 60)
-    print("Integer derivative examples (complete MGF)")
+    print("Integer derivatives (complete MGF)")
     print("=" * 60)
-
-    # Symbolic expression (no evaluation)
-    expr = mgfDerivative_integer(2, gamma_prior, method="symbolic")
-    print("Symbolic expression for 2nd derivative of Gamma MGF:")
-    sp.pprint(expr)
-
-    # Symbolic evaluation with numeric output (log=True)
-    log_abs, sign = mgfDerivative_integer(
-        2, gamma_prior, method="symbolic", t=-1.0, log=True
-    )
-    print(f"\nSymbolic evaluated (log scale): log|deriv| = {log_abs:.6f}, sign = {sign}")
-
-    # Symbolic evaluation with ordinary output (log=False)
-    val = mgfDerivative_integer(
-        2, gamma_prior, method="symbolic", t=-1.0, log=False
-    )
-    print(f"Symbolic evaluated (ordinary scale): {val:.6f}")
-
-    # Bell method
-    log_abs, sign = mgfDerivative_integer(
-        2, gamma_prior, method="bell", t=-1.0
-    )
-    print(f"\nBell method: log|deriv| = {log_abs:.6f}, sign = {sign}")
-
-    # JAX method
-    val = mgfDerivative_integer(
-        2, gamma_prior, method="jax", t=-1.0, log=False
-    )
-    print(f"JAX method (ordinary): {val:.6e}")
-
-    # ------------------------------------------------------------------
-    # 3. Fractional derivative examples (complete MGF)
-    # ------------------------------------------------------------------
-    print("\n" + "=" * 60)
-    print("Fractional derivative examples (complete MGF)")
-    print("=" * 60)
-
-    frac_order = 1.99
-    t_val = -1.0
-
-    # Symbolic fractional derivative (will warn)
-    print("\n--- Symbolic fractional derivative ---")
-    try:
-        expr_frac = mgfDerivative_fractional(
-            order=frac_order,
-            prior=gamma_prior,
-            method='symbolic',
-            simplify=True,
-            timeout_seconds=10
+    t_int = -1.0
+    for method in ['symbolic', 'bell', 'jax']:
+        log_abs, sign = mgfDerivative_integer(
+            2, gamma_prior, method=method, t=t_int, log=True
         )
-        print("Symbolic fractional derivative expression:")
-        sp.pprint(expr_frac)
-    except Exception as e:
-        print(f"Symbolic fractional derivative failed: {e}")
+        print(f"{method:>8}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
 
-    # scipy method
-    print("\n--- scipy method (log scale) ---")
-    log_abs_frac, sign_frac = mgfDerivative_fractional(
-        order=frac_order,
-        prior=gamma_prior,
-        method='scipy',
-        t=t_val,
-        integerDeriv_method='symbolic',
-        epsrel=1e-10,
-        tol=1e-8
-    )
-    print(f"scipy fractional: log|deriv| = {log_abs_frac:.6f}, sign = {sign_frac}")
-
-    # mpmath method (high precision)
-    print("\n--- mpmath method (ordinary scale) ---")
-    try:
-        val_frac_mpmath = mgfDerivative_fractional(
-            order=frac_order,
-            prior=gamma_prior,
-            method='mpmath',
-            t=t_val,
-            integerDeriv_method='symbolic',
-            dps=60,
-            tol=1e-10,
-            log=False
-        )
-        print(f"mpmath fractional (ordinary): {val_frac_mpmath:.6e}")
-    except Exception as e:
-        print(f"mpmath fractional failed: {e}")
-        val_frac_mpmath = float('nan')
-
-    # Compare with integer 2nd derivative
-    log_abs2, sign2 = mgfDerivative_integer(
-        2, gamma_prior, method="symbolic", t=t_val, log=True
-    )
-    deriv2 = sign2 * np.exp(log_abs2)
-    print(f"\nOrdinary 2nd derivative at t={t_val}: {deriv2:.6e}")
-    print(f"Difference (scipy vs 2nd) on log scale: {abs(log_abs_frac - log_abs2):.2e}")
-    if not math.isnan(val_frac_mpmath):
-        print(f"Difference (mpmath vs 2nd) on ordinary scale: {abs(val_frac_mpmath - deriv2):.2e}")
-
-    # ------------------------------------------------------------------
-    # 4. Unified wrapper examples
-    # ------------------------------------------------------------------
+    # ============================================================
+    # 3. Fractional derivatives (complete MGF)
+    # ============================================================
     print("\n" + "=" * 60)
-    print("Unified wrapper examples")
+    print("Fractional derivatives (complete MGF)")
     print("=" * 60)
+    frac_order, t_frac = 1.99, -1.0
+    for backend in ['scipy', 'mpmath']:
+        try:
+            if backend == 'scipy':
+                log_abs, sign = mgfDerivative_fractional(
+                    order=frac_order, prior=gamma_prior, method=backend,
+                    t=t_frac, integerDeriv_method='symbolic', epsrel=1e-10, log=True
+                )
+            else:  # mpmath
+                log_abs, sign = mgfDerivative_fractional(
+                    order=frac_order, prior=gamma_prior, method=backend,
+                    t=t_frac, integerDeriv_method='symbolic', dps=60, tol=1e-10, log=True
+                )
+            print(f"{backend:>6}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
+        except Exception as e:
+            print(f"{backend:>6}: failed ({e})")
 
-    # Integer order via wrapper
-    log_abs, sign = mgfDerivative(
-        order=2.0,
-        prior=gamma_prior,
-        method='symbolic',
-        t=-1.0,
-        log=True
-    )
-    print(f"Wrapper (integer, log): log|deriv| = {log_abs:.6f}, sign = {sign}")
-
-    # Fractional order with auto‑correction
-    log_abs, sign = mgfDerivative(
-        order=1.99,
-        prior=gamma_prior,
-        method='jax',          # auto‑corrected to integer_method='jax', method='scipy'
-        t=-1.0,
-        epsrel=1e-10
-    )
-    print(f"Wrapper (fractional, auto‑corrected): log|deriv| = {log_abs:.6f}, sign = {sign}")
-
-    # Fractional order explicit scipy
-    log_abs, sign = mgfDerivative(
-        order=1.99,
-        prior=gamma_prior,
-        method='scipy',
-        t=-1.0,
-        integer_method='symbolic',
-        epsrel=1e-10
-    )
-    print(f"Wrapper (fractional, explicit): log|deriv| = {log_abs:.6f}, sign = {sign}")
-
-    # ------------------------------------------------------------------
-    # 5. Interpolation test (exponential prior)
-    # ------------------------------------------------------------------
+    # ============================================================
+    # 4. Interpolation test (exponential prior)
+    # ============================================================
     print("\n" + "=" * 60)
     print("Interpolation test (order 1.999, exponential prior)")
     print("=" * 60)
-
-    t_interp = -1.0
-    order_interp = 1.999
-
-    # Using interpolation (default)
+    t_interp, order_interp = -1.0, 1.999
     log_abs_interp, sign_interp = mgfDerivative(
-        order=order_interp,
-        prior=gamma_prior_exp,
+        order=order_interp, prior=gamma_prior_exp, method='scipy',
+        t=t_interp, log=True, integer_method='symbolic',
+        use_interpolation=True, d_vec=(0.8, 0.9, 0.95), epsrel=1e-10
+    )
+    lambda_exp = gamma_prior_exp.params['beta']
+    log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
+    print(f"Interpolated: {log_abs_interp:.6f}, Analytic: {log_analytic:.6f}")
+    print(f"Difference: {log_abs_interp - log_analytic:.2e}")
+
+    # ============================================================
+    # 5. Incomplete MGF (iMGF) derivative tests (integer and fractional)
+    # ============================================================
+    print("\n" + "=" * 60)
+    print("Incomplete MGF (iMGF) derivative tests")
+    print("=" * 60)
+    u_val, t_val_i, alpha_val, beta_val = 2.0, -1.0, 2.0, 3.0
+
+    # Integer order (exact reference)
+    order_int = 2
+    ref_int = exact_imgf_deriv(order_int, t_val_i, alpha_val, beta_val, u_val)
+    print(f"Integer order {order_int}: exact = {ref_int:.6e}")
+    for method in ['bell', 'jax']:
+        log_abs, sign = mgfDerivative_integer(
+            order_int, gamma_prior, method=method,
+            t=t_val_i, complete=False, u=u_val, log=True
+        )
+        val = sign * np.exp(log_abs)
+        print(f"  {method:>4}: {val:.6e} (diff {abs(val - ref_int):.2e})")
+
+    # Fractional order (non‑near‑integer)
+    order_frac = 1.5
+    ref_frac = exact_imgf_deriv(order_frac, t_val_i, alpha_val, beta_val, u_val)
+    print(f"\nFractional order {order_frac}: exact = {ref_frac:.6e}")
+    for backend, extra_kwargs in [('scipy', {'epsrel': 1e-12}), ('mpmath', {'dps': 60, 'tol': 1e-12})]:
+        try:
+            log_abs, sign = mgfDerivative(
+                order=order_frac, prior=gamma_prior, method=backend,
+                t=t_val_i, complete=False, u=u_val, log=True,
+                **extra_kwargs
+            )
+            val = sign * np.exp(log_abs)
+            print(f"  {backend:>6}: {val:.6e} (diff {abs(val - ref_frac):.2e})")
+        except Exception as e:
+            print(f"  {backend:>6}: failed ({e})")
+
+    # Fractional order near integer (interpolation)
+    order_near = 1.999
+    ref_near = exact_imgf_deriv(order_near, t_val_i, alpha_val, beta_val, u_val)
+    print(f"\nNear‑integer order {order_near}: exact = {ref_near:.6e}")
+    try:
+        log_abs, sign = mgfDerivative(
+            order=order_near, prior=gamma_prior, method='scipy',
+            t=t_val_i, complete=False, u=u_val, log=True,
+            use_interpolation=True, d_vec=(0.8, 0.9, 0.95), epsrel=1e-10
+        )
+        val = sign * np.exp(log_abs)
+        print(f"  interpolation: {val:.6e} (diff {abs(val - ref_near):.2e})")
+    except Exception as e:
+        print(f"  interpolation: failed ({e})")
+
+    # ============================================================
+    # 6. Vectorized t example (fractional derivative, scipy)
+    # ============================================================
+    print("\n" + "=" * 60)
+    print("Vectorized t example (fractional derivative, scipy)")
+    print("=" * 60)
+    t_vec = np.linspace(-2.0, -0.5, 5)
+    order_vec = 1.99
+    print(f"  t values: {t_vec}")
+    results_log, results_sign = mgfDerivative(
+        order=order_vec,
+        prior=gamma_prior,
         method='scipy',
-        t=t_interp,
+        t=t_vec,
         log=True,
         integer_method='symbolic',
-        use_interpolation=True,
-        d_vec=(0.8, 0.9, 0.95),
         epsrel=1e-10
     )
-    print(f"Interpolated: log|deriv| = {log_abs_interp:.6f}, sign = {sign_interp}")
+    print("  Results (log scale):")
+    for t_val, log_abs, sign in zip(t_vec, results_log, results_sign):
+        print(f"    t={t_val:.2f}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
 
-    # Analytic formula for exponential prior: D^α M(t) = λ * Γ(α+1) * (λ - t)^(-α-1)
-    lambda_exp = gamma_prior_exp.params['beta']
-    log_analytic = np.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * np.log(lambda_exp - t_interp)
-    print(f"Analytic:     log|deriv| = {log_analytic:.6f}")
-    print(f"Difference (interp - analytic): {log_abs_interp - log_analytic:.2e}")
-
-    # ------------------------------------------------------------------
-    # 6. Incomplete MGF (iMGF) derivative tests
-    #    using the exact analytical formula as reference.
-    # ------------------------------------------------------------------
+    # ============================================================
+    # 7. Vectorized order example (multiple orders, scipy)
+    # ============================================================
     print("\n" + "=" * 60)
-    print("Incomplete MGF (iMGF) derivative tests (vs. analytical reference)")
+    print("Vectorized order example (multiple orders, scipy)")
     print("=" * 60)
-
-    # --- Parameters ---
-    u_val = 2.0
-    t_val_i = -1.0
-    alpha_val = 2.0
-    beta_val = 3.0
-
-    # --- Integer order ---
-    print("\n--- Integer order (order=2) ---")
-    order_int = 2
-
-    # Exact reference
-    ref_val = exact_imgf_deriv(order_int, t_val_i, alpha_val, beta_val, u_val)
-    print(f"Exact reference (ordinary): {ref_val:.6e}")
-
-    # Bell method
-    try:
-        log_abs_bell, sign_bell = mgfDerivative_integer(
-            order=order_int,
-            prior=gamma_prior,
-            method='bell',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True
-        )
-        val_bell = sign_bell * np.exp(log_abs_bell)
-        print(f"Bell (log): log|val| = {log_abs_bell:.6f}, sign = {sign_bell}")
-        print(f"Bell (ordinary): {val_bell:.6e}")
-        print(f"Difference (Bell - exact): {abs(val_bell - ref_val):.2e}")
-    except Exception as e:
-        print(f"Bell failed: {e}")
-
-    # JAX method
-    try:
-        log_abs_jax, sign_jax = mgfDerivative_integer(
-            order=order_int,
-            prior=gamma_prior,
-            method='jax',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True
-        )
-        val_jax = sign_jax * np.exp(log_abs_jax)
-        print(f"JAX (log): log|val| = {log_abs_jax:.6f}, sign = {sign_jax}")
-        print(f"JAX (ordinary): {val_jax:.6e}")
-        print(f"Difference (JAX - exact): {abs(val_jax - ref_val):.2e}")
-    except Exception as e:
-        print(f"JAX failed: {e}")
-
-    # --- Fractional order (non‑near‑integer) ---
-    print("\n--- Fractional order (order=1.5) ---")
-    order_frac = 1.5
-
-    # Exact reference (fractional order)
-    ref_frac = exact_imgf_deriv(order_frac, t_val_i, alpha_val, beta_val, u_val)
-    log_ref_frac = math.log(abs(ref_frac))
-    sign_ref_frac = 1 if ref_frac > 0 else -1
-    print(f"Exact reference (ordinary): {ref_frac:.6e}")
-    print(f"Exact reference (log): log|val| = {log_ref_frac:.6f}, sign = {sign_ref_frac}")
-
-    # scipy (normal)
-    try:
-        log_abs_scipy, sign_scipy = mgfDerivative(
-            order=order_frac,
-            prior=gamma_prior,
-            method='scipy',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True,
-            epsrel=1e-12,
-            integer_method='symbolic'
-        )
-        val_scipy = sign_scipy * np.exp(log_abs_scipy)
-        print(f"scipy (log): log|val| = {log_abs_scipy:.6f}, sign = {sign_scipy}")
-        print(f"scipy (ordinary): {val_scipy:.6e}")
-        print(f"Difference (scipy - exact): {abs(val_scipy - ref_frac):.2e}")
-    except Exception as e:
-        print(f"scipy failed: {e}")
-        
-    # scipy (tanh-sinh)
-    try:
-        log_abs_scipy, sign_scipy = mgfDerivative(
-            order=order_frac,
-            prior=gamma_prior,
-            method='scipy',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True,
-            use_tan=True,
-            epsrel=1e-12,
-            integer_method='symbolic'
-        )
-        val_scipy = sign_scipy * np.exp(log_abs_scipy)
-        print(f"scipy (log): log|val| = {log_abs_scipy:.6f}, sign = {sign_scipy}")
-        print(f"scipy (tanh-sinh): {val_scipy:.6e}")
-        print(f"Difference (scipy - exact): {abs(val_scipy - ref_frac):.2e}")
-    except Exception as e:
-        print(f"scipy failed: {e}")
-        
-    # mpmath (ordinary)
-    try:
-        log_abs_mpmath, sign_mpmath = mgfDerivative(
-            order=order_frac,
-            prior=gamma_prior,
-            method='mpmath',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True,
-            dps=60,
-            integer_method='symbolic'
-        )
-        val_mpmath = sign_mpmath * np.exp(log_abs_mpmath)
-        print(f"mpmath (log): log|val| = {log_abs_mpmath:.6f}, sign = {sign_mpmath}")
-        print(f"mpmath (ordinary): {val_mpmath:.6e}")
-        print(f"Difference (mpmath - exact): {abs(val_mpmath - ref_frac):.2e}")
-    except Exception as e:
-        print(f"mpmath failed: {e}")
-
-    # mpmath (with use_tan=True for stability)
-    try:
-        log_abs_mpmath, sign_mpmath = mgfDerivative(
-            order=order_frac,
-            prior=gamma_prior,
-            method='mpmath',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True,
-            dps=60,
-            tol=1e-12,
-            use_tan=True,
-            integer_method='symbolic'
-        )
-        val_mpmath = sign_mpmath * np.exp(log_abs_mpmath)
-        print(f"mpmath (log): log|val| = {log_abs_mpmath:.6f}, sign = {sign_mpmath}")
-        print(f"mpmath (tanh-sinh): {val_mpmath:.6e}")
-        print(f"Difference (mpmath - exact): {abs(val_mpmath - ref_frac):.2e}")
-    except Exception as e:
-        print(f"mpmath failed: {e}")
-
-    # --- Fractional order near integer (interpolation test) ---
-    print("\n--- Fractional order near integer (order=1.999) ---")
-    order_near = 1.999
-
-    # Exact reference
-    ref_near = exact_imgf_deriv(order_near, t_val_i, alpha_val, beta_val, u_val)
-    print(f"Exact reference (ordinary): {ref_near:.6e}")
-
-    # Interpolation
-    try:
-        log_abs_interp, sign_interp = mgfDerivative(
-            order=order_near,
-            prior=gamma_prior,
-            method='scipy',
-            t=t_val_i,
-            complete=False,
-            u=u_val,
-            log=True,
-            use_interpolation=True,
-            d_vec=(0.8, 0.9, 0.95),
-            epsrel=1e-10,
-            integer_method='symbolic'
-        )
-        val_interp = sign_interp * np.exp(log_abs_interp)
-        print(f"Interpolation: log|val| = {log_abs_interp:.6f}, sign = {sign_interp}")
-        print(f"Interpolation (ordinary): {val_interp:.6e}")
-        print(f"Difference (interp - exact): {abs(val_interp - ref_near):.2e}")
-    except Exception as e:
-        print(f"Interpolation failed: {e}")
-
-    # Also compare with integer derivative at order=2 (sanity)
-    ref_int2 = exact_imgf_deriv(2, t_val_i, alpha_val, beta_val, u_val)
-    print(f"\nReference integer derivative (order=2): {ref_int2:.6e}")
-    if 'val_direct' in locals() and val_direct is not None:
-        print(f"Direct near‑integer (1.999) vs integer derivative: {abs(val_direct - ref_int2):.2e}")
+    t_order_vec = -1.0
+    orders_vec = np.array([1.5, 1.99, 2.5])
+    print(f"  t = {t_order_vec}, orders = {orders_vec}")
+    log_abs_orders, sign_orders = mgfDerivative(
+        order=orders_vec,
+        prior=gamma_prior,
+        method='scipy',
+        t=t_order_vec,
+        log=True,
+        integer_method='symbolic',
+        epsrel=1e-10
+    )
+    print("  Results (log scale):")
+    for o, log_abs, sign in zip(orders_vec, log_abs_orders, sign_orders):
+        print(f"    order={o:.2f}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
