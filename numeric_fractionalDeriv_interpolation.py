@@ -21,12 +21,18 @@ def fractionalDeriv_interpolated(
     return_log: bool = True,
     complete: bool = True,
     integer_method: str = "symbolic",
-    u: float = None,
+    u: float | np.ndarray | list | None = None,
     **kwargs
 ):
     """
     Compute fractional derivative using cubic interpolation for orders
-    approaching an integer from below. Supports vectorized t.
+    approaching an integer from below. Supports tuple‑vectorisation.
+
+    The evaluation point is:
+        - complete MGF: (t)
+        - incomplete MGF: (t, u)
+    If either t or u is array‑like, they are broadcast to a common shape and the
+    computation is vectorised over that batch.
 
     Parameters
     ----------
@@ -35,7 +41,7 @@ def fractionalDeriv_interpolated(
     prior : mitMGFprior
         Prior object providing the MGF and its functions.
     t : float or array-like
-        Evaluation point(s).
+        Evaluation point(s) for t.
     d_vec : tuple, optional
         Three complements of deviations (default (0.8, 0.9, 0.95)).
         Actual deviations are 1 - d_i.
@@ -47,16 +53,17 @@ def fractionalDeriv_interpolated(
     complete : bool, optional
         If True (default), differentiate the complete MGF.
         If False, differentiate the incomplete MGF.
-    u : float, optional
-        Truncation point for incomplete MGF (used when complete=False). Default None.
+    u : float or array-like, optional
+        Truncation point(s) for incomplete MGF (used when complete=False).
+        If array‑like, broadcast with t to form evaluation points (t, u).
     **kwargs : additional arguments passed to fractionalDeriv_numeric_scipy.
         e.g., epsrel, use_tan, epsabs, limit, etc.
 
     Returns
     -------
     float or tuple (log_abs, sign)
-        If t is scalar, returns scalar or tuple.
-        If t is array, returns arrays.
+        If t and u are scalar, returns scalar or tuple.
+        If either is array, returns array(s) with the broadcasted shape.
     """
     # ---- Validate d_vec ----
     if len(d_vec) != 3:
@@ -74,7 +81,7 @@ def fractionalDeriv_interpolated(
 
     # ---- Determine interpolation orders ----
     if order == int(order):
-        # Exact integer: compute directly for all t
+        # Exact integer: compute directly for all t (fractionalDeriv_numeric_scipy handles broadcasting)
         return fractionalDeriv_numeric_scipy(
             order=order,
             prior=prior,
@@ -98,8 +105,8 @@ def fractionalDeriv_interpolated(
     orders_compute = [n - dev for dev in actual_dev] + [n]
     x_vals = np.array(orders_compute)   # length 4
 
-    # ---- Compute log_abs and sign for all interpolation orders in one go ----
-    # We will compute for each alpha in orders_compute, but vectorized over t.
+    # ---- Compute log_abs and sign for all interpolation orders ----
+    # fractionalDeriv_numeric_scipy now handles tuple‑vectorisation, so we pass t_arr and u as is.
     log_abs_matrix = np.zeros((len(orders_compute), batch))
     sign_matrix = np.zeros((len(orders_compute), batch), dtype=int)
 
@@ -117,8 +124,7 @@ def fractionalDeriv_interpolated(
         log_abs_matrix[idx, :] = log_abs_alpha
         sign_matrix[idx, :] = sign_alpha
 
-    # ---- For each t, interpolate log_abs at the target order ----
-    # We'll use CubicSpline per t (only 4 points, so loop is fine)
+    # ---- For each point, interpolate log_abs at the target order ----
     from scipy.interpolate import CubicSpline
     log_abs_interp = np.zeros(batch)
     for i in range(batch):
@@ -129,20 +135,21 @@ def fractionalDeriv_interpolated(
     # ---- Sign: take sign at the highest interpolation order (n) ----
     sign_final = sign_matrix[-1, :]   # sign at order n
 
-    # ---- Return ----
-    if return_log:
-        if scalar_input:
-            return log_abs_interp[0], int(sign_final[0])
-        else:
-            return log_abs_interp, sign_final
+    # ---- Reshape to original shape if needed ----
+    # If t was originally scalar, we already have scalar; else we preserve shape.
+    if scalar_input:
+        return (log_abs_interp[0], int(sign_final[0])) if return_log else float(result[0])
     else:
-        # Ordinary scale
-        result = sign_final * np.exp(log_abs_interp)
-        # Handle -inf
-        result[np.isneginf(log_abs_interp)] = 0.0
-        if scalar_input:
-            return float(result[0])
+        # For array input, we return arrays with the same shape as t_arr (since u broadcast with t).
+        # Note: if t_arr was flattened, we should reshape to original shape.
+        original_shape = np.asarray(t).shape
+        log_abs_interp = log_abs_interp.reshape(original_shape)
+        sign_final = sign_final.reshape(original_shape)
+        if return_log:
+            return log_abs_interp, sign_final
         else:
+            result = sign_final * np.exp(log_abs_interp)
+            result[np.isneginf(log_abs_interp)] = 0.0
             return result
 
 

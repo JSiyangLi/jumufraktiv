@@ -102,6 +102,47 @@ def readyRayleigh(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitRayleigh(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Rayleigh likelihood.
+
+    For each observation y_i:
+        a_i = 1
+        b_i = y_i² / 2
+        log_c_i = log(y_i)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Rayleigh likelihood.")
+
+    a_vals = np.ones(n, dtype=float)
+    b_vals = data_vals ** 2 / 2.0
+    log_c_vals = np.log(data_vals)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cRayleigh() -> sp.Expr:

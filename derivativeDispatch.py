@@ -29,7 +29,7 @@ def mgfDerivative_integer(
     prior,
     method: str = "symbolic",
     t: float | np.ndarray | list | None = None,
-    u: float | None = None,
+    u: float | np.ndarray | list | None = None,
     simplify: bool = False,
     log: bool = True,
     complete: bool = True,
@@ -48,11 +48,11 @@ def mgfDerivative_integer(
     method : {"symbolic", "bell", "jax"}, optional
         Derivative backend.
     t : float or array-like, optional
-        Evaluation point(s). For method='symbolic', can be scalar or array.
-        For method='bell' or 'jax', can be an array (vectorized).
-    u : float, optional
-        Truncation point for incomplete MGF (used when complete=False).
-        For symbolic method, substitutes the canonical 'u' symbol.
+        Evaluation point(s) for t.
+    u : float or array-like, optional
+        Truncation point(s) for incomplete MGF (used when complete=False).
+        For symbolic method, substitutes the canonical 'u' symbol. If array‑like,
+        it is broadcast with t to form a batch of evaluation points (t, u).
     simplify : bool, optional
         Whether to simplify symbolic derivatives.
     complete : bool, optional
@@ -65,18 +65,21 @@ def mgfDerivative_integer(
 
     Returns
     -------
-    If t is None or symbolic expression has free symbols:
-        sympy.Expr
-    Else:
-        If log=True: (log_abs, sign) or arrays for vector input.
-        If log=False: float or array.
+    If t and u are scalar (or t is scalar and u is None) and evaluation is numeric:
+        If log=True: (log_abs, sign)
+        If log=False: float
+    If t or u is array-like and evaluation is numeric:
+        If log=True: (log_abs_array, sign_array) with broadcasted shape
+        If log=False: array with broadcasted shape
+    If t is None or symbolic evaluation leaves free symbols:
+        sympy.Expr (or list of expressions if multiple points)
     """
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
         raise ValueError("method must be one of {'symbolic','bell','jax'}.")
 
     # ---------------------------------------------------------
-    # Symbolic differentiation (loops over t if array)
+    # Symbolic differentiation
     # ---------------------------------------------------------
     if method == "symbolic":
         expr = integerDeriv_symbolic(
@@ -90,52 +93,106 @@ def mgfDerivative_integer(
         if t is None:
             return expr
 
-        # Handle scalar vs array t
-        t_arr = np.atleast_1d(t)
-        scalar_input = np.isscalar(t)
-
-        # Pre‑allocate results
-        results_log_abs = np.zeros_like(t_arr, dtype=float)
-        results_sign = np.ones_like(t_arr, dtype=int)
-
-        for idx, t_val in enumerate(t_arr):
-            # Substitute t
-            val_expr = expr.subs(t_sym, t_val)
-
-            # Substitute u if incomplete
-            if not complete and u is not None:
-                val_expr = val_expr.subs(u_sym, u)
-
-            # If any free symbols remain, return the expression (not a loop result)
-            if val_expr.free_symbols:
-                # If we have multiple t values and some expression is still symbolic, raise error
-                if len(t_arr) > 1:
-                    raise ValueError(
-                        f"Symbolic expression still has free symbols at t={t_val}: {val_expr.free_symbols}. "
-                        "Cannot vectorize symbolic evaluation."
-                    )
-                # For scalar, return the expression
-                return val_expr
-
-            # Numeric evaluation
-            val = float(val_expr.evalf())
-            if abs(val) < 1e-300:
-                results_log_abs[idx] = -np.inf
-                results_sign[idx] = 1
+        # ---- Broadcast t and u to a common shape ----
+        t_arr = np.asarray(t)
+        if complete:
+            if u is not None:
+                raise ValueError("u must be None when complete=True")
+            scalar_input = t_arr.ndim == 0
+            if scalar_input:
+                batch_shape = ()
+                t_flat = np.array([float(t_arr)])
+                u_flat = None
             else:
-                results_log_abs[idx] = np.log(abs(val))
-                results_sign[idx] = 1 if val > 0 else -1
-
-        # Return scalar or arrays
-        if scalar_input:
-            log_abs_val = results_log_abs[0]
-            sign_val = results_sign[0]
-            return (log_abs_val, sign_val) if log else (sign_val * np.exp(log_abs_val))
+                batch_shape = t_arr.shape
+                t_flat = t_arr.astype(float).ravel()
+                u_flat = None
         else:
-            if log:
-                return results_log_abs, results_sign
+            if u is None:
+                raise ValueError("u must be provided when complete=False")
+            u_arr = np.asarray(u)
+            t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
+            scalar_input = t_broad.ndim == 0
+            batch_shape = t_broad.shape
+            t_flat = t_broad.astype(float).ravel()
+            u_flat = u_broad.astype(float).ravel()
+
+        n_points = t_flat.size
+
+        # ---- Prepare result arrays ----
+        results_log_abs = np.full(n_points, -np.inf, dtype=float)
+        results_sign = np.ones(n_points, dtype=int)
+        # Also store symbolic results if any free symbols remain
+        results_expr = [None] * n_points
+
+        # ---- Build substitution dictionaries for each point ----
+        subs_list = []
+        for idx in range(n_points):
+            subs_local = {t_sym: t_flat[idx]}
+            if not complete:
+                subs_local[u_sym] = u_flat[idx]
+            subs_list.append(subs_local)
+
+        # ---- Evaluate at each point ----
+        for idx in range(n_points):
+            val_expr = expr.subs(subs_list[idx])
+            if val_expr.free_symbols:
+                # If any free symbols remain, we keep the expression
+                results_expr[idx] = val_expr
             else:
-                return results_sign * np.exp(results_log_abs)
+                val = float(val_expr.evalf())
+                if abs(val) < 1e-300:
+                    results_log_abs[idx] = -np.inf
+                    results_sign[idx] = 1
+                else:
+                    results_log_abs[idx] = np.log(abs(val))
+                    results_sign[idx] = 1 if val > 0 else -1
+
+        # ---- Decide return type ----
+        # If all results are numeric, return numeric arrays (or scalars)
+        if all(r is None for r in results_expr):
+            # Reshape to batch_shape
+            log_abs_reshaped = results_log_abs.reshape(batch_shape)
+            sign_reshaped = results_sign.reshape(batch_shape)
+            if scalar_input:
+                if log:
+                    return float(log_abs_reshaped.item()), int(sign_reshaped.item())
+                else:
+                    return float(sign_reshaped.item() * np.exp(log_abs_reshaped.item()))
+            else:
+                if log:
+                    return log_abs_reshaped, sign_reshaped
+                else:
+                    return sign_reshaped * np.exp(log_abs_reshaped)
+        else:
+            # If any free symbols remain, we cannot return a uniform numeric array.
+            # For scalar input, return the expression (first element)
+            # For array input, return a list of expressions (some may be numeric, some symbolic)
+            # We'll return a list with mixed types.
+            if scalar_input:
+                return results_expr[0] if log else sp.exp(results_expr[0])
+            else:
+                # Return list of results (could be mixed numeric/expr)
+                # But we want to respect log flag: if log=True, return log_abs or expression; else exponentiate.
+                if log:
+                    # For numeric points, we have log_abs; for symbolic, we have expr.
+                    # We'll return a list of the appropriate items.
+                    out = []
+                    for idx in range(n_points):
+                        if results_expr[idx] is None:
+                            out.append(results_log_abs[idx])
+                        else:
+                            out.append(results_expr[idx])
+                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
+                else:
+                    out = []
+                    for idx in range(n_points):
+                        if results_expr[idx] is None:
+                            val = results_sign[idx] * np.exp(results_log_abs[idx])
+                            out.append(val)
+                        else:
+                            out.append(sp.exp(results_expr[idx]))
+                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
 
     # ---------------------------------------------------------
     # Bell polynomial backend (vectorized)
@@ -183,12 +240,12 @@ def mgfDerivative_fractional(
     complete: bool = True,
     log: bool = True,
     integerDeriv_method: str = "symbolic",
-    u: float = None,
+    u: float | np.ndarray | list | None = None,
     **kwargs
 ):
     """
     Unified interface for fractional derivatives of the MGF.
-    Supports vectorized t for numeric methods; symbolic method loops over t.
+    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
 
     Parameters
     ----------
@@ -199,7 +256,7 @@ def mgfDerivative_fractional(
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend.
     t : float or array-like, optional
-        Evaluation point(s) (required for numeric methods).
+        Evaluation point(s) for t (required for numeric methods).
     simplify : bool, default False
         Simplify symbolic expressions (method='symbolic').
     complete : bool, default True
@@ -208,16 +265,16 @@ def mgfDerivative_fractional(
         If True, numeric output is (log_abs, sign); else ordinary float.
     integerDeriv_method : str, default 'symbolic'
         Method for integer derivatives inside integrators.
-    u : float, optional
-        Truncation point for incomplete MGF (used when complete=False).
+    u : float or array-like, optional
+        Truncation point(s) for incomplete MGF (used when complete=False).
+        If array‑like, broadcast with t to form evaluation points (t, u).
     **kwargs : passed to underlying functions.
 
     Returns
     -------
     sympy.Expr, (log_abs, sign), or float
-        If t is scalar and method='symbolic', returns sympy.Expr or scalar.
-        If t is array and method='symbolic', returns array of results.
-        For numeric methods, returns scalar or arrays matching t shape.
+        If t and u are scalar, returns sympy.Expr or scalar.
+        If either is array, returns arrays with the broadcasted shape.
     """
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
@@ -241,38 +298,60 @@ def mgfDerivative_fractional(
         if t is None:
             return expr
 
-        # Detect if t is scalar or array
+        # ---- Broadcast t and u to common shape ----
         t_arr = np.asarray(t)
-        scalar_input = t_arr.ndim == 0
-        if scalar_input:
-            t_arr = np.array([t])
-        batch = len(t_arr)
-
-        # Pre-allocate results
-        if log:
-            log_abs_vals = np.zeros(batch)
-            sign_vals = np.ones(batch, dtype=int)
+        if complete:
+            if u is not None:
+                raise ValueError("u must be None when complete=True")
+            scalar_input = t_arr.ndim == 0
+            if scalar_input:
+                batch_shape = ()
+                t_flat = np.array([float(t_arr)])
+                u_flat = None
+            else:
+                batch_shape = t_arr.shape
+                t_flat = t_arr.astype(float).ravel()
+                u_flat = None
+            n_points = t_flat.size
         else:
-            val_vals = np.zeros(batch)
+            if u is None:
+                raise ValueError("u must be provided when complete=False")
+            u_arr = np.asarray(u)
+            t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
+            scalar_input = t_broad.ndim == 0
+            batch_shape = t_broad.shape
+            t_flat = t_broad.astype(float).ravel()
+            u_flat = u_broad.astype(float).ravel()
+            n_points = t_flat.size
 
-        # Loop over t values
-        for idx, t_val in enumerate(t_arr):
-            # Substitute t and u
-            expr_sub = expr.subs(t_sym, t_val)
-            if not complete and u is not None:
-                expr_sub = expr_sub.subs(u_sym, u)
+        # ---- Pre-allocate results ----
+        if log:
+            log_abs_vals = np.full(n_points, -np.inf, dtype=float)
+            sign_vals = np.ones(n_points, dtype=int)
+        else:
+            val_vals = np.zeros(n_points)
 
+        # ---- Build substitution dictionaries for each point ----
+        subs_list = []
+        for idx in range(n_points):
+            subs_local = {t_sym: t_flat[idx]}
+            if not complete:
+                subs_local[u_sym] = u_flat[idx]
+            subs_list.append(subs_local)
+
+        # ---- Evaluate for each point ----
+        for idx, subs_local in enumerate(subs_list):
+            expr_sub = expr.subs(subs_local)
             # If free symbols remain, we cannot proceed for vector input
             if expr_sub.free_symbols:
-                if batch > 1:
+                if n_points > 1:
                     raise ValueError(
-                        f"Symbolic expression still has free symbols at t={t_val}: {expr_sub.free_symbols}. "
+                        f"Symbolic expression still has free symbols at point {idx}: {expr_sub.free_symbols}. "
                         "Cannot vectorize symbolic evaluation."
                     )
                 # Scalar input: return expression
                 return expr_sub
 
-            # Numeric evaluation
             value = float(expr_sub.evalf())
             if log:
                 if abs(value) < 1e-300:
@@ -284,26 +363,24 @@ def mgfDerivative_fractional(
             else:
                 val_vals[idx] = value
 
-        # Return scalar or arrays
-        if scalar_input:
-            if log:
-                return log_abs_vals[0], int(sign_vals[0])
+        # ---- Reshape to broadcasted shape ----
+        if log:
+            log_abs_vals = log_abs_vals.reshape(batch_shape)
+            sign_vals = sign_vals.reshape(batch_shape)
+            if scalar_input:
+                return float(log_abs_vals.item()), int(sign_vals.item())
             else:
-                return float(val_vals[0])
-        else:
-            if log:
                 return log_abs_vals, sign_vals
+        else:
+            val_vals = val_vals.reshape(batch_shape)
+            if scalar_input:
+                return float(val_vals.item())
             else:
                 return val_vals
 
     # ---- Numeric paths require t ----
     if t is None or (isinstance(t, float) and math.isnan(t)):
         raise ValueError(f"For method '{method}', t must be provided.")
-
-    # Convert to array for consistent handling (underlying functions accept arrays)
-    t_arr = np.asarray(t)
-    # If scalar, we can pass scalar to underlying functions (they can handle it)
-    # The underlying functions already accept arrays.
 
     # ---- scipy ----
     if method.lower() == "scipy":
@@ -349,27 +426,26 @@ def mgfDerivative(
     use_interpolation: bool = True,
     d_vec: tuple = (0.8, 0.9, 0.95),
     int_tol: float = 1e-12,
-    u: float = None,
+    u: float | np.ndarray | list | None = None,
     **kwargs
 ):
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
-    Supports vectorized t and vectorized order (array of orders).
+    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
 
-    If `order` is array-like, each order is processed independently.
-    If `t` is also array-like, the results are stacked: for each order,
-    an array over t is produced, and then stacked along a new axis.
+    If `order` is array-like, each order is processed independently, and the
+    results are stacked along a new first axis.
 
     Parameters
     ----------
-    order : float or array-like or sp.Basic
+    order : float, array-like, or sp.Basic
         Derivative order(s). If array-like, each element is processed separately.
     prior : mitMGFprior
         Prior object.
     method : str, optional
         Derivative backend.
     t : float or array-like, optional
-        Evaluation point(s). If array-like, vectorized over t.
+        Evaluation point(s) for t.
     simplify : bool, optional
         If True, simplify symbolic expressions.
     complete : bool, optional
@@ -384,20 +460,21 @@ def mgfDerivative(
         Complements of deviations for interpolation.
     int_tol : float, optional
         Tolerance for treating order as integer.
-    u : float, optional
-        Truncation point for incomplete MGF.
+    u : float or array-like, optional
+        Truncation point(s) for incomplete MGF (used when complete=False).
+        If array‑like, broadcast with t to form evaluation points (t, u).
     **kwargs : passed to underlying functions.
 
     Returns
     -------
     If order is scalar:
         - If log=True: (log_abs, sign) where log_abs and sign are scalars or arrays
-          (depending on t).
+          (depending on the broadcasted shape of t and u).
         - If log=False: scalar or array.
     If order is array-like:
         - If log=True: (log_abs_array, sign_array) where the arrays have shape
-          (len(order), ...) matching the t shape.
-        - If log=False: array of shape (len(order), ...).
+          (len(order), broadcasted_shape).
+        - If log=False: array of shape (len(order), broadcasted_shape).
     """
     # ---- Validate d_vec (independent of order) ----
     if len(d_vec) != 3:
@@ -429,19 +506,14 @@ def mgfDerivative(
 
         # Restructure results based on log flag
         if log:
-            # results is list of tuples (log_abs, sign)
-            # Each log_abs/sign could be scalar or array depending on t
-            # We'll stack them along a new first axis
             log_abs_vals = [r[0] for r in results]
             sign_vals = [r[1] for r in results]
-            # If first element is scalar, stack into 1D arrays
             if np.isscalar(log_abs_vals[0]):
                 return np.array(log_abs_vals), np.array(sign_vals)
             else:
                 # Stack along new axis (axis=0)
                 return np.stack(log_abs_vals, axis=0), np.stack(sign_vals, axis=0)
         else:
-            # results is list of scalars or arrays
             if np.isscalar(results[0]):
                 return np.array(results)
             else:

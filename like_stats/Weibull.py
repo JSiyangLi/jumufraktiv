@@ -120,6 +120,69 @@ def readyWeibull(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitWeibull(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    rho: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Weibull likelihood.
+
+    For each observation y_i and known shape ρ_i:
+        a_i = 1
+        b_i = y_i^{ρ_i}
+        log_c_i = log(ρ_i) + (ρ_i - 1) * log(y_i)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    rho : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known shape parameter(s) ρ. If scalar, recycled; if vector, same length as data.
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle rho ----
+    if _is_1d_dataframe(rho):
+        rho_vals = _extract_1d(rho)
+        if len(rho_vals) != n:
+            raise ValueError("rho must have same length as data or be scalar")
+    elif isinstance(rho, (int, float)):
+        rho_vals = np.full(n, float(rho))
+    else:
+        try:
+            rho_vals = _extract_1d(rho)
+            if len(rho_vals) != n:
+                raise ValueError("rho must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("rho must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Check positivity ----
+    if np.any(rho_vals <= 0):
+        raise ValueError("rho values must be positive.")
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Weibull likelihood.")
+
+    # ---- Per‑element statistics ----
+    a_vals = np.ones(n, dtype=float)
+    b_vals = data_vals ** rho_vals
+    log_c_vals = np.log(rho_vals) + (rho_vals - 1.0) * np.log(data_vals)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cWeibull() -> sp.Expr:

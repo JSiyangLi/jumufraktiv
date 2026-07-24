@@ -306,19 +306,42 @@ def integerDeriv_numeric_bell(
     symbolic_timeout: float = 600.0,
     cgf_mode: str = 'auto',
     complete: bool = True,
-    u: float = None
+    u: float | np.ndarray | None = None,
 ):
     """
     Compute the order‑th derivative of M(t) or imgf(t,u) using Bell polynomials.
 
-    If `complete` is False and the symbolic path is used, we evaluate each t
-    element‑wise via .subs().evalf() to maintain accuracy (mpmath).
-    """
-    # ---- Input handling ----
-    scalar_input = np.ndim(t) == 0
-    t_arr = np.atleast_1d(t)
-    batch = t_arr.shape[0]
+    The evaluation point is:
+        - complete MGF: (t)
+        - incomplete MGF: (t, u)
+    If either t or u is array‑like, they are broadcast to a common shape and the
+    computation is vectorised over that batch (tuple‑vectorisation principle).
 
+    Parameters
+    ----------
+    t : scalar or array-like
+        Evaluation point(s) for t.
+    prior : mitMGFprior
+        Prior object.
+    order : int
+        Derivative order.
+    symbolic_timeout : float, optional
+        Timeout for symbolic computation.
+    cgf_mode : str, optional
+        'auto', 'jet', 'grad', or 'symbolic'.
+    complete : bool, optional
+        If True, complete MGF; else incomplete.
+    u : scalar or array-like, optional
+        Upper limit(s) for the incomplete MGF.  Must be broadcastable with t
+        when both are arrays.
+
+    Returns
+    -------
+    If t and u are scalar:
+        (log_abs, sign)  # Python floats
+    If either is array-like:
+        (log_abs_array, sign_array)  # np.ndarray with broadcasted shape
+    """
     if order < 0:
         raise ValueError("Order must be non‑negative.")
 
@@ -327,7 +350,36 @@ def integerDeriv_numeric_bell(
         raise ValueError(f"Invalid cgf_mode. Must be one of {valid_modes}.")
 
     # ------------------------------------------------------------
-    # 1. Select symbolic expression and numeric function
+    # 1. Broadcast t and u to a common batch shape
+    # ------------------------------------------------------------
+    t_arr = np.asarray(t)
+    if complete:
+        if u is not None:
+            raise ValueError("u must be None when complete=True")
+        scalar_input = t_arr.ndim == 0
+        if scalar_input:
+            batch_shape = ()
+            t_flat = np.array([float(t_arr)])
+            u_flat = None
+            n_points = 1
+        else:
+            batch_shape = t_arr.shape
+            t_flat = t_arr.astype(float).ravel()
+            u_flat = None
+            n_points = t_flat.size
+    else:
+        if u is None:
+            raise ValueError("u must be provided when complete=False")
+        u_arr = np.asarray(u)
+        t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
+        scalar_input = t_broad.ndim == 0
+        batch_shape = t_broad.shape
+        t_flat = t_broad.astype(float).ravel()
+        u_flat = u_broad.astype(float).ravel()
+        n_points = t_flat.size
+
+    # ------------------------------------------------------------
+    # 2. Select symbolic expression and numeric function
     # ------------------------------------------------------------
     if complete:
         cgf_expr = prior.cgf_sym
@@ -338,49 +390,51 @@ def integerDeriv_numeric_bell(
         if not isinstance(cgf_expr, sp.Expr):
             raise TypeError("cgf_sym must be a SymPy expression.")
         cgf_func = prior.cgf_jax
+        if cgf_func is None:
+            raise ValueError("Prior does not provide cgf_jax for numeric path.")
     else:
-        if u is None:
-            raise ValueError("u must be provided when complete=False.")
         if prior.imgf_sym is not None:
             cgf_expr = sp.log(prior.imgf_sym)
         else:
             cgf_expr = None
             print("No imgf_sym; symbolic path will be skipped.")
         if prior.logimgf_jax is not None:
-            cgf_func = lambda t_val: prior.logimgf_jax(t_val, u)
+            cgf_func = prior.logimgf_jax
         elif prior.imgf_jax is not None:
-            cgf_func = lambda t_val: jnp.log(prior.imgf_jax(t_val, u))
+            cgf_func = lambda t_val, u_val: jnp.log(prior.imgf_jax(t_val, u_val))
         else:
             raise ValueError("Prior does not provide imgf_jax or logimgf_jax for iMGF.")
 
     # ---- Handle order 0 ----
     if order == 0:
         if complete:
-            cgf_vals = prior.cgf(t_arr)
+            cgf_vals = np.array([cgf_func(t_flat[i]) for i in range(n_points)])
         else:
-            cgf_vals = cgf_func(t_arr)
-        cgf_vals = np.asarray(cgf_vals)
+            cgf_vals = np.array([cgf_func(t_flat[i], u_flat[i]) for i in range(n_points)])
+        cgf_vals = cgf_vals.reshape(batch_shape)
         if scalar_input:
-            return float(cgf_vals[0]), 1
+            return float(cgf_vals.item()), 1
         else:
             return cgf_vals, np.ones_like(cgf_vals, dtype=int)
 
     # ------------------------------------------------------------
-    # 2. Extract symbol 't'
+    # 3. Extract symbol 't' (and 'u' for symbolic)
     # ------------------------------------------------------------
     t_sym = None
+    u_sym = None
     if cgf_expr is not None:
         for s in cgf_expr.free_symbols:
             if s.name == 't':
                 t_sym = s
-                break
+            elif s.name == 'u':
+                u_sym = s
         if t_sym is None:
             raise RuntimeError("No symbol 't' found in the CGF expression.")
 
     params = prior.params or {}
 
     # ------------------------------------------------------------
-    # 3. Decision: symbolic vs numeric
+    # 4. Decision: symbolic vs numeric
     # ------------------------------------------------------------
     if cgf_mode.lower() == "symbolic":
         use_symbolic = True
@@ -402,20 +456,26 @@ def integerDeriv_numeric_bell(
             print("No symbolic expression; using numeric (JAX) path.")
 
     # ------------------------------------------------------------
-    # 4. Symbolic path (evaluate each t using .subs().evalf())
+    # 5. Symbolic path (iterate over points)
     # ------------------------------------------------------------
     if use_symbolic:
-        # Prepare substitution dictionary for hyperparameters (not u)
+        # Pre‑substitute hyperparameters once
         subs_dict = {}
         for sym in cgf_expr.free_symbols:
             if sym.name in params:
                 subs_dict[sym] = float(params[sym.name])
-        # u is kept symbolic; we will substitute it only if complete=False
+        cgf_expr_num = cgf_expr.subs(subs_dict)
 
-        # We will collect cumulants for each t
+        # Build substitution dictionaries for each point once
+        subs_list = []
+        for idx in range(n_points):
+            subs_local = {t_sym: t_flat[idx]}
+            if not complete:
+                subs_local[u_sym] = u_flat[idx]
+            subs_list.append(subs_local)
+
         logv_list = []
         vsign_list = []
-
         start_time = time.time()
 
         for k in range(1, order + 1):
@@ -424,24 +484,15 @@ def integerDeriv_numeric_bell(
                     f"Symbolic computation exceeded {symbolic_timeout:.1f} seconds."
                 )
 
-            # Differentiate symbolically (u remains symbolic)
-            deriv_expr = sp.diff(cgf_expr, t_sym, k)
-            # Substitute hyperparameters (alpha, beta, etc.)
-            deriv_expr = deriv_expr.subs(subs_dict)
+            deriv_expr = sp.diff(cgf_expr_num, t_sym, k)
 
-            # Pre‑allocate arrays for this derivative order
-            vals_k = np.zeros(batch)
-            for idx, t_val in enumerate(t_arr):
-                # Build substitution dict: t and possibly u
-                subs_local = {t_sym: t_val}
-                if not complete and u is not None:
-                    subs_local[u_sym] = u
-                val_sub = deriv_expr.subs(subs_local).evalf()
+            vals_k = np.zeros(n_points)
+            for idx in range(n_points):
+                val_sub = deriv_expr.subs(subs_list[idx]).evalf()
                 if val_sub.free_symbols:
-                    raise ValueError(f"Free symbols remain for t={t_val}: {val_sub.free_symbols}")
+                    raise ValueError(f"Free symbols remain for point {idx}: {val_sub.free_symbols}")
                 vals_k[idx] = float(val_sub)
 
-            # Compute log_abs and sign for this order across batch
             abs_vals = np.abs(vals_k)
             log_abs_k = np.where(abs_vals > sys.float_info.epsilon,
                                  np.log(abs_vals),
@@ -450,51 +501,80 @@ def integerDeriv_numeric_bell(
             logv_list.append(log_abs_k)
             vsign_list.append(sign_k)
 
-        # Stack into (order, batch)
         logv = np.stack(logv_list, axis=0)
         vsign = np.stack(vsign_list, axis=0)
 
-        # Evaluate CGF on all t (u still symbolic, substitute at each t)
-        cgf_t = np.zeros(batch)
-        for idx, t_val in enumerate(t_arr):
-            subs_local = {t_sym: t_val}
-            if not complete and u is not None:
-                subs_local[u_sym] = u
-            cgf_val = cgf_expr.subs(subs_dict).subs(subs_local).evalf()
+        # Evaluate CGF using pre‑substituted expression
+        cgf_t = np.zeros(n_points)
+        for idx in range(n_points):
+            cgf_val = cgf_expr_num.subs(subs_list[idx]).evalf()
             if cgf_val.free_symbols:
-                raise ValueError(f"Free symbols remain for CGF at t={t_val}")
+                raise ValueError(f"Free symbols remain for CGF at point {idx}")
             cgf_t[idx] = float(cgf_val)
 
-        # Batched Bell
         log_abs_B, sign_B = bell_polynomial_log_batched(logv, vsign)
         log_abs_deriv = cgf_t + log_abs_B
-        log_abs_deriv[np.isnan(log_abs_deriv)] = -np.inf
-        log_abs_deriv[np.isinf(log_abs_deriv) & (log_abs_deriv > 0)] = -np.inf
+        log_abs_deriv = log_abs_deriv.reshape(batch_shape)
+        sign_B = sign_B.reshape(batch_shape)
 
         if scalar_input:
-            return float(log_abs_deriv[0]), int(sign_B[0])
+            return float(log_abs_deriv.item()), int(sign_B.item())
         else:
             return log_abs_deriv, sign_B
 
     # ------------------------------------------------------------
-    # 5. Numeric (JAX) path (unchanged)
+    # 6. Numeric (JAX) path – tuple‑vectorised, no Python loops
     # ------------------------------------------------------------
     if not use_symbolic:
-        print("Using JAX numeric path...")
-        logv, vsign = cgf_derivatives_jax(
-            cgf_func,
-            t_arr,
-            order,
-            cgf_mode=cgf_mode
-        )
-        log_abs_B, sign_B = bell_polynomial_log_batched(logv, vsign)
-        cgf_t = np.asarray(cgf_func(t_arr))
+        print("Using JAX numeric path (tuple‑vectorised)...")
+
+        # Prepare JAX arrays
+        t_vals = jnp.asarray(t_flat)
+        if complete:
+            # Scalar cumulants for complete MGF (unary)
+            def scalar_cumulants(t_val, _):
+                log_abs, sign = _cgf_derivatives_jax_scalar(
+                    cgf_func, t_val, order, cgf_mode
+                )
+                return jnp.array(log_abs), jnp.array(sign)
+            u_vals = jnp.zeros_like(t_vals)   # dummy, unused
+        else:
+            u_vals = jnp.asarray(u_flat)
+            # Scalar cumulants for incomplete MGF (bind u)
+            def scalar_cumulants(t_val, u_val):
+                unary = lambda x: cgf_func(x, u_val)
+                log_abs, sign = _cgf_derivatives_jax_scalar(
+                    unary, t_val, order, cgf_mode
+                )
+                return jnp.array(log_abs), jnp.array(sign)
+
+        # Vectorise over points
+        vmapped = jax.vmap(scalar_cumulants)
+        logv, vsign = vmapped(t_vals, u_vals)
+
+        # Transpose to (order, batch)
+        logv = jnp.transpose(logv)
+        vsign = jnp.transpose(vsign)
+
+        # Batched Bell
+        log_abs_B, sign_B = bell_polynomial_log_batched(np.asarray(logv), np.asarray(vsign))
+
+        # Compute CGF values via vmap (no Python loop)
+        if complete:
+            cgf_vec = jax.vmap(cgf_func)
+            cgf_t = cgf_vec(t_vals)
+        else:
+            cgf_vec = jax.vmap(cgf_func)
+            cgf_t = cgf_vec(t_vals, u_vals)
+
+        cgf_t = np.asarray(cgf_t)
+
         log_abs_deriv = cgf_t + log_abs_B
-        log_abs_deriv[np.isnan(log_abs_deriv)] = -np.inf
-        log_abs_deriv[np.isinf(log_abs_deriv) & (log_abs_deriv > 0)] = -np.inf
+        log_abs_deriv = log_abs_deriv.reshape(batch_shape)
+        sign_B = sign_B.reshape(batch_shape)
 
         if scalar_input:
-            return float(log_abs_deriv[0]), int(sign_B[0])
+            return float(log_abs_deriv.item()), int(sign_B.item())
         else:
             return log_abs_deriv, sign_B
 

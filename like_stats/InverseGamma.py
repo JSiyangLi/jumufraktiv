@@ -26,7 +26,7 @@ import numpy as np
 import math
 import sympy as sp
 from typing import Union, Dict, Any
-
+from scipy.special import gammaln
 
 def _is_1d_dataframe(obj: Any) -> bool:
     """Return True if obj is a pandas DataFrame with exactly 1 column."""
@@ -80,15 +80,12 @@ def readyInverseGamma(
     ValueError
         If inputs are incompatible or contain invalid values.
     """
-    # ---- 1. Extract data as 1D array ----
     data_vals = _extract_1d(data)
-    if data_vals.ndim != 1:
-        raise ValueError("data must be 1‑dimensional")
     n = len(data_vals)
     if n == 0:
         raise ValueError("data must be non‑empty")
 
-    # ---- 2. Handle shape ----
+    # ---- Handle shape ----
     if _is_1d_dataframe(shape):
         shape_vals = _extract_1d(shape)
         if len(shape_vals) != n:
@@ -103,22 +100,83 @@ def readyInverseGamma(
         except Exception:
             raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
 
-    # ---- 3. Check positivity ----
+    # ---- Positivity checks ----
     if np.any(shape_vals <= 0):
         raise ValueError("shape values must be positive.")
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Inverse‑Gamma likelihood.")
 
-    # ---- 4. Compute sufficient statistics ----
+    # ---- Vectorized sums ----
     a = np.sum(shape_vals)
     b = np.sum(1.0 / data_vals)
-    # log_c = Σ ( -(α_i+1) log(y_i) - log Γ(α_i) )
-    log_c = np.sum(-(shape_vals + 1.0) * np.log(data_vals) - np.array([math.lgamma(alpha) for alpha in shape_vals]))
+    log_c = np.sum(-(shape_vals + 1.0) * np.log(data_vals) - gammaln(shape_vals))
 
     return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
+        'a': float(a),
+        'b': float(b),
+        'log_c': float(log_c)
+    }
+
+def bereitInverseGamma(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    shape: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for an Inverse‑Gamma likelihood.
+
+    For each observation y_i and known shape α_i:
+        a_i = α_i
+        b_i = 1 / y_i
+        log_c_i = -(α_i + 1) * log(y_i) - log Γ(α_i)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    shape : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known shape parameter(s) α. If scalar, recycled; if vector, same length as data.
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle shape ----
+    if _is_1d_dataframe(shape):
+        shape_vals = _extract_1d(shape)
+        if len(shape_vals) != n:
+            raise ValueError("shape must have same length as data or be scalar")
+    elif isinstance(shape, (int, float)):
+        shape_vals = np.full(n, float(shape))
+    else:
+        try:
+            shape_vals = _extract_1d(shape)
+            if len(shape_vals) != n:
+                raise ValueError("shape must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Positivity checks ----
+    if np.any(shape_vals <= 0):
+        raise ValueError("shape values must be positive.")
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Inverse‑Gamma likelihood.")
+
+    # ---- Per‑element statistics ----
+    a_vals = shape_vals
+    b_vals = 1.0 / data_vals
+    log_c_vals = -(shape_vals + 1.0) * np.log(data_vals) - gammaln(shape_vals)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
     }
 
 

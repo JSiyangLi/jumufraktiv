@@ -9,6 +9,7 @@ import numpy as np
 import math
 from typing import Union, Dict, Any
 import sympy as sp
+from scipy.special import gammaln
 
 
 def _is_1d_dataframe(obj: Any) -> bool:
@@ -26,7 +27,6 @@ def _extract_1d(obj: Any) -> np.ndarray:
         return obj.values.astype(float)
     else:
         return np.asarray(obj, dtype=float)
-
 
 def readyPoisson(
     data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
@@ -62,55 +62,105 @@ def readyPoisson(
     ValueError
         If inputs are incompatible or contain invalid values.
     """
-    # ---- 1. Extract data as 1D array ----
     data_vals = _extract_1d(data)
-    if data_vals.ndim != 1:
-        raise ValueError("data must be 1‑dimensional")
     n = len(data_vals)
     if n == 0:
         raise ValueError("data must be non‑empty")
 
-    # ---- 2. Handle scale ----
-    # Check if scale is a 1‑column DataFrame
+    # ---- Handle scale ----
     if _is_1d_dataframe(scale):
         scale_vals = _extract_1d(scale)
         if len(scale_vals) != n:
             raise ValueError("scale must have same length as data or be scalar")
-        b = np.sum(scale_vals)
-    # Check if scale is numeric (int or float)
     elif isinstance(scale, (int, float)):
         scale_vals = np.full(n, float(scale))
-        b = n * float(scale)
     else:
-        # Try to treat as array‑like (maybe Series or list)
         try:
             scale_vals = _extract_1d(scale)
             if len(scale_vals) != n:
                 raise ValueError("scale must have same length as data or be scalar")
-            b = np.sum(scale_vals)
         except Exception:
             raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
 
-    # ---- 3. Check positivity ----
+    # ---- Check validity ----
     if np.any(scale_vals <= 0):
         raise ValueError("scale values must be positive")
     if np.any(data_vals < 0):
         raise ValueError("data values must be non‑negative")
 
-    # ---- 4. Compute sufficient statistics ----
+    # ---- Vectorized sums ----
     a = np.sum(data_vals)
-
-    # log_c = Σ ( y_i log(s_i) - log(y_i!) )
-    # Use lfactorial = log(y!) = lgamma(y+1)
-    def lfactorial(x: float) -> float:
-        return math.lgamma(x + 1)  # log Γ(x+1) = log(x!)
-
-    log_c = np.sum(data_vals * np.log(scale_vals) - np.array([lfactorial(y) for y in data_vals]))
+    b = np.sum(scale_vals)
+    log_c = np.sum(data_vals * np.log(scale_vals) - gammaln(data_vals + 1.0))
 
     return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
+        'a': float(a),
+        'b': float(b),
+        'log_c': float(log_c)
+    }
+
+def bereitPoisson(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray] = 1.0,
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Poisson likelihood.
+
+    For each observation y_i and exposure s_i:
+        a_i = y_i
+        b_i = s_i
+        log_c_i = y_i * log(s_i) - log(y_i!)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed counts (must be non‑negative).
+    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like, default 1.0
+        Exposure values. If scalar, recycled; if vector, same length as data.
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle scale ----
+    if _is_1d_dataframe(scale):
+        scale_vals = _extract_1d(scale)
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
+    elif isinstance(scale, (int, float)):
+        scale_vals = np.full(n, float(scale))
+    else:
+        try:
+            scale_vals = _extract_1d(scale)
+            if len(scale_vals) != n:
+                raise ValueError("scale must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Check validity ----
+    if np.any(scale_vals <= 0):
+        raise ValueError("scale values must be positive")
+    if np.any(data_vals < 0):
+        raise ValueError("data values must be non‑negative")
+
+    # ---- Per‑element statistics ----
+    a_vals = data_vals.astype(float)
+    b_vals = scale_vals
+    # log(y!) = log Γ(y+1)
+    log_c_vals = data_vals * np.log(scale_vals) - gammaln(data_vals + 1.0)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
     }
 
 

@@ -119,6 +119,68 @@ def readyLevy(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitLevy(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    location: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Lévy likelihood.
+
+    For each observation y_i and known location μ_i:
+        a_i = 0.5
+        b_i = 1 / (2 * (y_i - μ_i))
+        log_c_i = -0.5 * log(2π) - 1.5 * log(y_i - μ_i)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be > location).
+    location : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known location parameter(s) μ. If scalar, recycled; if vector, same length as data.
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle location ----
+    if _is_1d_dataframe(location):
+        loc_vals = _extract_1d(location)
+        if len(loc_vals) != n:
+            raise ValueError("location must have same length as data or be scalar")
+    elif isinstance(location, (int, float)):
+        loc_vals = np.full(n, float(location))
+    else:
+        try:
+            loc_vals = _extract_1d(location)
+            if len(loc_vals) != n:
+                raise ValueError("location must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("location must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Check support ----
+    diff = data_vals - loc_vals
+    if np.any(diff <= 0):
+        raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
+
+    # ---- Per‑element statistics ----
+    a_vals = np.full(n, 0.5)
+    b_vals = 1.0 / (2.0 * diff)
+    log_c_vals = -0.5 * np.log(2.0 * np.pi) - 1.5 * np.log(diff)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cLevy() -> sp.Expr:

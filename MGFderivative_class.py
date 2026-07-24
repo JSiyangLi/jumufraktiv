@@ -24,20 +24,21 @@ from jumufraktiv.symbols import t, theta, r, u
 # ============================================================
 # Likelihood registry
 # ============================================================
-from jumufraktiv.like_stats.Poisson import readyPoisson, cPoisson
-from jumufraktiv.like_stats.Gamma import readyGamma, cGamma
-from jumufraktiv.like_stats.Laplace import readyLaplace, cLaplace
-from jumufraktiv.like_stats.Normal import readyNormal, cNormal
-from jumufraktiv.like_stats.Rayleigh import readyRayleigh, cRayleigh
-from jumufraktiv.like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann
-from jumufraktiv.like_stats.InverseGamma import readyInverseGamma, cInverseGamma
-from jumufraktiv.like_stats.Levy import readyLevy, cLevy
-from jumufraktiv.like_stats.Weibull import readyWeibull, cWeibull
-from jumufraktiv.like_stats.BurrXII import readyBurrXII, cBurrXII
-from jumufraktiv.like_stats.Pareto import readyPareto, cPareto
-from jumufraktiv.like_stats.Dagum import readyDagum, cDagum
-from jumufraktiv.like_stats.Gompertz import readyGompertz, cGompertz
-from jumufraktiv.like_stats.HalfNormal import readyHalfNormal, cHalfNormal
+# ---- Likelihood imports ----
+from jumufraktiv.like_stats.Poisson import readyPoisson, cPoisson, bereitPoisson
+from jumufraktiv.like_stats.Gamma import readyGamma, cGamma, bereitGamma
+from jumufraktiv.like_stats.Laplace import readyLaplace, cLaplace, bereitLaplace
+from jumufraktiv.like_stats.Normal import readyNormal, cNormal, bereitNormal
+from jumufraktiv.like_stats.Rayleigh import readyRayleigh, cRayleigh, bereitRayleigh
+from jumufraktiv.like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann
+from jumufraktiv.like_stats.InverseGamma import readyInverseGamma, cInverseGamma, bereitInverseGamma
+from jumufraktiv.like_stats.Levy import readyLevy, cLevy, bereitLevy
+from jumufraktiv.like_stats.Weibull import readyWeibull, cWeibull, bereitWeibull
+from jumufraktiv.like_stats.BurrXII import readyBurrXII, cBurrXII, bereitBurrXII
+from jumufraktiv.like_stats.Pareto import readyPareto, cPareto, bereitPareto
+from jumufraktiv.like_stats.Dagum import readyDagum, cDagum, bereitDagum
+from jumufraktiv.like_stats.Gompertz import readyGompertz, cGompertz, bereitGompertz
+from jumufraktiv.like_stats.HalfNormal import readyHalfNormal, cHalfNormal, bereitHalfNormal
 
 
 # ============================================================
@@ -437,73 +438,100 @@ class MGFDerivative:
     # ========================================================
     def post_cdf(self, u_val=None, log=True):
         """
-        Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold u.
+        Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold(s) u.
 
         If `self._is_symbolic` is True:
             - If u_val is None or a sympy Symbol: returns a symbolic expression.
-            - If u_val is numeric: evaluates the expression numerically.
+            - If u_val is numeric (scalar or array): evaluates the expression numerically.
             - Requires the prior's symbolic incomplete MGF (imgf_sym).
-        If `self._is_symbolic` is False: performs numeric evaluation using
-        the prior's numeric imgf/logimgf functions.
+        If `self._is_symbolic` is False: performs numeric evaluation using the prior's
+        numeric imgf/logimgf functions. Supports tuple‑vectorisation: u can be an array.
+
+        Parameters
+        ----------
+        u_val : scalar, array-like, or sympy Symbol, optional
+            Upper limit(s) for the CDF. If array-like, returns array of CDFs.
+        log : bool, optional
+            If True, return log-CDF; else ordinary CDF.
+
+        Returns
+        -------
+        scalar, np.ndarray, or sympy.Expr
+            If u_val is scalar and numeric: scalar.
+            If u_val is array-like: array.
+            If u_val is symbolic: sympy.Expr.
         """
         # ---- Ensure iMGF support ----
         if not hasattr(self.prior, "has_iMGF") or not self.prior.has_iMGF():
             raise RuntimeError("Prior does not support incomplete MGF (iMGF).")
 
-        # ---- Symbolic path (self._is_symbolic) ----
+        # ---- Symbolic path ----
         if self._is_symbolic:
             try:
-                # Numerator: derivative of incomplete MGF as a symbolic expression
+                # Build symbolic derivative of incomplete MGF once
                 num_expr = mgfDerivative(
                     order=self.a,
                     prior=self.prior,
-                    method="symbolic",       # force symbolic
-                    t=None,                 # return expression
+                    method="symbolic",
+                    t=None,
                     simplify=self.simplify,
-                    complete=False,          # use incomplete MGF
+                    complete=False,
                     log=False,
                     **self._deriv_kwargs
                 )
-                # Evaluate at t = -b
+                # Evaluate at t = -b (fixed)
                 num_expr = num_expr.subs(t_sym, -self.b)
-
-                # Denominator: symbolic derivative of complete MGF at t = -b
                 denom_expr = self._deriv.subs(t_sym, -self.b)
-
-                # Log of ratio
                 log_cdf_expr = sp.log(num_expr) - sp.log(denom_expr)
 
                 # Substitute known hyperparameters
                 if self.params is not None:
-                    subs_dict = {sym: self.params[sym.name] 
-                                for sym in log_cdf_expr.free_symbols 
+                    subs_dict = {sym: self.params[sym.name]
+                                for sym in log_cdf_expr.free_symbols
                                 if sym.name in self.params}
                     if subs_dict:
                         log_cdf_expr = log_cdf_expr.subs(subs_dict)
 
-                # Substitute u if numeric
-                if u_val is not None and not isinstance(u_val, sp.Symbol):
-                    log_cdf_expr = log_cdf_expr.subs(u_sym, u_val)
-
-                # Final symbol‑numeric resolution
-                if log_cdf_expr.free_symbols:
+                # Determine if u_val is symbolic or numeric
+                if isinstance(u_val, sp.Symbol):
                     return log_cdf_expr if log else sp.exp(log_cdf_expr)
-
-                # Fully numeric: evaluate to float
-                val = float(log_cdf_expr.evalf())
-                return val if log else float(sp.exp(val))
+                elif u_val is None:
+                    return log_cdf_expr if log else sp.exp(log_cdf_expr)
+                else:
+                    # Numeric u: vectorize evaluation
+                    orig_shape = np.shape(u_val)
+                    u_flat = np.asarray(u_val).ravel()
+                    def eval_u(uu):
+                        expr_i = log_cdf_expr.subs(u_sym, uu).evalf()
+                        if expr_i.free_symbols:
+                            raise ValueError(
+                                "Symbolic expression still has free symbols after substituting u. "
+                                "Cannot evaluate numerically."
+                            )
+                        return float(expr_i)
+                    vec_eval = np.vectorize(eval_u)
+                    results = vec_eval(u_flat).reshape(orig_shape)
+                    if log:
+                        return results.item() if np.ndim(results) == 0 else results
+                    else:
+                        return np.exp(results.item()) if np.ndim(results) == 0 else np.exp(results)
 
             except Exception as e:
                 raise RuntimeError(f"Symbolic posterior CDF computation failed: {e}") from e
 
-        # ---- Numeric path (self._is_symbolic is False) ----
+        # ---- Numeric path (vectorised with tuple‑vectorisation) ----
         if u_val is None:
             raise ValueError("For numeric evaluation, u must be provided.")
 
-        if self.prior.imgf is None or self.prior.logimgf is None:
-            raise ValueError("Prior does not provide numeric imgf/logimgf functions.")
+        # Store original shape
+        orig_shape = np.shape(u_val)
+        u_arr = np.asarray(u_val)
+        scalar_input = u_arr.ndim == 0
+        if scalar_input:
+            u_arr = np.array([u_val])
 
-        # Numerator: numeric derivative of incomplete MGF at t = -b, with u=u_val
+        # Numerator: derivative of incomplete MGF at t = -b for all u values
+        # mgfDerivative now supports tuple‑vectorisation: it will broadcast t=-self.b with u_arr.
         log_abs_num, sign_num = mgfDerivative(
             order=self.a,
             prior=self.prior,
@@ -512,7 +540,7 @@ class MGFDerivative:
             simplify=self.simplify,
             complete=False,
             log=True,
-            u=u_val,                     # pass the truncation point
+            u=u_arr,
             **self._deriv_kwargs
         )
 
@@ -522,108 +550,190 @@ class MGFDerivative:
         else:
             log_denom = np.log(abs(self.value)) if self.value != 0 else -np.inf
 
+        # Combine
         log_ratio = log_abs_num - log_denom
         sign_ratio = sign_num * (self._sign if self._sign is not None else 1.0)
 
-        if log:
-            return log_ratio
+        # Reshape to original shape
+        log_ratio = log_ratio.reshape(orig_shape)
+        sign_ratio = sign_ratio.reshape(orig_shape)
+
+        # Consistency check: CDF must be non-negative
+        if np.any(sign_ratio < 0):
+            raise RuntimeError("Posterior CDF became negative – numerical issue.")
+
+        if scalar_input:
+            if log:
+                return float(log_ratio.item())
+            else:
+                if log_ratio.item() == -float('inf'):
+                    return 0.0
+                return float(sign_ratio.item() * np.exp(log_ratio.item()))
         else:
-            return 0.0 if log_ratio == -float('inf') else sign_ratio * np.exp(log_ratio)
+            if log:
+                return log_ratio
+            else:
+                result = sign_ratio * np.exp(log_ratio)
+                result[log_ratio == -float('inf')] = 0.0
+                return result
 
     # ========================================================
     # POSTERIOR PREDICTIVE
     # ========================================================
-    def post_predictive(self, new_data, log=True, **kwargs):
+    def post_predictive(self, new_data, log=True, individual=True, **kwargs):
         """
         Compute the posterior predictive density (or log-density) for new data.
+
+        Parameters
+        ----------
+        new_data : scalar, array-like, or sympy.Symbol
+            New observation(s). If array-like, each element is treated separately.
+        log : bool, optional
+            If True, return log-density; else ordinary density.
+        individual : bool, optional
+            If True (default), return an array of densities for each new data point.
+            If False, return the joint density (product of individual densities).
+        **kwargs : additional arguments passed to the likelihood's `ready_func` or `bereit_func`.
+
+        Returns
+        -------
+        scalar, np.ndarray, or sympy.Expr
+            Depending on input and `individual` flag.
         """
-        # ---- Symbolic path ----
-        if self._is_symbolic:
-            try:
-                if isinstance(new_data, sp.Symbol):
-                    a_new = sp.Symbol('a_new', real=True)
-                    b_new = sp.Symbol('b_new', real=True)
-                    log_c_new = sp.Symbol('log_c_new', real=True)
-                else:
-                    stats_new = self.ready_func(new_data, **kwargs)
-                    a_new = stats_new['a']
-                    b_new = stats_new['b']
-                    log_c_new = stats_new['log_c']
-
-                combined_order = self.a + a_new
-                combined_b = self.b + b_new
-
-                num = mgfDerivative(
-                    order=combined_order,
-                    prior=self.prior,
-                    method="symbolic",
-                    t=-combined_b,
-                    u=None,
-                    simplify=self.simplify,
-                    complete=True,
-                    log=True
+        # ---- Symbolic new_data ----
+        if isinstance(new_data, sp.Symbol):
+            if not self._is_symbolic:
+                raise ValueError("Cannot compute predictive density symbolically with a numeric posterior.")
+            a_new = sp.Symbol('a_new', real=True)
+            b_new = sp.Symbol('b_new', real=True)
+            log_c_new = sp.Symbol('log_c_new', real=True)
+            combined_order = self.a + a_new
+            combined_b = self.b + b_new
+            num = mgfDerivative(
+                order=combined_order,
+                prior=self.prior,
+                method="symbolic",
+                t=-combined_b,
+                simplify=self.simplify,
+                complete=True,
+                log=True
+            )
+            if isinstance(num, tuple):
+                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+            denom = self._evaluate_derivative(-self.b)
+            log_pred = log_c_new + sp.log(num) - sp.log(denom)
+            if self.params is not None:
+                log_pred = log_pred.subs(
+                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
                 )
-
-                if isinstance(num, tuple):
-                    raise RuntimeError(
-                        "Symbolic predictive unexpectedly received numeric derivative."
-                    )
-
-                denom = self._evaluate_derivative(-self.b)
-
-                log_pred = (
-                    log_c_new
-                    + sp.log(num)
-                    - sp.log(denom)
-                )
-
-                # final symbol resolution
-                if log_pred.free_symbols:
-                    subs_dict = {}
-                    for sym in log_pred.free_symbols:
-                        if sym.name in self.params:
-                            subs_dict[sym] = self.params[sym.name]
-                    log_pred = log_pred.subs(subs_dict)
-    
-                    return log_pred if log else sp.exp(log_pred)
-
-                return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
-
-            except Exception as e:
-                raise RuntimeError(
-                    f"Symbolic predictive computation failed: {e}"
-                ) from e
+            if log_pred.free_symbols:
+                return log_pred if log else sp.exp(log_pred)
+            val = float(log_pred.evalf())
+            return val if log else float(sp.exp(val))
 
         # ---- Numeric path ----
-        if isinstance(new_data, sp.Symbol):
-            raise ValueError("Cannot evaluate numeric predictive density with symbolic new_data.")
+        new_data_arr = np.asarray(new_data)
+        scalar_input = new_data_arr.ndim == 0
 
-        stats_new = self.ready_func(new_data, **kwargs)
-        a_new = stats_new['a']
-        b_new = stats_new['b']
-        log_c_new = stats_new['log_c']
-
-        a_combined = self.a + a_new
-        b_combined = self.b + b_new
-        log_abs_num, sign_num = mgfDerivative(
-            order=a_combined,
-            prior=self.prior,
-            method=self.method,
-            t=-b_combined,
-            u=None,
-            simplify=self.simplify,
-            complete=True,
-            log=True,
-            **self._deriv_kwargs
-        )
-        log_pred = log_c_new + log_abs_num - self.log_abs
-        if log:
-            return log_pred
+        # ---- Compute stats ----
+        if individual:
+            # Per‑element statistics using bereit_func
+            stats = self.bereit_func(new_data_arr, **kwargs)
+            a_vals = np.asarray(stats['a'])
+            b_vals = np.asarray(stats['b'])
+            log_c_vals = np.asarray(stats['log_c'])
         else:
-            sign_pred = sign_num * self._sign if hasattr(self, '_sign') and self._sign is not None else sign_num
-            if log_pred == -float('inf'):
-                return 0.0
-            return sign_pred * np.exp(log_pred)
+            # Aggregated statistics using ready_func (sums)
+            stats = self.ready_func(new_data_arr, **kwargs)
+            # Wrap scalars as single‑element arrays for uniform vectorized handling
+            a_vals = np.array([stats['a']])
+            b_vals = np.array([stats['b']])
+            log_c_vals = np.array([stats['log_c']])
+
+        # ---- Compute log-predictive values ----
+        if self._is_symbolic:
+            # Symbolic branch: lambdify expression and evaluate on arrays
+            a_sym = sp.Symbol('a_new', real=True)
+            b_sym = sp.Symbol('b_new', real=True)
+            log_c_sym = sp.Symbol('log_c_new', real=True)
+            combined_order = self.a + a_sym
+            combined_b = self.b + b_sym
+            num_expr = mgfDerivative(
+                order=combined_order,
+                prior=self.prior,
+                method="symbolic",
+                t=-combined_b,
+                simplify=self.simplify,
+                complete=True,
+                log=True
+            )
+            denom_expr = self._evaluate_derivative(-self.b)
+            log_pred_expr = log_c_sym + sp.log(num_expr) - sp.log(denom_expr)
+            if self.params is not None:
+                log_pred_expr = log_pred_expr.subs(
+                    {sym: self.params[sym.name] for sym in log_pred_expr.free_symbols if sym.name in self.params}
+                )
+            func = sp.lambdify((a_sym, b_sym, log_c_sym), log_pred_expr, modules='numpy')
+            log_pred_vals = func(a_vals, b_vals, log_c_vals)
+            sign_num = None   # not used for symbolic
+        else:
+            # Numeric branch: vectorized mgfDerivative
+            a_comb = self.a + a_vals
+            b_comb = self.b + b_vals
+            log_abs_num, sign_num = mgfDerivative(
+                order=a_comb,
+                prior=self.prior,
+                method=self.method,
+                t=-b_comb,
+                simplify=self.simplify,
+                complete=True,
+                log=True,
+                **self._deriv_kwargs
+            )
+            log_pred_vals = log_c_vals + log_abs_num - self.log_abs
+
+        # ---- Output based on `individual` ----
+        if individual:
+            # Return individual densities (scalar if input scalar, else array)
+            if scalar_input:
+                if log:
+                    return float(log_pred_vals[0])
+                else:
+                    if self._is_symbolic:
+                        return float(np.exp(log_pred_vals[0]))
+                    else:
+                        sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
+                        return 0.0 if log_pred_vals[0] == -np.inf else sign_pred * np.exp(log_pred_vals[0])
+            else:
+                if log:
+                    return log_pred_vals
+                else:
+                    if self._is_symbolic:
+                        return np.exp(log_pred_vals)
+                    else:
+                        sign_pred = sign_num * (self._sign if self._sign is not None else 1)
+                        result = sign_pred * np.exp(log_pred_vals)
+                        result[log_pred_vals == -np.inf] = 0.0
+                        return result
+        else:
+            # Joint density: sum log-predictive (which is a scalar, since stats were summed)
+            # log_pred_vals is a single‑element array or scalar; extract it.
+            if hasattr(log_pred_vals, '__len__'):
+                log_pred_joint = log_pred_vals[0]
+            else:
+                log_pred_joint = log_pred_vals
+            if log:
+                return log_pred_joint
+            else:
+                if self._is_symbolic:
+                    return np.exp(log_pred_joint)
+                else:
+                    # For numeric branch, sign is from the single derivative call
+                    if hasattr(sign_num, '__len__'):
+                        sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
+                    else:
+                        sign_pred = sign_num * (self._sign if self._sign is not None else 1)
+                    return 0.0 if log_pred_joint == -np.inf else sign_pred * np.exp(log_pred_joint)
 
     # ========================================================
     # POSTERIOR MGF

@@ -47,7 +47,6 @@ def _extract_1d(obj: Any) -> np.ndarray:
     else:
         return np.asarray(obj, dtype=float)
 
-
 def readyDagum(
     data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
     r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
@@ -91,45 +90,33 @@ def readyDagum(
     ValueError
         If inputs are incompatible or contain invalid values.
     """
-    # ---- 1. Extract data as 1D array ----
     data_vals = _extract_1d(data)
-    if data_vals.ndim != 1:
-        raise ValueError("data must be 1‑dimensional")
     n = len(data_vals)
     if n == 0:
         raise ValueError("data must be non‑empty")
 
-    # ---- 2. Handle r ----
-    if _is_1d_dataframe(r):
-        r_vals = _extract_1d(r)
-        if len(r_vals) != n:
-            raise ValueError("r must have same length as data or be scalar")
-    elif isinstance(r, (int, float)):
-        r_vals = np.full(n, float(r))
-    else:
-        try:
-            r_vals = _extract_1d(r)
-            if len(r_vals) != n:
-                raise ValueError("r must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("r must be a numeric scalar or 1‑dimensional array/DataFrame")
+    # ---- Handle r and s (vectorization) ----
+    def _handle_param(param, name):
+        if _is_1d_dataframe(param):
+            vals = _extract_1d(param)
+            if len(vals) != n:
+                raise ValueError(f"{name} must have same length as data or be scalar")
+            return vals
+        elif isinstance(param, (int, float)):
+            return np.full(n, float(param))
+        else:
+            try:
+                vals = _extract_1d(param)
+                if len(vals) != n:
+                    raise ValueError(f"{name} must have same length as data or be scalar")
+                return vals
+            except Exception:
+                raise ValueError(f"{name} must be a numeric scalar or 1‑dimensional array/DataFrame")
 
-    # ---- 3. Handle s ----
-    if _is_1d_dataframe(s):
-        s_vals = _extract_1d(s)
-        if len(s_vals) != n:
-            raise ValueError("s must have same length as data or be scalar")
-    elif isinstance(s, (int, float)):
-        s_vals = np.full(n, float(s))
-    else:
-        try:
-            s_vals = _extract_1d(s)
-            if len(s_vals) != n:
-                raise ValueError("s must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("s must be a numeric scalar or 1‑dimensional array/DataFrame")
+    r_vals = _handle_param(r, 'r')
+    s_vals = _handle_param(s, 's')
 
-    # ---- 4. Check positivity ----
+    # ---- Positivity checks ----
     if np.any(r_vals <= 0):
         raise ValueError("r values must be positive.")
     if np.any(s_vals <= 0):
@@ -137,21 +124,96 @@ def readyDagum(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Dagum likelihood.")
 
-    # ---- 5. Compute sufficient statistics ----
-    a_stat = float(n)
-    # b_stat = Σ [ log(1 + (y_i/s_i)^r_i) - r_i * log(y_i/s_i) ]
+    # ---- Compute log‑stable statistics ----
+    # log(1 + (y/s)^r)  – needed for log_c
     ratio = data_vals / s_vals
-    ratio_pow = ratio ** r_vals
-    log_term = np.log(1 + ratio_pow)
-    b_stat = np.sum(log_term - r_vals * np.log(ratio))
-    # log_C = Σ log(r_i / y_i) - Σ log(1 + ratio_pow)
-    log_c = np.sum(np.log(r_vals / data_vals)) - np.sum(log_term)
+    log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
 
-    return {
-        'a': a_stat,
-        'b': b_stat,
-        'log_c': log_c
-    }
+    # log(1 + (s/y)^r)  – needed for b (stable version)
+    inv_ratio = s_vals / data_vals
+    log_term_inv = np.log1p(inv_ratio ** r_vals)   # log(1 + (s/y)^r)
+
+    a_stat = float(n)
+    b_stat = np.sum(log_term_inv)
+    log_c = np.sum(np.log(r_vals) - np.log(data_vals) - log_term)
+
+    return {'a': a_stat, 'b': b_stat, 'log_c': log_c}
+    
+def bereitDagum(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    s: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Dagum likelihood.
+
+    For each observation y_i, known shape r_i, known scale s_i:
+        a_i = 1
+        b_i = log(1 + (y_i/s_i)^{r_i}) - r_i * log(y_i/s_i)
+        log_c_i = log(r_i / y_i) - log(1 + (y_i/s_i)^{r_i})
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    r : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known shape parameter(s). If scalar, recycled; if vector, same length as data.
+    s : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known scale parameter(s). If scalar, recycled; if vector, same length as data.
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Reuse parameter handling ----
+    def _handle_param(param, name):
+        if _is_1d_dataframe(param):
+            vals = _extract_1d(param)
+            if len(vals) != n:
+                raise ValueError(f"{name} must have same length as data or be scalar")
+            return vals
+        elif isinstance(param, (int, float)):
+            return np.full(n, float(param))
+        else:
+            try:
+                vals = _extract_1d(param)
+                if len(vals) != n:
+                    raise ValueError(f"{name} must have same length as data or be scalar")
+                return vals
+            except Exception:
+                raise ValueError(f"{name} must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    r_vals = _handle_param(r, 'r')
+    s_vals = _handle_param(s, 's')
+
+    # ---- Positivity checks ----
+    if np.any(r_vals <= 0):
+        raise ValueError("r values must be positive.")
+    if np.any(s_vals <= 0):
+        raise ValueError("s values must be positive.")
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Dagum likelihood.")
+
+    # ---- Per‑element computations ----
+    ratio = data_vals / s_vals
+    log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
+
+    inv_ratio = s_vals / data_vals
+    log_term_inv = np.log1p(inv_ratio ** r_vals)   # log(1 + (s/y)^r)
+
+    a_vals = np.ones(n, dtype=float)
+    b_vals = log_term_inv
+    log_c_vals = np.log(r_vals) - np.log(data_vals) - log_term
+
+    return {'a': a_vals, 'b': b_vals, 'log_c': log_c_vals}
 
 
 def cDagum() -> sp.Expr:

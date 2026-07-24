@@ -121,6 +121,70 @@ def readyGompertz(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitGompertz(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Gompertz likelihood.
+
+    For each observation y_i and known scale β_i:
+        a_i = 1
+        b_i = exp(β_i * y_i) - 1
+        log_c_i = log(β_i) + β_i * y_i
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known scale parameter(s) β. If scalar, recycled; if vector, same length as data.
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle scale ----
+    if _is_1d_dataframe(scale):
+        scale_vals = _extract_1d(scale)
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
+    elif isinstance(scale, (int, float)):
+        scale_vals = np.full(n, float(scale))
+    else:
+        try:
+            scale_vals = _extract_1d(scale)
+            if len(scale_vals) != n:
+                raise ValueError("scale must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Positivity checks ----
+    if np.any(scale_vals <= 0):
+        raise ValueError("scale values must be positive.")
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Gompertz likelihood.")
+
+    # ---- Per‑element statistics ----
+    a_vals = np.ones(n, dtype=float)
+    exp_term = np.exp(scale_vals * data_vals)
+    b_vals = exp_term - 1.0
+    log_c_vals = np.log(scale_vals) + scale_vals * data_vals
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cGompertz() -> sp.Expr:

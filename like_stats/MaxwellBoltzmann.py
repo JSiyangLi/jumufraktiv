@@ -101,6 +101,47 @@ def readyMaxwellBoltzmann(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitMaxwellBoltzmann(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Maxwell‑Boltzmann likelihood.
+
+    For each observation y_i:
+        a_i = 3/2
+        b_i = y_i²
+        log_c_i = log(4) - 0.5 * log(π) + 2 * log(y_i)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be positive).
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    if np.any(data_vals <= 0):
+        raise ValueError("data values must be positive for Maxwell‑Boltzmann likelihood.")
+
+    a_vals = np.full(n, 1.5)
+    b_vals = data_vals ** 2
+    log_c_vals = np.full(n, np.log(4.0) - 0.5 * np.log(np.pi)) + 2.0 * np.log(data_vals)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cMaxwellBoltzmann() -> sp.Expr:

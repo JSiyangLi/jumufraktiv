@@ -95,6 +95,47 @@ def readyHalfNormal(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitHalfNormal(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Half‑Normal likelihood.
+
+    For each observation y_i:
+        a_i = 0.5
+        b_i = y_i² / 2
+        log_c_i = 0.5 * (log(2) - log(π))
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values (must be non‑negative).
+    **kwargs : additional arguments (ignored).
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    if np.any(data_vals < 0):
+        raise ValueError("data values must be non‑negative for Half‑Normal likelihood.")
+
+    a_vals = np.full(n, 0.5)
+    b_vals = data_vals ** 2 / 2.0
+    log_c_vals = np.full(n, 0.5 * (np.log(2.0) - np.log(np.pi)))
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cHalfNormal() -> sp.Expr:

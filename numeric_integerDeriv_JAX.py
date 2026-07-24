@@ -128,22 +128,33 @@ def _integerDeriv_numeric_jax_scalar(
 
 def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
     """
-    Evaluate a fixed-order derivative at one or more (t, u) points.
+    Evaluate a fixed-order derivative at one or more evaluation points.
+
+    The evaluation point is:
+        - complete MGF: (t)
+        - incomplete MGF: (t, u)
+
+    If either t or u is array-like, the function vectorises over the
+    combined batch of evaluation points (tuple‑vectorisation principle).
 
     Parameters
     ----------
     order : int
         Must be scalar.
     t : scalar or array-like
-        Evaluation point(s).
+        Evaluation point(s) for t.
     u : scalar or array-like, optional
-        Upper limit(s) for the incomplete MGF.  Vectorises elementwise with t.
+        Upper limit(s) for the incomplete MGF.
+
+        Together with t, defines the evaluation point (t,u).
+        t and u are broadcast using NumPy broadcasting rules before
+        vectorised evaluation.
 
     Returns
     -------
     (log_abs, sign)
         Scalars if both inputs are scalar.
-        Arrays if either input is array-like.
+        Arrays with the broadcasted shape if either input is array-like.
     """
     if np.ndim(order) != 0:
         raise ValueError(
@@ -151,52 +162,48 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
             "Vectorisation over derivative orders is handled by mgfDerivative_integer()."
         )
 
-    t_is_scalar = np.ndim(t) == 0
-    u_is_scalar = u is None or np.ndim(u) == 0
-
-    # Both scalar – fast path
-    if t_is_scalar and u_is_scalar:
-        return _integerDeriv_numeric_jax_scalar(
-            float(t),
-            prior,
-            order,
-            complete=complete,
-            u=float(u) if u is not None else None,
-        )
-
-    # At least one is an array – vmap over the non-scalar argument(s)
-    if t_is_scalar:
-        # Vectorise over u only
-        u_arr = jnp.asarray(u)
-        vmapped = jax.vmap(
-            lambda u_val: _integerDeriv_numeric_jax_scalar(
-                t, prior, order, complete=complete, u=u_val
+    # ---- Complete MGF: evaluation point is (t) ----
+    if complete:
+        if np.ndim(t) == 0:
+            # Scalar fast path
+            return _integerDeriv_numeric_jax_scalar(
+                float(t), prior, order, complete=True, u=None
             )
-        )
-        log_abs, sign = vmapped(u_arr)
-
-    elif u_is_scalar:
-        # Vectorise over t only (original behaviour)
+        # Vectorise over t
         t_arr = jnp.asarray(t)
         vmapped = jax.vmap(
             lambda t_val: _integerDeriv_numeric_jax_scalar(
-                t_val, prior, order, complete=complete, u=u
+                t_val, prior, order, complete=True, u=None
             )
         )
         log_abs, sign = vmapped(t_arr)
+        return np.asarray(log_abs), np.asarray(sign)
 
-    else:
-        # Vectorise over both t and u elementwise
-        t_arr = jnp.asarray(t)
-        u_arr = jnp.asarray(u)
-        vmapped = jax.vmap(
-            lambda t_val, u_val: _integerDeriv_numeric_jax_scalar(
-                t_val, prior, order, complete=complete, u=u_val
-            )
+    # ---- Incomplete MGF: evaluation point is (t, u) ----
+    if u is None:
+        raise ValueError("u must be provided for incomplete MGF")
+
+    # Broadcast t and u to a common shape (tuple‑vectorisation)
+    t_arr = np.asarray(t)
+    u_arr = np.asarray(u)
+    t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
+
+    # Flatten to 1D for vectorisation over points
+    t_flat = jnp.asarray(t_broad).reshape(-1)
+    u_flat = jnp.asarray(u_broad).reshape(-1)
+
+    vmapped = jax.vmap(
+        lambda t_val, u_val: _integerDeriv_numeric_jax_scalar(
+            t_val, prior, order, complete=False, u=u_val
         )
-        log_abs, sign = vmapped(t_arr, u_arr)
+    )
+    log_abs, sign = vmapped(t_flat, u_flat)
 
-    return np.asarray(log_abs), np.asarray(sign)
+    # Reshape back to the broadcasted shape
+    log_abs = np.asarray(log_abs).reshape(t_broad.shape)
+    sign = np.asarray(sign).reshape(t_broad.shape)
+
+    return log_abs, sign
 
 
 if __name__ == "__main__":

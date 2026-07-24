@@ -113,6 +113,62 @@ def readyLaplace(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitLaplace(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Laplace likelihood.
+
+    For each observation y_i and known mean μ_i:
+        a_i = 1
+        b_i = |y_i - μ_i|
+        log_c_i = log(1/2) = -log(2)
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values.
+    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known mean μ. If scalar, recycled; if vector, same length as data.
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle mean ----
+    if _is_1d_dataframe(mean):
+        mean_vals = _extract_1d(mean)
+        if len(mean_vals) != n:
+            raise ValueError("mean must have same length as data or be scalar")
+    elif isinstance(mean, (int, float)):
+        mean_vals = np.full(n, float(mean))
+    else:
+        try:
+            mean_vals = _extract_1d(mean)
+            if len(mean_vals) != n:
+                raise ValueError("mean must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("mean must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Per‑element statistics ----
+    a_vals = np.ones(n, dtype=float)
+    b_vals = np.abs(data_vals - mean_vals)
+    log_c_vals = np.full(n, -np.log(2.0))   # log(1/2)
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cLaplace() -> sp.Expr:

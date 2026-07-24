@@ -115,6 +115,62 @@ def readyNormal(
         'b': b,
         'log_c': log_c
     }
+    
+def bereitNormal(
+    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    **kwargs
+) -> Dict[str, np.ndarray]:
+    """
+    Compute per‑element sufficient statistics for a Normal likelihood.
+
+    For each observation y_i and known mean μ_i:
+        a_i = 0.5
+        b_i = (y_i - μ_i)^2 / 2
+        log_c_i = -0.5 * (log(2) + log(π))
+
+    Parameters
+    ----------
+    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+        Observed values.
+    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+        Known mean μ. If scalar, recycled; if vector, same length as data.
+
+    Returns
+    -------
+    dict
+        Keys: 'a', 'b', 'log_c', each as a numpy array of length n.
+    """
+    data_vals = _extract_1d(data)
+    n = len(data_vals)
+    if n == 0:
+        raise ValueError("data must be non‑empty")
+
+    # ---- Handle mean ----
+    if _is_1d_dataframe(mean):
+        mean_vals = _extract_1d(mean)
+        if len(mean_vals) != n:
+            raise ValueError("mean must have same length as data or be scalar")
+    elif isinstance(mean, (int, float)):
+        mean_vals = np.full(n, float(mean))
+    else:
+        try:
+            mean_vals = _extract_1d(mean)
+            if len(mean_vals) != n:
+                raise ValueError("mean must have same length as data or be scalar")
+        except Exception:
+            raise ValueError("mean must be a numeric scalar or 1‑dimensional array/DataFrame")
+
+    # ---- Per‑element statistics ----
+    a_vals = np.full(n, 0.5)
+    b_vals = (data_vals - mean_vals) ** 2 / 2.0
+    log_c_vals = np.full(n, -0.5 * (np.log(2.0) + np.log(np.pi)))
+
+    return {
+        'a': a_vals,
+        'b': b_vals,
+        'log_c': log_c_vals
+    }
 
 
 def cNormal() -> sp.Expr:
