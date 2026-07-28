@@ -484,25 +484,33 @@ def mgfDerivative(
 
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
-        order_list = list(order)
+        order_arr = np.asarray(order)
+        # Broadcast all components of one derivative request
+        if complete:
+            order_arr, t_arr = np.broadcast_arrays(order_arr, t)
+            u_arr = [None] * order_arr.size
+        else:
+            order_arr, t_arr, u_arr = np.broadcast_arrays(order_arr, t, u)
+
         results = []
-        for o in order_list:
-            res = mgfDerivative(
-                order=o,
-                prior=prior,
-                method=method,
-                t=t,
-                simplify=simplify,
-                complete=complete,
-                log=log,
-                integer_method=integer_method,
-                use_interpolation=use_interpolation,
-                d_vec=d_vec,
-                int_tol=int_tol,
-                u=u,
-                **kwargs
+        for o, tt, uu in zip(order_arr.flat, t_arr.flat, np.asarray(u_arr).flat):
+            results.append(
+                mgfDerivative(
+                    order=int(o),
+                    prior=prior,
+                    method=method,
+                    t=float(tt),
+                    simplify=simplify,
+                    complete=complete,
+                    log=log,
+                    integer_method=integer_method,
+                    use_interpolation=use_interpolation,
+                    d_vec=d_vec,
+                    int_tol=int_tol,
+                    u=None if complete else float(uu),
+                    **kwargs,
+                )
             )
-            results.append(res)
 
         # Restructure results based on log flag
         if log:

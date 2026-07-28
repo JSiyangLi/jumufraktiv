@@ -45,20 +45,20 @@ from jumufraktiv.like_stats.HalfNormal import readyHalfNormal, cHalfNormal, bere
 # Likelihood registry
 # ============================================================
 LIKELIHOOD_REGISTRY = {
-    'poisson': (readyPoisson, cPoisson),
-    'gamma': (readyGamma, cGamma),
-    'laplace': (readyLaplace, cLaplace),
-    'normal': (readyNormal, cNormal),
-    'rayleigh': (readyRayleigh, cRayleigh),
-    'maxwell-boltzmann': (readyMaxwellBoltzmann, cMaxwellBoltzmann),
-    'inverse gamma': (readyInverseGamma, cInverseGamma),
-    'levy': (readyLevy, cLevy),
-    'weibull': (readyWeibull, cWeibull),
-    'burrxii': (readyBurrXII, cBurrXII),
-    'pareto': (readyPareto, cPareto),
-    'dagum': (readyDagum, cDagum),
-    'gompertz': (readyGompertz, cGompertz),
-    'halfnormal': (readyHalfNormal, cHalfNormal),
+    'poisson': (readyPoisson, cPoisson, bereitPoisson),
+    'gamma': (readyGamma, cGamma, bereitGamma),
+    'laplace': (readyLaplace, cLaplace, bereitLaplace),
+    'normal': (readyNormal, cNormal, bereitNormal),
+    'rayleigh': (readyRayleigh, cRayleigh, bereitRayleigh),
+    'maxwell-boltzmann': (readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann),
+    'inverse gamma': (readyInverseGamma, cInverseGamma, bereitInverseGamma),
+    'levy': (readyLevy, cLevy, bereitLevy),
+    'weibull': (readyWeibull, cWeibull, bereitWeibull),
+    'burrxii': (readyBurrXII, cBurrXII, bereitBurrXII),
+    'pareto': (readyPareto, cPareto, bereitPareto),
+    'dagum': (readyDagum, cDagum, bereitDagum),
+    'gompertz': (readyGompertz, cGompertz, bereitGompertz),
+    'halfnormal': (readyHalfNormal, cHalfNormal, bereitHalfNormal),
 }
 
 
@@ -101,7 +101,7 @@ class MGFDerivative:
         if self.likelihood not in LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unknown likelihood: {likelihood}")
 
-        self.ready_func, self.c_func = LIKELIHOOD_REGISTRY[self.likelihood]
+        self.ready_func, self.c_func, self.bereit_func = LIKELIHOOD_REGISTRY[self.likelihood]
 
         # ----------------------------------------------------
         # Separate kwargs for ready vs derivative
@@ -424,8 +424,8 @@ class MGFDerivative:
         # Check numerical validity of log-posterior
         if np.any(np.isnan(log_post)):
             raise ValueError("NaN encountered in log-posterior.")
-        if np.any(np.isinf(log_post)):
-            raise ValueError("Inf encountered in log-posterior.")
+        if np.any(np.isposinf(log_post)):
+            raise ValueError("+Inf encountered in log-posterior.")
 
         # Output: scalar or array
         if scalar_input:
@@ -580,6 +580,54 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR PREDICTIVE
     # ========================================================
+    def _post_predictive_symbolic_scalar(self, x, log=True, **kwargs):
+        """
+        Compute symbolic predictive density for a single scalar observation.
+        This is the original scalar logic, kept unchanged.
+        """
+        if not self._is_symbolic:
+            raise RuntimeError("This helper is only for symbolic posterior.")
+
+        try:
+            # Wrap scalar in a list for ready_func (expects array‑like)
+            stats_new = self.ready_func([x], **kwargs)
+            a_new = stats_new['a']
+            b_new = stats_new['b']
+            log_c_new = stats_new['log_c']
+
+            combined_order = self.a + a_new
+            combined_b = self.b + b_new
+
+            num = mgfDerivative(
+                order=combined_order,
+                prior=self.prior,
+                method="symbolic",
+                t=-combined_b,
+                simplify=self.simplify,
+                complete=True,
+                log=True
+            )
+
+            if isinstance(num, tuple):
+                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+
+            denom = self._evaluate_derivative(-self.b)
+
+            log_pred = log_c_new + sp.log(num) - sp.log(denom)
+
+            if self.params is not None:
+                log_pred = log_pred.subs(
+                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
+                )
+
+            if log_pred.free_symbols:
+                return log_pred if log else sp.exp(log_pred)
+            return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
+
+        except Exception as e:
+            raise RuntimeError(f"Symbolic predictive computation failed: {e}") from e
+
+
     def post_predictive(self, new_data, log=True, individual=True, **kwargs):
         """
         Compute the posterior predictive density (or log-density) for new data.
@@ -600,10 +648,11 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             Depending on input and `individual` flag.
         """
-        # ---- Symbolic new_data ----
+        # ---- Symbolic new_data (single symbol) ----
         if isinstance(new_data, sp.Symbol):
             if not self._is_symbolic:
                 raise ValueError("Cannot compute predictive density symbolically with a numeric posterior.")
+            # Directly build symbolic expression for the joint density (same as helper, but with symbolic stats)
             a_new = sp.Symbol('a_new', real=True)
             b_new = sp.Symbol('b_new', real=True)
             log_c_new = sp.Symbol('log_c_new', real=True)
@@ -628,112 +677,82 @@ class MGFDerivative:
                 )
             if log_pred.free_symbols:
                 return log_pred if log else sp.exp(log_pred)
-            val = float(log_pred.evalf())
-            return val if log else float(sp.exp(val))
+            return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
 
-        # ---- Numeric path ----
-        new_data_arr = np.asarray(new_data)
-        scalar_input = new_data_arr.ndim == 0
+        # ---- Symbolic posterior with numeric new_data ----
+        if self._is_symbolic:
+            # Flatten input
+            new_data_arr = np.asarray(new_data).ravel()
+            scalar_input = len(new_data_arr) == 1
 
-        # ---- Compute stats ----
+            if individual:
+                # Compute per‑element densities using the scalar helper
+                results = []
+                for x in new_data_arr:
+                    res = self._post_predictive_symbolic_scalar(x, log=log, **kwargs)
+                    results.append(res)
+                # If any result is symbolic, return a list; otherwise convert to array
+                if any(isinstance(r, sp.Expr) for r in results):
+                    return results[0] if scalar_input else results
+                else:
+                    return float(results[0]) if scalar_input else np.array(results)
+            else:
+                # Joint density: aggregate stats and call helper once
+                stats = self.ready_func(new_data_arr, **kwargs)  # returns summed stats
+                return self._post_predictive_symbolic_scalar(new_data_arr, log=log, **kwargs)
+
+        # ---- Numeric path (non‑symbolic posterior, vectorised) ----
+        new_data_arr = np.asarray(new_data).ravel()
+        scalar_input = len(new_data_arr) == 1
+
         if individual:
-            # Per‑element statistics using bereit_func
             stats = self.bereit_func(new_data_arr, **kwargs)
-            a_vals = np.asarray(stats['a'])
-            b_vals = np.asarray(stats['b'])
-            log_c_vals = np.asarray(stats['log_c'])
+            a_vals = np.asarray(stats['a']).ravel()
+            b_vals = np.asarray(stats['b']).ravel()
+            log_c_vals = np.asarray(stats['log_c']).ravel()
         else:
-            # Aggregated statistics using ready_func (sums)
             stats = self.ready_func(new_data_arr, **kwargs)
-            # Wrap scalars as single‑element arrays for uniform vectorized handling
             a_vals = np.array([stats['a']])
             b_vals = np.array([stats['b']])
             log_c_vals = np.array([stats['log_c']])
 
-        # ---- Compute log-predictive values ----
-        if self._is_symbolic:
-            # Symbolic branch: lambdify expression and evaluate on arrays
-            a_sym = sp.Symbol('a_new', real=True)
-            b_sym = sp.Symbol('b_new', real=True)
-            log_c_sym = sp.Symbol('log_c_new', real=True)
-            combined_order = self.a + a_sym
-            combined_b = self.b + b_sym
-            num_expr = mgfDerivative(
-                order=combined_order,
-                prior=self.prior,
-                method="symbolic",
-                t=-combined_b,
-                simplify=self.simplify,
-                complete=True,
-                log=True
-            )
-            denom_expr = self._evaluate_derivative(-self.b)
-            log_pred_expr = log_c_sym + sp.log(num_expr) - sp.log(denom_expr)
-            if self.params is not None:
-                log_pred_expr = log_pred_expr.subs(
-                    {sym: self.params[sym.name] for sym in log_pred_expr.free_symbols if sym.name in self.params}
-                )
-            func = sp.lambdify((a_sym, b_sym, log_c_sym), log_pred_expr, modules='numpy')
-            log_pred_vals = func(a_vals, b_vals, log_c_vals)
-            sign_num = None   # not used for symbolic
-        else:
-            # Numeric branch: vectorized mgfDerivative
-            a_comb = self.a + a_vals
-            b_comb = self.b + b_vals
-            log_abs_num, sign_num = mgfDerivative(
-                order=a_comb,
-                prior=self.prior,
-                method=self.method,
-                t=-b_comb,
-                simplify=self.simplify,
-                complete=True,
-                log=True,
-                **self._deriv_kwargs
-            )
-            log_pred_vals = log_c_vals + log_abs_num - self.log_abs
+        a_comb = self.a + a_vals
+        b_comb = self.b + b_vals
+        log_abs_num, sign_num = mgfDerivative(
+            order=a_comb,
+            prior=self.prior,
+            method=self.method,
+            t=-b_comb,
+            simplify=self.simplify,
+            complete=True,
+            log=True,
+            **self._deriv_kwargs
+        )
+        log_pred_vals = log_c_vals + log_abs_num - self.log_abs
 
-        # ---- Output based on `individual` ----
         if individual:
-            # Return individual densities (scalar if input scalar, else array)
             if scalar_input:
                 if log:
                     return float(log_pred_vals[0])
                 else:
-                    if self._is_symbolic:
-                        return float(np.exp(log_pred_vals[0]))
-                    else:
-                        sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
-                        return 0.0 if log_pred_vals[0] == -np.inf else sign_pred * np.exp(log_pred_vals[0])
+                    sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
+                    return 0.0 if log_pred_vals[0] == -np.inf else sign_pred * np.exp(log_pred_vals[0])
             else:
                 if log:
                     return log_pred_vals
                 else:
-                    if self._is_symbolic:
-                        return np.exp(log_pred_vals)
-                    else:
-                        sign_pred = sign_num * (self._sign if self._sign is not None else 1)
-                        result = sign_pred * np.exp(log_pred_vals)
-                        result[log_pred_vals == -np.inf] = 0.0
-                        return result
+                    sign_pred = sign_num * (self._sign if self._sign is not None else 1)
+                    result = sign_pred * np.exp(log_pred_vals)
+                    result[log_pred_vals == -np.inf] = 0.0
+                    return result
         else:
-            # Joint density: sum log-predictive (which is a scalar, since stats were summed)
-            # log_pred_vals is a single‑element array or scalar; extract it.
-            if hasattr(log_pred_vals, '__len__'):
-                log_pred_joint = log_pred_vals[0]
-            else:
-                log_pred_joint = log_pred_vals
+            log_pred_joint = np.sum(log_pred_vals)
             if log:
                 return log_pred_joint
             else:
-                if self._is_symbolic:
-                    return np.exp(log_pred_joint)
-                else:
-                    # For numeric branch, sign is from the single derivative call
-                    if hasattr(sign_num, '__len__'):
-                        sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
-                    else:
-                        sign_pred = sign_num * (self._sign if self._sign is not None else 1)
-                    return 0.0 if log_pred_joint == -np.inf else sign_pred * np.exp(log_pred_joint)
+                sign_prod = np.prod(sign_num) if not scalar_input else sign_num[0]
+                sign_prod *= (self._sign if self._sign is not None else 1)
+                return 0.0 if log_pred_joint == -np.inf else sign_prod * np.exp(log_pred_joint)
 
     # ========================================================
     # POSTERIOR MGF
@@ -757,7 +776,7 @@ class MGFDerivative:
             If r_val is array-like: returns array.
             If r_val is symbolic or has free symbols: returns sympy.Expr.
         """
-        # ---- Symbolic path ----
+        # ---- Symbolic path (if derivative is symbolic) ----
         if self._deriv_is_symbolic:
             try:
                 # Build symbolic expression using the canonical `r`
@@ -779,7 +798,6 @@ class MGFDerivative:
                 if isinstance(r_val, sp.Symbol):
                     if log_ratio.free_symbols:
                         return log_ratio if log else sp.exp(log_ratio)
-                    # Fully numeric (unlikely): evaluate to scalar
                     val = float(log_ratio.evalf())
                     return val if log else np.exp(val)
 
@@ -791,31 +809,63 @@ class MGFDerivative:
                             "Cannot evaluate MGF numerically for array `r` because "
                             "hyperparameters are symbolic. Use numeric hyperparameters."
                         )
-                    # Lambdify with respect to the canonical `r`
-                    func = sp.lambdify(r, log_ratio, modules="numpy")
-                    val = func(r_val)
-                    return val if log else np.exp(val)
+
+                    # Convert to flat array
+                    r_arr = np.asarray(r_val).ravel()
+                    scalar_input = len(r_arr) == 1
+                    orig_shape = np.shape(r_val)
+
+                    # Pre-allocate results (as objects to allow mixed types)
+                    results = [None] * len(r_arr)
+
+                    # ---- Loop over each r value (scalar evaluation) ----
+                    for idx, ri in enumerate(r_arr):
+                        expr_i = log_ratio.subs(r, ri)
+                        if expr_i.free_symbols:
+                            # If still symbolic, keep the expression
+                            results[idx] = expr_i
+                        else:
+                            results[idx] = float(expr_i.evalf())
+
+                    # ---- Determine return type ----
+                    # If all results are numeric, convert to array
+                    if all(isinstance(v, (float, int, np.floating)) for v in results):
+                        val = np.array(results, dtype=float).reshape(orig_shape)
+                        if scalar_input:
+                            return float(val.item()) if log else np.exp(float(val.item()))
+                        else:
+                            return val if log else np.exp(val)
+                    else:
+                        # Mixed or all symbolic: return object array or list
+                        # For scalar input, return the expression itself
+                        if scalar_input:
+                            return results[0] if log else sp.exp(results[0])
+                        else:
+                            # If log=False, exponentiate symbolic expressions
+                            if log:
+                                out = np.array(results, dtype=object).reshape(orig_shape)
+                                return out
+                            else:
+                                out = [sp.exp(res) if isinstance(res, sp.Expr) else np.exp(res) for res in results]
+                                return np.array(out, dtype=object).reshape(orig_shape)
 
                 # Case 3: r_val is scalar numeric (int, float, or None)
                 if r_val is not None:
                     log_ratio = log_ratio.subs(r, r_val)
 
-                # Symbol‑numeric decision
                 if log_ratio.free_symbols:
                     return log_ratio if log else sp.exp(log_ratio)
 
-                # Fully numeric scalar
                 val = float(log_ratio.evalf())
                 return val if log else np.exp(val)
 
             except Exception as e:
                 raise RuntimeError(f"Symbolic computation failed: {e}") from e
 
-        # ---- Numeric path (vectorised) ----
+        # ---- Numeric path (if derivative is not symbolic) ----
         if r_val is None:
             raise ValueError("For numeric evaluation, r must be provided.")
 
-        # Ensure input is a NumPy array for consistent handling
         r_arr = np.asarray(r_val)
         scalar_input = r_arr.ndim == 0
         if scalar_input:
@@ -825,7 +875,7 @@ class MGFDerivative:
             order=self.a,
             prior=self.prior,
             method=self.method,
-            t=r_arr - self.b,          # vectorised
+            t=r_arr - self.b,
             u=None,
             simplify=self.simplify,
             complete=True,
@@ -836,18 +886,19 @@ class MGFDerivative:
         log_ratio = log_abs_num - self.log_abs
         sign_ratio = sign_num * (self._sign if self._sign is not None else 1)
 
-        if log:
-            if scalar_input:
+        if scalar_input:
+            if log:
                 return float(log_ratio[0])
             else:
-                return log_ratio
+                if log_ratio[0] == -np.inf:
+                    return 0.0
+                return float(sign_ratio[0] * np.exp(log_ratio[0]))
         else:
-            # Handle -inf cases
-            result = sign_ratio * np.exp(log_ratio)
-            result[log_ratio == -np.inf] = 0.0
-            if scalar_input:
-                return float(result[0])
+            if log:
+                return log_ratio
             else:
+                result = sign_ratio * np.exp(log_ratio)
+                result[log_ratio == -np.inf] = 0.0
                 return result
 
     # ========================================================
