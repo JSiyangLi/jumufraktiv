@@ -15,7 +15,7 @@ where n = floor(α), γ = n+1-α.
 
 import math
 import numpy as np
-from scipy.integrate import quad
+from scipy.integrate import quad, quad_vec
 from scipy.special import gamma as gamma_func
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
@@ -213,11 +213,11 @@ def fractionalDeriv_numeric_scipy_tan(
         else:
             return val_vals
 
-
-def fractionalDeriv_numeric_scipy(
+def fractionalDeriv_numeric_scipy_loop(
     order: float,
     prior: mitMGFprior,
-    t: float | np.ndarray | list,
+    t_flat: np.ndarray,
+    u_flat: np.ndarray | None,
     method: str = "symbolic",
     simplify: bool = False,
     complete: bool = True,
@@ -228,102 +228,23 @@ def fractionalDeriv_numeric_scipy(
     initial_L: float = 10.0,
     max_L: float = 1e4,
     tol: float = 1e-6,
-    use_tan: bool = False,
-    u: float | np.ndarray | list | None = None
 ):
     """
-    Compute the Liouville‑Caputo fractional derivative of the MGF.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
-
-    Parameters
-    ----------
-    order : float
-        Fractional order (positive). If integer, returns ordinary derivative.
-    prior : mitMGFprior
-        Prior object providing the MGF.
-    t : float or array-like
-        Evaluation point(s) for t.
-    method : str, optional
-        'symbolic', 'jax', or 'bell' – method for computing the integer derivative.
-    simplify : bool, optional
-        Ignored for numeric; kept for interface consistency.
-    complete : bool, optional
-        If True (default), differentiate the complete MGF.
-        If False, differentiate the incomplete MGF.
-    epsabs, epsrel : float
-        Tolerances for quad.
-    limit : int
-        Maximum number of subintervals.
-    return_log : bool, optional
-        If True, return (log_abs, sign) instead of ordinary value.
-    initial_L : float
-        Starting half‑width for integration range (adaptive method only).
-    max_L : float
-        Maximum allowed half‑width.
-    tol : float
-        Relative tolerance for stopping when integral stabilises.
-    use_tan : bool
-        If True, directly use the tan‑transform method.
-    u : float or array-like, optional
-        Truncation point(s) for incomplete MGF (used when complete=False).
-        If array‑like, broadcast with t to form evaluation points (t, u).
-
-    Returns
-    -------
-    float or tuple (log_abs, sign)
-        If t and u are scalar, returns scalar or tuple.
-        If either is array, returns array(s) with the broadcasted shape.
+    Scalar‑loop version of fractional derivative (no fallback).
+    Raises RuntimeError on failure.
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
+    n_points = len(t_flat)
 
-    # ---- If use_tan=True, delegate to vectorized tan version ----
-    if use_tan:
-        # The tan version already handles broadcasting and tuple‑vectorisation.
-        # We can just call it with the same arguments.
-        return fractionalDeriv_numeric_scipy_tan(
-            order=order, prior=prior, t=t, method=method,
-            simplify=simplify, complete=complete,
-            epsabs=epsabs, epsrel=epsrel, limit=limit,
-            return_log=return_log, u=u
-        )
-
-    # ---- Broadcast t and u to a common batch shape ----
-    t_arr = np.asarray(t)
-    if complete:
-        if u is not None:
-            raise ValueError("u must be None when complete=True")
-        scalar_input = t_arr.ndim == 0
-        if scalar_input:
-            batch_shape = ()
-            t_flat = np.array([float(t_arr)])
-            u_flat = None
-        else:
-            batch_shape = t_arr.shape
-            t_flat = t_arr.astype(float).ravel()
-            u_flat = None
-        n_points = t_flat.size
-    else:
-        if u is None:
-            raise ValueError("u must be provided when complete=False")
-        u_arr = np.asarray(u)
-        t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
-        scalar_input = t_broad.ndim == 0
-        batch_shape = t_broad.shape
-        t_flat = t_broad.astype(float).ravel()
-        u_flat = u_broad.astype(float).ravel()
-        n_points = t_flat.size
-
-    # ---- Pre-allocate results ----
     if return_log:
         log_abs_vals = np.zeros(n_points)
         sign_vals = np.ones(n_points, dtype=int)
     else:
         val_vals = np.zeros(n_points)
 
-    # ---- Scalar helper for a single evaluation point (t_val, u_val) ----
+    # ---- Scalar helper for a single evaluation point ----
     def _scalar_eval(t_val, u_val):
-        # ---- 1. Handle integer order ----
         if order == int(order):
             result = mgfDerivative_integer(
                 order=int(order),
@@ -337,7 +258,6 @@ def fractionalDeriv_numeric_scipy(
             )
             return result
 
-        # ---- 2. Adaptive range method ----
         n = math.floor(order)
         gamma_val = (n + 1) - order
 
@@ -366,7 +286,6 @@ def fractionalDeriv_numeric_scipy(
         L = initial_L
         integral_valid = None
         prev_integral = None
-        factor = 1.0 / gamma_func(gamma_val)
 
         while L <= max_L:
             try:
@@ -378,41 +297,25 @@ def fractionalDeriv_numeric_scipy(
                 prev_integral = integral
                 L *= 2
             except Exception as e:
-                print(f"Adaptive integration failed at L={L} for t={t_val}, u={u_val}: {e}")
-                if integral_valid is not None:
-                    print(f"  Using last valid result from L={L/2}.")
-                    break
-                else:
-                    print("  No valid adaptive result; falling back to tan‑transform...")
-                    # Fallback to scalar tan for this point
-                    return fractionalDeriv_numeric_scipy_tan(
-                        order, prior, t_val, method, simplify=simplify,
-                        epsabs=epsabs, epsrel=epsrel, limit=limit,
-                        return_log=return_log, complete=complete, u=u_val
-                    )
+                raise RuntimeError(f"quad failed at L={L}: {e}")
 
-        # If we reached max_L without convergence
-        if L > max_L and integral_valid is not None:
-            print(f"Warning: Adaptive integration did not converge before max_L={max_L} for t={t_val}, u={u_val}. Using last result.")
-        elif L > max_L and integral_valid is None:
-            print(f"Adaptive method failed for t={t_val}, u={u_val}; falling back to tan‑transform...")
-            return fractionalDeriv_numeric_scipy_tan(
-                order, prior, t_val, method, simplify,
-                epsabs=epsabs, epsrel=epsrel, limit=limit,
-                return_log=return_log, complete=complete, u=u_val
-            )
+        if integral_valid is None:
+            raise RuntimeError("No valid integral result.")
 
-        result = factor * integral_valid
-
+        # ---- Log‑stable return ----
         if return_log:
-            if abs(result) < 1e-300:
+            if abs(integral_valid) < 1e-300:
                 return -float('inf'), 1
             else:
-                return math.log(abs(result)), 1 if result > 0 else -1
+                # log |D^α M| = log |integral| - log Γ(γ)
+                log_abs = math.log(abs(integral_valid)) - math.lgamma(gamma_val)
+                sign = 1 if integral_valid > 0 else -1
+                return log_abs, sign
         else:
-            return result
+            factor = 1.0 / gamma_func(gamma_val)
+            return factor * integral_valid
 
-    # ---- Loop over flattened evaluation points ----
+    # ---- Loop over points ----
     for idx in range(n_points):
         t_val = t_flat[idx]
         u_val = u_flat[idx] if u_flat is not None else None
@@ -423,20 +326,247 @@ def fractionalDeriv_numeric_scipy(
         else:
             val_vals[idx] = _scalar_eval(t_val, u_val)
 
-    # ---- Reshape to broadcasted shape ----
     if return_log:
-        log_abs_vals = log_abs_vals.reshape(batch_shape)
-        sign_vals = sign_vals.reshape(batch_shape)
-        if scalar_input:
-            return float(log_abs_vals.item()), int(sign_vals.item())
-        else:
-            return log_abs_vals, sign_vals
+        return log_abs_vals, sign_vals
     else:
-        val_vals = val_vals.reshape(batch_shape)
-        if scalar_input:
-            return float(val_vals.item())
+        return val_vals
+
+def _batch_quad_vec_method(
+    order: float,
+    prior: mitMGFprior,
+    t_flat: np.ndarray,
+    u_flat: np.ndarray | None,
+    method: str = "symbolic",
+    simplify: bool = False,
+    complete: bool = True,
+    epsabs: float = 1e-8,
+    epsrel: float = 1e-8,
+    limit: int = 100,
+    return_log: bool = False,
+    initial_L: float = 10.0,
+    max_L: float = 1e4,
+    tol: float = 1e-6,
+):
+    """
+    Batch quadrature using quad_vec with adaptive L expansion.
+    Raises RuntimeError on failure.
+    """
+    if order <= 0:
+        raise ValueError("Fractional order must be positive.")
+    n_points = len(t_flat)
+
+    # Handle integer order directly
+    if order == int(order):
+        raise ValueError("Integer order not supported in batch method; use mgfDerivative_integer directly.")
+
+    n = math.floor(order)
+    gamma_val = (n + 1) - order
+
+    # ---- Initialise ----
+    L = initial_L
+    integral_prev = np.full(n_points, np.nan)
+    converged = np.full(n_points, False)
+
+    # ---- Vectorized integrand ----
+    def integrand_vec(u_var):
+        z = np.exp(u_var)
+        y = t_flat - z                     # shape (n_points,)
+        log_abs, sign = mgfDerivative_integer(
+            order=n + 1,
+            prior=prior,
+            method=method,
+            t=y,
+            u=u_flat if u_flat is not None else None,
+            complete=complete,
+            log=True
+        )
+        # log_integrand = gamma_val * u_var + log_abs
+        with np.errstate(over='ignore', invalid='ignore'):
+            val = sign * np.exp(gamma_val * u_var + log_abs)
+            val[log_abs == -np.inf] = 0.0
+        # Mask converged points: integrand = 0
+        val[converged] = 0.0
+        return val
+
+    # ---- Adaptive L loop ----
+    while not np.all(converged):
+        integral, err = quad_vec(
+            integrand_vec, -L, L,
+            epsabs=epsabs, epsrel=epsrel, limit=limit,
+            norm='max'
+        )
+        if np.any(np.isnan(integral)):
+            raise RuntimeError(f"quad_vec returned NaN at L={L}")
+
+        if np.all(np.isnan(integral_prev)):
+            integral_prev = integral.copy()
         else:
-            return val_vals
+            diff = np.abs(integral - integral_prev)
+            converged = diff < tol * np.maximum(1.0, np.abs(integral_prev))
+            integral_prev = integral.copy()
+
+        if np.all(converged):
+            break
+
+        L *= 2.0
+        if L > max_L:
+            break
+
+    if not np.all(converged):
+        raise RuntimeError(f"Batch method did not converge for {np.sum(~converged)} points.")
+
+    # ---- Log‑stable return ----
+    if return_log:
+        abs_integral = np.abs(integral)
+        log_abs = np.where(
+            abs_integral > 1e-300,
+            np.log(abs_integral) - math.lgamma(gamma_val),
+            -np.inf
+        )
+        sign = np.sign(integral).astype(int)
+        sign[abs_integral <= 1e-300] = 1
+        return log_abs, sign
+    else:
+        factor = 1.0 / gamma_func(gamma_val)
+        return integral * factor
+
+def fractionalDeriv_numeric_scipy(
+    order: float,
+    prior: mitMGFprior,
+    t: float | np.ndarray | list,
+    method: str = "symbolic",
+    simplify: bool = False,
+    complete: bool = True,
+    epsabs: float = 1e-8,
+    epsrel: float = 1e-8,
+    limit: int = 100,
+    return_log: bool = False,
+    initial_L: float = 10.0,
+    max_L: float = 1e4,
+    tol: float = 1e-6,
+    use_tan: bool = False,
+    u: float | np.ndarray | list | None = None,
+    use_loop: bool = False,
+):
+    """
+    Compute the Liouville‑Caputo fractional derivative of the MGF.
+    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
+
+    Fallback chain:
+        1. If use_loop=True, directly use scalar loop.
+        2. Otherwise, try batch method (quad_vec).
+        3. If batch fails, fall back to scalar loop.
+        4. If scalar loop fails, fall back to tan‑transform.
+    """
+    if order <= 0:
+        raise ValueError("Fractional order must be positive.")
+
+    # ---- If use_tan=True, delegate to vectorized tan (no fallback needed) ----
+    if use_tan:
+        return fractionalDeriv_numeric_scipy_tan(
+            order=order, prior=prior, t=t, method=method,
+            simplify=simplify, complete=complete,
+            epsabs=epsabs, epsrel=epsrel, limit=limit,
+            return_log=return_log, u=u
+        )
+
+    # ---- Broadcast t and u to common batch shape ----
+    t_arr = np.asarray(t)
+    if complete:
+        if u is not None:
+            raise ValueError("u must be None when complete=True")
+        scalar_input = t_arr.ndim == 0
+        if scalar_input:
+            batch_shape = ()
+            t_flat = np.array([float(t_arr)])
+            u_flat = None
+        else:
+            batch_shape = t_arr.shape
+            t_flat = t_arr.astype(float).ravel()
+            u_flat = None
+        n_points = t_flat.size
+    else:
+        if u is None:
+            raise ValueError("u must be provided when complete=False")
+        u_arr = np.asarray(u)
+        t_broad, u_broad = np.broadcast_arrays(t_arr, u_arr)
+        scalar_input = t_broad.ndim == 0
+        batch_shape = t_broad.shape
+        t_flat = t_broad.astype(float).ravel()
+        u_flat = u_broad.astype(float).ravel()
+        n_points = t_flat.size
+
+    # ---- Integer order: handle directly via mgfDerivative_integer ----
+    if order == int(order):
+        # For integer order, we can call mgfDerivative_integer which already handles batch.
+        # But we must pass the full t and u (broadcasted) correctly.
+        # We'll pass t_arr and u_arr (original arrays) so it can handle broadcasting.
+        return mgfDerivative_integer(
+            order=int(order),
+            prior=prior,
+            method=method,
+            t=t,
+            u=u,
+            complete=complete,
+            log=return_log
+        )
+
+    # ---- If use_loop, directly call scalar loop ----
+    if use_loop:
+        result = fractionalDeriv_numeric_scipy_loop(
+            order, prior, t_flat, u_flat, method, simplify, complete,
+            epsabs, epsrel, limit, return_log, initial_L, max_L, tol
+        )
+        # reshape and return
+        return _reshape_result(result, scalar_input, batch_shape, return_log)
+
+    # ---- Try batch method ----
+    try:
+        result = _batch_quad_vec_method(
+            order, prior, t_flat, u_flat, method, simplify, complete,
+            epsabs, epsrel, limit, return_log, initial_L, max_L, tol
+        )
+        return _reshape_result(result, scalar_input, batch_shape, return_log)
+    except Exception as e_batch:
+        print(f"Batch method failed: {e_batch}. Falling back to scalar loop.")
+
+        # ---- Fallback to scalar loop ----
+        try:
+            result = fractionalDeriv_numeric_scipy_loop(
+                order, prior, t_flat, u_flat, method, simplify, complete,
+                epsabs, epsrel, limit, return_log, initial_L, max_L, tol
+            )
+            return _reshape_result(result, scalar_input, batch_shape, return_log)
+        except Exception as e_loop:
+            print(f"Scalar loop failed: {e_loop}. Falling back to tan‑transform.")
+
+            # ---- Final fallback: tan‑transform (vectorized) ----
+            # We call the vectorized tan version with the original t and u arrays.
+            return fractionalDeriv_numeric_scipy_tan(
+                order=order, prior=prior, t=t, method=method,
+                simplify=simplify, complete=complete,
+                epsabs=epsabs, epsrel=epsrel, limit=limit,
+                return_log=return_log, u=u
+            )
+
+def _reshape_result(result, scalar_input, batch_shape, return_log):
+    """
+    Helper to reshape and return scalar/array results.
+    """
+    if return_log:
+        log_abs, sign = result
+        log_abs = log_abs.reshape(batch_shape)
+        sign = sign.reshape(batch_shape)
+        if scalar_input:
+            return float(log_abs.item()), int(sign.item())
+        else:
+            return log_abs, sign
+    else:
+        vals = result.reshape(batch_shape)
+        if scalar_input:
+            return float(vals.item())
+        else:
+            return vals
 
 # ===== Example usage =====
 if __name__ == "__main__":

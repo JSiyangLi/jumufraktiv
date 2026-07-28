@@ -20,6 +20,7 @@ import pandas as pd
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t, theta, r, u
+from jumufraktiv.root_finding import solve_root
 
 # ============================================================
 # Likelihood registry
@@ -1140,11 +1141,193 @@ class MGFDerivative:
             return results[orders[0]]
         else:
             return results
+     
+      
+    # ========================================================
+    # POSTERIOR QUANTILE
+    # ========================================================        
+    # Inside the MGFDerivative class
+    def post_quantile(
+        self,
+        p: float | np.ndarray,
+        root_method: str = "auto",
+        lower: np.ndarray | None = None,
+        upper: np.ndarray | None = None,
+        x0: np.ndarray | None = None,
+        maxiter: int = 50,
+        tol: float = 1e-8,
+        rel_tol: float = 1e-8,
+        **kwargs
+    ) -> np.ndarray | float:
+        """
+        Compute quantiles (inverse CDF) for given probabilities.
+
+        Parameters
+        ----------
+        p : float or array-like
+            Probabilities (must be in (0, 1)).
+        root_method : str, optional
+            Root-finding method. See solve_root() for options.
+        lower, upper : array-like, optional
+            Search interval bounds. If None, automatically expanded.
+        x0 : array-like, optional
+            Initial guess for Newton methods. If None, uses midpoint.
+        maxiter, tol, rel_tol : passed to solve_root.
+        **kwargs : additional arguments for solve_root.
+
+        Returns
+        -------
+        scalar or np.ndarray
+            Quantiles matching the shape of p.
+        """
+
+        p_arr = np.asarray(p)
+        scalar_input = p_arr.ndim == 0
+        if scalar_input:
+            p_arr = np.array([p])
+
+        if np.any((p_arr <= 0) | (p_arr >= 1)):
+            raise ValueError("Probabilities must be strictly between 0 and 1.")
+
+        def f(x):
+            return self.post_cdf(x, log=False) - p_arr
+
+        def df(x):
+            return self.post_density(x, log=False)
+
+        if lower is None or upper is None:
+            lower_init = np.full_like(p_arr, 1e-6)
+            upper_init = np.full_like(p_arr, 1.0 / 1e-6)
+            lower, upper = self._expand_bracket(p_arr, f, lower_init, upper_init)
+
+        if x0 is None:
+            x0 = (lower + upper) / 2.0
+
+        roots = solve_root(
+            f=f,
+            df=df,
+            x0=x0,
+            lower=lower,
+            upper=upper,
+            root_method=root_method,
+            maxiter=maxiter,
+            tol=tol,
+            rel_tol=rel_tol,
+            **kwargs
+        )
+
+        return float(roots[0]) if scalar_input else roots
+
+    def _expand_bracket(self, p, f, lower, upper, max_expand=10):
+        """
+        Expand lower/upper arrays until f(lower) < 0 and f(upper) > 0 for all elements.
+        Returns valid lower, upper arrays.
+        """
+        lower = np.asarray(lower, dtype=float)
+        upper = np.asarray(upper, dtype=float)
+        for _ in range(max_expand):
+            f_low = f(lower)
+            f_up = f(upper)
+            need_lower = f_low >= 0
+            need_upper = f_up <= 0
+            lower = np.where(need_lower, lower * 0.5, lower)
+            upper = np.where(need_upper, upper * 2.0, upper)
+            if not np.any(need_lower | need_upper):
+                break
+        if np.any(f(lower) >= 0) or np.any(f(upper) <= 0):
+            raise RuntimeError("Could not find valid brackets; provide explicit lower/upper.")
+        return lower, upper
+    
+    # ========================================================
+    # POSTERIOR SAMPLE
+    # ========================================================     
+    def post_sample(self, n: int | None = None, u: np.ndarray | None = None, root_method: str = "auto", **kwargs) -> np.ndarray:
+        """
+        Generate posterior samples using inverse transform sampling.
+
+        Parameters
+        ----------
+        n : int, optional
+            Number of samples to generate. Ignored if u is provided.
+        u : array-like, optional
+            Uniform random numbers in (0,1). If provided, n is ignored.
+        root_method : str, optional
+            Passed to post_quantile.
+        **kwargs : additional arguments passed to post_quantile (e.g., maxiter, tol).
+
+        Returns
+        -------
+        np.ndarray
+            Samples from the posterior distribution.
+        """
+        if u is None:
+            if n is None:
+                raise ValueError("Either n or u must be provided.")
+            u = np.random.rand(n)
+        else:
+            u = np.asarray(u)
+            if np.any((u <= 0) | (u >= 1)):
+                raise ValueError("All uniform variates must be in (0, 1).")
+
+        result = self.post_quantile(u, root_method=root_method, **kwargs)
+        return np.asarray(result)
+    
+    # ========================================================
+    # CENTRAL POSTERIOR CREDIBLE INTERVAL
+    # ========================================================     
+    def post_interval(
+        self,
+        level: float | np.ndarray = 0.95,
+        root_method: str = "auto",
+        **kwargs
+    ) -> tuple | np.ndarray:
+        """
+        Compute central credible intervals (equal-tailed) for the posterior.
+
+        Parameters
+        ----------
+        level : float or array-like, optional (default 0.95)
+            Credible level(s). Must be in (0, 1).
+        root_method : str, optional
+            Root-finding method passed to post_quantile.
+        **kwargs : additional arguments passed to post_quantile (e.g., maxiter, tol).
+
+        Returns
+        -------
+        If level is scalar:
+            (lower, upper) where lower and upper are floats.
+        If level is array-like:
+            np.ndarray of shape (len(level), 2) where each row is [lower, upper].
+        """
+        levels = np.asarray(level)
+        scalar_input = levels.ndim == 0
+        if scalar_input:
+            levels = np.array([level])
+
+        if np.any((levels <= 0) | (levels >= 1)):
+            raise ValueError("Credible levels must be in (0, 1).")
+
+        # Lower and upper probabilities for each level
+        p_lower = (1 - levels) / 2.0
+        p_upper = (1 + levels) / 2.0
+
+        # Compute quantiles for all levels simultaneously
+        p_all = np.concatenate([p_lower, p_upper])
+        quantiles = self.post_quantile(p_all, root_method=root_method, **kwargs)
+
+        # Split into lower and upper
+        n = len(levels)
+        lower = quantiles[:n]
+        upper = quantiles[n:]
+
+        if scalar_input:
+            return float(lower[0]), float(upper[0])
+        else:
+            return np.column_stack([lower, upper])
 
     # ========================================================
     # SEQUENTIAL UPDATING
     # ========================================================
-
     def to_prior_object(self):
         """
         Convert current posterior into a mitMGFprior object.
