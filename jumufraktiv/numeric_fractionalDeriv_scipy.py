@@ -230,8 +230,37 @@ def fractionalDeriv_numeric_scipy_loop(
     tol: float = 1e-6,
 ):
     """
-    Scalar‑loop version of fractional derivative (no fallback).
-    Raises RuntimeError on failure.
+    Scalar‑loop version of the fractional derivative (no fallback).
+
+    This function evaluates the fractional derivative for each evaluation point
+    independently using `scipy.integrate.quad` with adaptive range expansion.
+    It is used as a fallback when the batch method (`_batch_quad_vec_method`)
+    fails or when `use_loop=True`.
+
+    Parameters
+    ----------
+    order : float
+        Fractional order (positive).
+    prior : mitMGFprior
+        Prior object.
+    t_flat : np.ndarray, shape (n_points,)
+        Flattened evaluation points for `t`.
+    u_flat : np.ndarray, shape (n_points,) or None
+        Flattened truncation points for `u` (if incomplete MGF).
+    method, simplify, complete, epsabs, epsrel, limit, return_log,
+    initial_L, max_L, tol : passed to `mgfDerivative_integer` and `quad`.
+
+    Returns
+    -------
+    If return_log is False:
+        np.ndarray, shape (n_points,): ordinary derivatives.
+    If return_log is True:
+        (log_abs_vals, sign_vals) where both are np.ndarray of shape (n_points,).
+
+    Raises
+    ------
+    RuntimeError
+        If `quad` fails or no valid integral is obtained.
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
@@ -348,8 +377,36 @@ def _batch_quad_vec_method(
     tol: float = 1e-6,
 ):
     """
-    Batch quadrature using quad_vec with adaptive L expansion.
-    Raises RuntimeError on failure.
+    Batch quadrature method using `quad_vec` with adaptive L expansion.
+
+    This function integrates a vector‑valued integrand over `u` for all
+    evaluation points simultaneously. It expands the integration range `L`
+    until the integral converges for all points or `L` exceeds `max_L`.
+
+    Parameters
+    ----------
+    order : float
+        Fractional order (positive, non‑integer).
+    prior : mitMGFprior
+        Prior object.
+    t_flat : np.ndarray, shape (n_points,)
+        Flattened evaluation points for `t`.
+    u_flat : np.ndarray, shape (n_points,) or None
+        Flattened truncation points for `u` (if incomplete MGF).
+    method, simplify, complete, epsabs, epsrel, limit, return_log,
+    initial_L, max_L, tol : passed to `quad_vec` and `mgfDerivative_integer`.
+
+    Returns
+    -------
+    If return_log is False:
+        np.ndarray, shape (n_points,): ordinary derivatives.
+    If return_log is True:
+        (log_abs_vals, sign_vals) where both are np.ndarray of shape (n_points,).
+
+    Raises
+    ------
+    RuntimeError
+        If `quad_vec` returns NaN or the method does not converge.
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
@@ -450,13 +507,84 @@ def fractionalDeriv_numeric_scipy(
 ):
     """
     Compute the Liouville‑Caputo fractional derivative of the MGF.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
 
-    Fallback chain:
-        1. If use_loop=True, directly use scalar loop.
-        2. Otherwise, try batch method (quad_vec).
-        3. If batch fails, fall back to scalar loop.
-        4. If scalar loop fails, fall back to tan‑transform.
+    This function implements a vectorised fractional derivative computation
+    using `scipy.integrate.quad` (adaptive) with a fallback chain to ensure
+    robustness. It supports tuple‑vectorisation: `t` and `u` are broadcast
+    to a common shape, and the derivative is evaluated for all points
+    simultaneously.
+
+    Parameters
+    ----------
+    order : float
+        Fractional order (positive). If integer, the ordinary derivative is
+        computed via `mgfDerivative_integer`.
+    prior : mitMGFprior
+        Prior object providing the MGF and its derivatives.
+    t : float or array-like
+        Evaluation point(s) for the canonical variable `t`.
+    method : str, optional
+        Method for computing the integer derivative inside the fractional
+        integrator: `'symbolic'`, `'bell'`, or `'jax'`. Default `'symbolic'`.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF. If False,
+        differentiate the incomplete MGF (requires `u`).
+    epsabs, epsrel : float, optional
+        Absolute and relative tolerances for `quad` / `quad_vec`.
+    limit : int, optional
+        Maximum number of subintervals for integration.
+    return_log : bool, optional
+        If True, return `(log_abs, sign)` instead of the ordinary value.
+    initial_L : float, optional
+        Starting half‑width for the adaptive range expansion.
+    max_L : float, optional
+        Maximum allowed half‑width.
+    tol : float, optional
+        Relative tolerance for convergence of the integral as `L` increases.
+    use_tan : bool, optional
+        If True, directly use the tan‑transform method (bypassing adaptive
+        quadrature).
+    u : float or array-like, optional
+        Truncation point(s) for the incomplete MGF (used when `complete=False`).
+        If array‑like, it is broadcast with `t` to form evaluation points `(t, u)`.
+    use_loop : bool, optional
+        If True, bypass the batch method and directly use the scalar loop.
+
+    Returns
+    -------
+    If `return_log` is False:
+        float or np.ndarray
+            Ordinary derivative(s) matching the broadcasted shape of `t` and `u`.
+    If `return_log` is True:
+        tuple (log_abs, sign)
+            Where `log_abs` is the natural logarithm of the absolute derivative
+            and `sign` is ±1 (scalars or arrays).
+
+    Notes
+    -----
+    The computation follows the formula:
+        D^α_{(-∞)+} M(t) = 1/Γ(γ) ∫_{-∞}^{∞} e^{γ u} M^{(n+1)}(t - e^{u}) du
+    with n = floor(α), γ = n+1-α.
+
+    The fallback chain is:
+        1. If `use_loop=True`, use the scalar loop (`fractionalDeriv_numeric_scipy_loop`).
+        2. Otherwise, try the batch method (`_batch_quad_vec_method`).
+        3. If the batch method fails, fall back to the scalar loop.
+        4. If the scalar loop fails, fall back to the tan‑transform method
+           (`fractionalDeriv_numeric_scipy_tan`).
+
+    Examples
+    --------
+    >>> # Fractional derivative of order 1.5 at t = -1.0 (scalar)
+    >>> result = fractionalDeriv_numeric_scipy(1.5, prior, t=-1.0, return_log=False)
+    >>> print(result)
+    0.1234
+
+    >>> # Vectorised evaluation at multiple t values
+    >>> t_vals = np.linspace(-2.0, 0.0, 5)
+    >>> log_abs, sign = fractionalDeriv_numeric_scipy(1.5, prior, t=t_vals, return_log=True)
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")

@@ -1,3 +1,24 @@
+"""
+numeric_integerDeriv_JAX.py
+
+Compute integer‑order derivatives of MGFs using JAX.
+
+This module provides a vectorised JAX‑based backend for integer derivatives
+of both complete and incomplete MGFs. It uses JAX's `jet` (Taylor mode) by
+default, with a fallback to nested `grad` (reverse mode) when `jet` fails
+(e.g., due to unsupported primitives like `igamma`).
+
+The main function, `integerDeriv_numeric_jax`, follows the **tuple‑vectorisation
+principle**: evaluation points are `(t)` for complete MGFs and `(t, u)` for
+incomplete MGFs. If `t` or `u` are array‑like, they are broadcast to a common
+shape and the derivative is evaluated for all points simultaneously using
+`jax.vmap`.
+
+Functions:
+    - integerDeriv_numeric_jax : vectorised wrapper for derivative evaluation.
+    - _integerDeriv_numeric_jax_scalar : scalar core (internal).
+"""
+
 import jax
 import jax.numpy as jnp
 from jax.experimental import jet
@@ -14,7 +35,46 @@ def _integerDeriv_numeric_jax_scalar(
     u=None,
     jax_mode: str = "auto"
 ):
+    """
+    Scalar evaluation of an integer‑order derivative using JAX.
 
+    This is the core scalar routine used by the vectorised wrapper
+    `integerDeriv_numeric_jax`. It computes the derivative for a single
+    evaluation point `(t, u)` (or `(t)` for complete MGF) using either
+    JAX's `jet` (Taylor mode) or nested `grad` (reverse mode).
+
+    Parameters
+    ----------
+    t : float
+        Evaluation point for the canonical variable `t`.
+    prior : mitMGFprior
+        Prior object providing JAX‑compatible MGF functions.
+    order : int
+        Non‑negative derivative order (must be scalar).
+    complete : bool, optional
+        If True, differentiate the complete MGF (`prior.mgf_jax`).
+        If False, differentiate the incomplete MGF (`prior.imgf_jax`).
+    u : float, optional
+        Upper truncation point for the incomplete MGF (required when
+        `complete=False`).
+    jax_mode : str, optional
+        Differentiation strategy:
+        - `"auto"` (default): try `jet`, fallback to `grad` on failure.
+        - `"jet"`: force JAX Taylor mode (`jet`).
+        - `"grad"`: force nested reverse‑mode `grad`.
+
+    Returns
+    -------
+    tuple (log_abs, sign)
+        `log_abs` is the natural logarithm of the absolute derivative,
+        `sign` is ±1 (both are JAX arrays scalars).
+
+    Raises
+    ------
+    ValueError
+        If `order` is negative, or if required functions are missing,
+        or if `jax_mode` is unknown.
+    """
     if order < 0:
         raise ValueError("Order must be non-negative.")
 
@@ -149,12 +209,21 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
         Together with t, defines the evaluation point (t,u).
         t and u are broadcast using NumPy broadcasting rules before
         vectorised evaluation.
+    complete : bool, optional
+        If True, differentiate the complete MGF. If False, differentiate
+        the incomplete MGF (requires `u`).
 
     Returns
     -------
     (log_abs, sign)
         Scalars if both inputs are scalar.
         Arrays with the broadcasted shape if either input is array-like.
+        
+    Notes
+    -----
+    The scalar core `_integerDeriv_numeric_jax_scalar` uses `jax_mode='auto'`
+    by default: it tries `jet` first and falls back to `grad` if `jet` fails
+    due to unsupported primitives (e.g., `igamma`).
     """
     if np.ndim(order) != 0:
         raise ValueError(

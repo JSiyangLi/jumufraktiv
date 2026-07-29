@@ -1,8 +1,23 @@
 """
-Integer-order symbolic differentiation of moment generating functions.
+symbolic_integerDeriv.py
 
-This module provides a function to compute symbolic derivatives of MGFs
-for any prior that provides a symbolic MGF expression (mgf_sym).
+Symbolic differentiation of moment‑generating functions (MGFs) with respect to t.
+
+This module provides a single function `integerDeriv_symbolic` that computes
+the symbolic derivative of order `order` of either the complete MGF or the
+incomplete MGF (iMGF) of a given prior. The derivative is returned as a
+SymPy expression.
+
+The function respects the **symbol‑numeric principle** in the sense that
+it always returns a symbolic expression; numeric evaluation is handled by
+the caller (e.g., by substituting numeric values for `t` and evaluating
+with `.evalf()`).
+
+Supports:
+    - Complete MGF (`prior.mgf_sym`)
+    - Incomplete MGF (`prior.imgf_sym`) via the `complete=False` flag.
+
+The module uses the canonical symbol `t` from `jumufraktiv.symbols`.
 """
 
 import sympy as sp

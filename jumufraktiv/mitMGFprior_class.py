@@ -1,12 +1,38 @@
 """
 mitMGFprior.py
 
-Unified container for moment generating function (MGF) priors.
+Unified container for moment‑generating function (MGF) priors.
+
+This module defines the `mitMGFprior` class, which serves as a standardised
+container for prior distributions in the MGF marginalisation framework.
+It holds both symbolic and numeric representations of the prior MGF, CGF,
+and PDF, along with JAX‑compatible versions for fast computation.
 
 Design philosophy:
-- registry provides fully-formed function bundles (no recomputation here)
-- class only composes / stores / exposes interfaces
-- symbolic and backend constructions are supported
+- The registry (`PRIOR_REGISTRY`) provides fully-formed function bundles;
+  the class only composes, stores, and exposes interfaces.
+- Both symbolic and backend‑based construction routes are supported.
+- The class is dataclass‑based for clarity and easy extension.
+
+Key features:
+- Supports **complete** and **incomplete** MGFs (iMGF) via the `imgf`, `logimgf`,
+  `imgf_jax`, `logimgf_jax`, `imgf_sym`, and `logimgf_sym` attributes.
+- Provides a `has_iMGF()` method to check if all iMGF components are present.
+- Includes a factory method `from_registry` for automatic construction from
+  the registry, and a manual compiler `as_mitMGFprior` for custom priors.
+- Validation via `is_mitMGFprior` ensures a prior object is fully compiled.
+
+Examples
+--------
+>>> # Build from registry
+>>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+>>> gamma_prior.mgf(-1.0)  # numeric MGF
+0.8888888889
+
+>>> # Manual construction with symbolic expressions
+>>> from jumufraktiv.symbols import t, theta
+>>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta*sp.exp(-theta))
+>>> prior.as_mitMGFprior()
 """
 
 import math
@@ -28,6 +54,73 @@ from jumufraktiv.symbols import t, theta
 
 @dataclass
 class mitMGFprior:
+    """
+    Container for a prior distribution's MGF, CGF, and PDF.
+
+    This class holds both symbolic and numeric representations of a prior's
+    moment‑generating function (MGF), cumulant‑generating function (CGF),
+    and probability density function (PDF). It also supports JAX‑compatible
+    backends for high‑performance computation and incomplete MGF (iMGF)
+    functions for truncated distributions.
+
+    Attributes
+    ----------
+    name : str, default "custom"
+        Name of the prior distribution.
+    mgf_sym : sympy.Expr, optional
+        Symbolic expression for the MGF.
+    pdf_sym : sympy.Expr, optional
+        Symbolic expression for the PDF.
+    mgf_backend : callable, optional
+        Numeric MGF function (e.g., from a custom implementation).
+    pdf_backend : callable, optional
+        Numeric PDF function.
+    params : dict, optional
+        Dictionary of numeric parameters (e.g., `{'alpha': 2.0, 'beta': 3.0}`).
+
+    Compiled functions (populated by `as_mitMGFprior` or `from_registry`):
+    - mgf, cgf : NumPy‑based MGF and CGF functions.
+    - mgf_jax, cgf_jax : JAX‑based MGF and CGF functions.
+    - pdf_func, logpdf_func : NumPy‑based PDF and log‑PDF functions.
+
+    Incomplete MGF (iMGF) attributes (if supported):
+    - imgf, logimgf : Numeric ordinary and log‑scale iMGF.
+    - imgf_jax, logimgf_jax : JAX versions.
+    - imgf_sym, logimgf_sym : Symbolic expressions.
+
+    Methods
+    -------
+    as_mitMGFprior()
+        Compile the prior from symbolic or backend inputs.
+    from_registry(cls, prior_name, params=None, simplify=False)
+        Factory method to build a prior from the registry.
+    is_mitMGFprior(obj)
+        Static method to check if an object is a fully compiled prior.
+    has_iMGF()
+        Return True if all iMGF components are present.
+
+    Notes
+    -----
+    The class follows a two‑step construction pattern:
+    1. Create an instance with raw inputs (symbolic or backend).
+    2. Call `as_mitMGFprior()` to compile and populate all functions.
+
+    The registry route (`from_registry`) performs both steps automatically.
+
+    Examples
+    --------
+    >>> # Manual symbolic prior
+    >>> from jumufraktiv.symbols import t, theta
+    >>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta * sp.exp(-theta))
+    >>> prior = prior.as_mitMGFprior()
+    >>> prior.mgf(-0.5)
+    1.7777777778
+
+    >>> # Registry‑based prior
+    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+    >>> gamma_prior.mgf(-1.0)
+    0.8888888889
+    """
     name: str = "custom"
 
     # -----------------------------
@@ -61,7 +154,68 @@ class mitMGFprior:
     # USER ROUTE: manual construction compiler
     # ============================================================
     def as_mitMGFprior(self):
+        """
+        Compile the prior object from raw inputs into a fully functional prior.
 
+        This method takes the raw symbolic or backend inputs stored in the instance
+        (`mgf_sym`, `pdf_sym`, `mgf_backend`, `pdf_backend`) and compiles them into
+        callable functions for MGF, CGF, PDF, and their JAX counterparts. It also
+        populates the compiled attributes (`mgf`, `cgf`, `mgf_jax`, `cgf_jax`,
+        `pdf_func`, `logpdf_func`).
+
+        Two construction modes are supported:
+            1. **Symbolic mode**: if both `mgf_sym` and `pdf_sym` are provided,
+            they are lambdified to NumPy and JAX functions. The CGF is derived
+            as `log(mgf_sym)`.
+            2. **Backend mode**: if both `mgf_backend` and `pdf_backend` are provided,
+            they are wrapped to accept a backend parameter (`xp=np` or `xp=jnp`),
+            and the CGF and log‑PDF are derived numerically.
+
+        The method modifies the instance in place and returns it for chaining.
+
+        Returns
+        -------
+        mitMGFprior
+            The compiled prior object (self), with all callables populated.
+
+        Raises
+        ------
+        ValueError
+            If neither a valid symbolic pair nor a valid backend pair is provided,
+            or if only one of a required pair is given.
+
+        Notes
+        -----
+        - The symbolic mode requires both `mgf_sym` and `pdf_sym` to be SymPy
+        expressions containing the canonical variable `t` (for MGF) and `theta`
+        (for PDF).
+        - The backend mode requires both `mgf_backend` and `pdf_backend` to be
+        callables with signature `(x, xp, **params)` where `x` is the evaluation
+        point and `xp` is either `numpy` or `jax.numpy`.
+        - The `params` dictionary (if provided) is passed to the backend functions.
+
+        Examples
+        --------
+        >>> # Symbolic mode
+        >>> from jumufraktiv.symbols import t, theta
+        >>> prior = mitMGFprior(
+        ...     mgf_sym=(1 - t)**(-2),
+        ...     pdf_sym=theta * sp.exp(-theta)
+        ... )
+        >>> prior = prior.as_mitMGFprior()
+        >>> prior.mgf(-0.5)
+        1.7777777778
+
+        >>> # Backend mode
+        >>> def mgf_backend(x, xp, **params):
+        ...     return xp.exp(x)
+        >>> def pdf_backend(x, xp, **params):
+        ...     return xp.exp(-x)
+        >>> prior = mitMGFprior(mgf_backend=mgf_backend, pdf_backend=pdf_backend)
+        >>> prior = prior.as_mitMGFprior()
+        >>> prior.mgf(0.0)
+        1.0
+        """
         # ----------------------------------------------------
         # CASE 1: symbolic input (both must be provided)
         # ----------------------------------------------------
@@ -127,12 +281,51 @@ class mitMGFprior:
     @classmethod
     def from_registry(cls, prior_name, params=None, simplify=False):
         """
-        Build a fully backend-complete MGF prior object from registry.
+        Build a fully compiled prior object from the registry.
 
-        Guarantees:
-            - symbolic MGF/PDF if available
-            - JAX-compatible functions always created via lambdify
-            - math backend always available
+        This factory method retrieves the prior specification from the global
+        `PRIOR_REGISTRY` and constructs a `mitMGFprior` instance with all
+        symbolic and numeric functions compiled. It automatically includes
+        both complete and incomplete MGF (iMGF) functions if they are available
+        in the registry.
+
+        Parameters
+        ----------
+        prior_name : str
+            Name of the prior distribution as registered in `PRIOR_REGISTRY`.
+        params : dict, optional
+            Numeric hyperparameters for the prior (e.g., `{'alpha':2.0, 'beta':3.0}`).
+        simplify : bool, default False
+            If True, simplify the symbolic expressions using SymPy.
+
+        Returns
+        -------
+        mitMGFprior
+            A fully compiled prior object with all callables populated.
+
+        Raises
+        ------
+        ValueError
+            If `prior_name` is not in the registry, or if the registry does not
+            provide the required MGF and PDF functions.
+
+        Notes
+        -----
+        - The registry entry must provide at least `mgf_sym`, `pdf_sym`, `mgf`,
+        `cgf`, and `pdf_func`.
+        - If iMGF functions (`imgf_sym`, `imgf`, `imgf_jax`, etc.) are present,
+        they are also extracted and stored.
+        - The method bypasses the manual `as_mitMGFprior` compiler and directly
+        assigns the compiled functions to the object.
+
+        Examples
+        --------
+        >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+        >>> gamma_prior.mgf(-1.0)
+        0.8888888889
+
+        >>> # With symbolic simplification
+        >>> prior = mitMGFprior.from_registry('pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True)
         """
         from jumufraktiv.registry import PRIOR_REGISTRY
 

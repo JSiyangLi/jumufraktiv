@@ -2,6 +2,33 @@
 Gamma.py
 
 Functions for preparing Gamma likelihood statistics for MGF marginalisation.
+
+For a Gamma likelihood with known shape α_i (scalar or vector) and unknown rate θ,
+the density for y > 0 is:
+
+    f(y; α, θ) = (θ^α / Γ(α)) * y^{α-1} * exp(-θ y)
+
+This can be written as:
+    L(θ; y) = C(y) * θ^{a(y)} * exp(-b(y) θ)
+
+with a(y) = α,
+    b(y) = y,
+    C(y) = y^{α-1} / Γ(α).
+
+For a sample of size n with per‑observation shapes α_i:
+    a = Σ α_i
+    b = Σ y_i
+    log_C = Σ ( (α_i - 1) * log(y_i) - log Γ(α_i) )
+
+If shape is a scalar, it is recycled. If shape is a vector, it must have length n.
+
+The user‑facing argument is `shape`, which corresponds to the known shape parameter α.
+
+This module provides two statistics functions:
+- `readyGamma` : aggregated sufficient statistics (scalars) for the whole sample.
+- `bereitGamma` : per‑element sufficient statistics (arrays) for vectorised predictive evaluation.
+
+Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
 
 import pandas as pd

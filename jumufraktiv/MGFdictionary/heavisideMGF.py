@@ -33,22 +33,36 @@ k = param("k")
 
 def heaviside_mgf_symbolic():
     """
-    M(t) = -exp(k*t)/t,  for t < 0
+    Symbolic expression for the Heaviside MGF.
+
+    Returns
+    -------
+    sympy.Expr
+        M(t) = -exp(k*t)/t, for t < 0.
     """
     return -sp.exp(k * t) / t
 
 
 def heaviside_cgf_symbolic():
     """
-    K(t) = log(-1/t) + k*t, for t < 0
+    Symbolic expression for the Heaviside CGF.
+
+    Returns
+    -------
+    sympy.Expr
+        K(t) = log(-1/t) + k*t, for t < 0.
     """
     return sp.log(-1 / t) + k * t
 
 
 def heaviside_pdf_symbolic():
     """
-    p(theta) = 1,  theta >= k
-             = 0,  otherwise
+    Symbolic expression for the Heaviside PDF.
+
+    Returns
+    -------
+    sympy.Expr
+        Piecewise((1, theta >= k), (0, True)).
     """
     return sp.Piecewise((1, theta >= k), (0, True))
 
@@ -58,12 +72,42 @@ def heaviside_pdf_symbolic():
 # ============================================================
 
 def heaviside_cgf(t_val: float, k_val: float) -> float:
+    """
+    Numeric CGF for the Heaviside prior.
+
+    Parameters
+    ----------
+    t_val : float
+        Evaluation point (must be negative).
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    float
+        log M(t).
+    """
     if t_val >= 0:
         raise ValueError("t must be negative for Heaviside MGF.")
     return math.log(-1.0 / t_val) + k_val * t_val
 
 
 def heaviside_mgf(t_val: float, k_val: float) -> float:
+    """
+    Numeric MGF for the Heaviside prior.
+
+    Parameters
+    ----------
+    t_val : float
+        Evaluation point (must be negative).
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    float
+        M(t).
+    """
     return math.exp(heaviside_cgf(t_val, k_val))
 
 
@@ -72,10 +116,40 @@ def heaviside_mgf(t_val: float, k_val: float) -> float:
 # ============================================================
 
 def heaviside_cgf_jax(t_val, k_val):
+    """
+    JAX‑compatible CGF for the Heaviside prior.
+
+    Parameters
+    ----------
+    t_val : float or JAX array
+        Evaluation point (must be negative).
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    JAX array
+        log M(t).
+    """
     return jnp.log(-1.0 / t_val) + k_val * t_val
 
 
 def heaviside_mgf_jax(t_val, k_val):
+    """
+    JAX‑compatible MGF for the Heaviside prior.
+
+    Parameters
+    ----------
+    t_val : float or JAX array
+        Evaluation point (must be negative).
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    JAX array
+        M(t).
+    """
     return jnp.exp(heaviside_cgf_jax(t_val, k_val))
 
 
@@ -84,10 +158,40 @@ def heaviside_mgf_jax(t_val, k_val):
 # ============================================================
 
 def heaviside_pdf(theta_val: float, k_val: float) -> float:
+    """
+    Numeric PDF for the Heaviside prior.
+
+    Parameters
+    ----------
+    theta_val : float
+        Evaluation point.
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    float
+        1.0 if theta >= k, else 0.0.
+    """
     return 1.0 if theta_val >= k_val else 0.0
 
 
 def heaviside_logpdf(theta_val: float, k_val: float) -> float:
+    """
+    Numeric log‑PDF for the Heaviside prior.
+
+    Parameters
+    ----------
+    theta_val : float
+        Evaluation point.
+    k_val : float
+        Threshold parameter.
+
+    Returns
+    -------
+    float
+        0.0 if theta >= k, else -inf.
+    """
     return 0.0 if theta_val >= k_val else -np.inf
 
 

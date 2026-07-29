@@ -1,9 +1,20 @@
 """
-Fractional derivatives of MGFs using Laplace or Mellin transform.
+symbolic_fractionalDeriv.py
 
-Implements the Liouville‑Caputo fractional derivative via:
-    D^α_{(-∞)+} f(x) = sum of two one‑sided Laplace transforms
-or via Mellin transform if Laplace fails.
+Symbolic computation of Liouville‑Caputo fractional derivatives of MGFs.
+
+This module implements the symbolic fractional derivative using the Laplace transform
+formula for the Liouville‑Caputo derivative:
+    D^α_{(-∞)+} f(x) = I^γ_{(-∞)+} f^{(n+1)}(x)
+where n = floor(α), γ = n+1-α, and the integral is represented as a combination
+of two Laplace transforms. If the Laplace transform fails or times out, the function
+falls back to the Mellin transform approach.
+
+The main function `fractionalDeriv_symbolic` attempts Laplace first, with a timeout
+(default 30s). If that fails or returns an unevaluated transform, it falls back to
+Mellin. If both fail, it returns None.
+
+Supports both complete and incomplete MGFs via the `complete` flag.
 """
 
 import sympy as sp

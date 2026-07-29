@@ -2,6 +2,39 @@
 Poisson.py
 
 Functions for preparing Poisson likelihood statistics for MGF marginalisation.
+
+For a Poisson likelihood with rate parameter θ and exposure s_i (scalar or vector),
+the density for y_i ≥ 0 is:
+
+    P(Y_i = y_i | θ, s_i) = (s_i θ)^{y_i} e^{-s_i θ} / y_i!
+
+This can be written as:
+    L(θ; y, s) = C(y, s) * θ^{a(y)} * exp(-b(y, s) θ)
+
+with a(y) = Σ y_i,
+    b(y, s) = Σ s_i,
+    log_C(y, s) = Σ ( y_i log(s_i) - log(y_i!) ).
+
+If scale (s_i) is a scalar, it is recycled. If scale is a vector, it must have
+length equal to the number of observations.
+
+The user‑facing argument is `scale`, which corresponds to the exposure s_i.
+
+This module provides two statistics functions:
+- `readyPoisson` : aggregated sufficient statistics (scalars) for the whole sample.
+- `bereitPoisson` : per‑element sufficient statistics (arrays) for vectorised
+  predictive evaluation (used in `post_predictive` when `individual=True`).
+
+Additionally, `cPoisson()` returns a symbolic expression for the normalising constant.
+
+Examples
+--------
+>>> data = [1, 2, 3]
+>>> stats = readyPoisson(data, scale=1.0)
+>>> stats['a']  # Σ y_i
+6.0
+>>> stats['b']  # Σ s_i
+3.0
 """
 
 import pandas as pd

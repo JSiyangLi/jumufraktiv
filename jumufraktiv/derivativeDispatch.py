@@ -1,17 +1,48 @@
 """
 derivativeDispatch.py
 
-Unified interface to compute integer derivatives of MGFs using symbolic, Bell‑polynomial,
-or JAX methods.
+Unified interface for computing derivatives of moment-generating functions (MGFs).
+
+This module provides the core derivative routines for the package, supporting
+both integer and fractional orders, and multiple computational backends.
+
+Main functions:
+    - mgfDerivative_integer : integer-order derivatives (symbolic, Bell, JAX)
+    - mgfDerivative_fractional : fractional-order derivatives (scipy, mpmath, symbolic)
+    - mgfDerivative : unified dispatcher for both integer and fractional orders
+
+Design principles:
+    1. **Symbol-numeric principle**: the return type depends only on whether
+       unresolved symbols remain; symbolic methods may return `sympy.Expr` or
+       numeric values.
+    2. **Log principle**: in numeric state, whether to store `(log_abs, sign)`
+       or a scalar value depends only on the `log` argument.
+    3. **Tuple-vectorisation principle**: evaluation points `(t, u)` are
+       broadcast to a common shape, supporting vectorised computation over
+       arrays of `t` and/or `u`.
+
+Backends:
+    - Symbolic : SymPy differentiation (integer and fractional, via `sp.diff`
+      and `sp.Derivative`).
+    - Bell : Bell polynomial method (integer orders, JAX-based).
+    - JAX : JAX `jet` or `grad` (integer orders).
+    - SciPy : adaptive quadrature with fallback to tan‑transform (fractional).
+    - Mpmath : high‑precision quadrature (fractional).
+    - Interpolation : cubic interpolation for near‑integer fractional orders.
+
+Incomplete MGF (iMGF) derivatives are supported via the `complete=False` flag,
+which uses the prior's `imgf_sym` or `imgf_jax` functions.
 
 Imports:
     - integerDeriv_symbolic from symbolic_integerDeriv.py
     - integerDeriv_numeric_bell from numeric_integerDeriv_Bell.py
     - integerDeriv_numeric_jax from numeric_integerDeriv_JAX.py
+    - fractionalDeriv_numeric_scipy / _mpmath / _tan / _interpolated
 
-Function:
-    mgfDerivative_integer(order, prior, method='symbolic', t=nan, params=None,
-                          simplify=False, log=True)
+Functions:
+    - mgfDerivative_integer(order, prior, method='symbolic', t=None, ...)
+    - mgfDerivative_fractional(order, prior, method='scipy', t=None, ...)
+    - mgfDerivative(order, prior, method='auto', t=None, ...)
 """
 
 import math
@@ -39,40 +70,75 @@ def mgfDerivative_integer(
     """
     Compute an integer-order derivative of a prior MGF.
 
+    This function respects the **symbol‑numeric principle**: the return type
+    depends only on whether unresolved symbols remain.
+
+    - If `t` is `None` or if the substituted expression still contains free
+      symbols (e.g., hyperparameters), a symbolic expression is returned.
+    - If all symbols are resolved (numeric `t` and `u`), the derivative is
+      evaluated numerically.
+
+    The function also supports **tuple‑vectorisation**: if `t` or `u` are
+    array‑like, they are broadcast to a common shape and the derivative is
+    evaluated for all points simultaneously.
+
     Parameters
     ----------
-    order : int | sp.Expr
-        Non-negative derivative order.
+    order : int or sympy.Expr
+        Non‑negative derivative order. If symbolic, returns an unevaluated
+        `Derivative` object.
     prior : mitMGFprior
-        Prior object containing symbolic and/or backend MGF/PDF representations.
+        Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {"symbolic", "bell", "jax"}, optional
-        Derivative backend.
+        Derivative backend:
+        - `"symbolic"`: uses SymPy differentiation.
+        - `"bell"`: uses Bell polynomials (requires JAX).
+        - `"jax"`: uses JAX's `jet` or `grad`.
     t : float or array-like, optional
-        Evaluation point(s) for t.
+        Evaluation point(s) for the canonical variable `t`.
     u : float or array-like, optional
-        Truncation point(s) for incomplete MGF (used when complete=False).
-        For symbolic method, substitutes the canonical 'u' symbol. If array‑like,
-        it is broadcast with t to form a batch of evaluation points (t, u).
+        Truncation point(s) for the incomplete MGF (used when `complete=False`).
+        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        points `(t, u)`.
     simplify : bool, optional
-        Whether to simplify symbolic derivatives.
+        If True, simplify the symbolic derivative expression.
     complete : bool, optional
-        If True (default), differentiate the complete MGF.
-        If False, differentiate the incomplete MGF.
+        If True (default), differentiate the complete MGF (`prior.mgf_sym`).
+        If False, differentiate the incomplete MGF (`prior.imgf_sym`).
     log : bool, optional
-        If True, numeric methods return (log_abs, sign).
-        Otherwise return the ordinary derivative as float.
-    symbolic_timeout, cgf_method : passed to Bell backend.
+        If True, numeric methods return `(log_abs, sign)`.
+        If False, return the ordinary derivative as float.
+    symbolic_timeout : float, optional
+        Maximum time (seconds) for symbolic computation in the Bell backend.
+    cgf_method : str, optional
+        Method for CGF derivatives in the Bell backend (`'auto'`, `'jet'`, `'grad'`).
 
     Returns
     -------
-    If t and u are scalar (or t is scalar and u is None) and evaluation is numeric:
-        If log=True: (log_abs, sign)
-        If log=False: float
-    If t or u is array-like and evaluation is numeric:
-        If log=True: (log_abs_array, sign_array) with broadcasted shape
-        If log=False: array with broadcasted shape
-    If t is None or symbolic evaluation leaves free symbols:
-        sympy.Expr (or list of expressions if multiple points)
+    sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
+        - If `t` is `None` or free symbols remain: `sympy.Expr`.
+        - If evaluation is numeric:
+            - `log=True`: `(log_abs, sign)` (scalars or arrays).
+            - `log=False`: numeric value (scalar or array).
+
+    Notes
+    -----
+    - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
+    - For the symbolic method, when `t` is an array, each element is evaluated
+      individually using `.subs().evalf()` to ensure accuracy (mpmath).
+
+    Examples
+    --------
+    >>> # Complete MGF, 2nd derivative, symbolic expression
+    >>> expr = mgfDerivative_integer(2, prior, method='symbolic')
+    >>> # Evaluate at t = -1.0
+    >>> log_abs, sign = mgfDerivative_integer(2, prior, method='symbolic', t=-1.0, log=True)
+
+    >>> # Incomplete MGF derivative for multiple t and u
+    >>> t_vals = np.linspace(-1.0, 1.0, 10)
+    >>> u_vals = 2.0
+    >>> log_abs, sign = mgfDerivative_integer(1, prior, method='jax',
+    ...                                       t=t_vals, u=u_vals, complete=False)
     """
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
@@ -245,36 +311,87 @@ def mgfDerivative_fractional(
 ):
     """
     Unified interface for fractional derivatives of the MGF.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
+
+    This function respects the **symbol‑numeric principle**: the return type
+    depends only on whether unresolved symbols remain.
+
+    - If `method='symbolic'` and `t` is `None` or the expression still contains
+      free symbols, a symbolic expression is returned.
+    - If `t` is numeric (scalar or array), the derivative is evaluated numerically
+      using either `scipy` or `mpmath` backend.
+
+    The function supports **tuple‑vectorisation**: `t` and `u` (for incomplete MGF)
+    are broadcast to a common shape, and the derivative is evaluated for all
+    points simultaneously.
 
     Parameters
     ----------
     order : float
         Fractional order (positive).
     prior : mitMGFprior
-        Prior object.
+        Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
-        Computation backend.
+        Computation backend:
+        - `'scipy'`: uses `scipy.integrate.quad` (adaptive) with fallback.
+        - `'mpmath'`: uses `mpmath.quad` (high precision).
+        - `'symbolic'`: returns a symbolic expression (may be slow).
     t : float or array-like, optional
-        Evaluation point(s) for t (required for numeric methods).
+        Evaluation point(s) for the canonical variable `t`. Required for numeric
+        methods.
     simplify : bool, default False
-        Simplify symbolic expressions (method='symbolic').
+        If True, simplify the symbolic expression (method='symbolic' only).
     complete : bool, default True
-        If True, differentiate complete MGF; if False, incomplete MGF.
+        If True, differentiate the complete MGF (`prior.mgf_sym`).
+        If False, differentiate the incomplete MGF (`prior.imgf_sym`).
     log : bool, default True
-        If True, numeric output is (log_abs, sign); else ordinary float.
+        If True, numeric output is `(log_abs, sign)` where `log_abs` is the
+        natural logarithm of the absolute derivative and `sign` is ±1.
+        If False, return the ordinary derivative as a float.
     integerDeriv_method : str, default 'symbolic'
-        Method for integer derivatives inside integrators.
+        Method for integer derivatives inside the fractional integrator:
+        `'symbolic'`, `'bell'`, or `'jax'`.
     u : float or array-like, optional
-        Truncation point(s) for incomplete MGF (used when complete=False).
-        If array‑like, broadcast with t to form evaluation points (t, u).
-    **kwargs : passed to underlying functions.
+        Truncation point(s) for the incomplete MGF (used when `complete=False`).
+        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        points `(t, u)`.
+    **kwargs : additional keyword arguments passed to the underlying backend.
+        For `'scipy'`: `epsabs`, `epsrel`, `limit`, `initial_L`, `max_L`, `tol`,
+        `use_tan`.
+        For `'mpmath'`: `dps`, `tol`, `use_tan`.
+        For `'symbolic'`: `timeout_seconds`.
 
     Returns
     -------
-    sympy.Expr, (log_abs, sign), or float
-        If t and u are scalar, returns sympy.Expr or scalar.
-        If either is array, returns arrays with the broadcasted shape.
+    sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
+        - If `method='symbolic'` and `t` is `None` or free symbols remain:
+          `sympy.Expr`.
+        - If numeric evaluation:
+            - `log=True`: `(log_abs, sign)` (scalars or arrays).
+            - `log=False`: numeric value (scalar or array).
+
+    Notes
+    -----
+    - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
+    - For the symbolic path, when `t` is an array, each element is evaluated
+      individually using `.subs().evalf()` to preserve accuracy (mpmath).
+    - The `scipy` backend uses an adaptive quadrature with range expansion;
+      the `mpmath` backend uses `tanh-sinh` quadrature with arbitrary precision.
+
+    Examples
+    --------
+    >>> # Fractional derivative of order 1.5 at t = -1.0 (scipy)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=-1.0, log=True)
+
+    >>> # Vectorised evaluation at multiple t values
+    >>> t_vals = np.linspace(-2.0, 0.0, 10)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=t_vals, log=True)
+
+    >>> # Incomplete MGF derivative (complete=False)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='mpmath',
+    ...                                          t=-1.0, u=2.0, complete=False, dps=60)
+
+    >>> # Symbolic fractional derivative (warning: slow)
+    >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
@@ -431,50 +548,105 @@ def mgfDerivative(
 ):
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
 
-    If `order` is array-like, each order is processed independently, and the
+    This function respects the **symbol‑numeric principle**: the return type
+    depends only on whether unresolved symbols remain.
+
+    - If `order` contains symbolic variables, or if `t` is `None` or the
+      expression still has free symbols, a symbolic expression is returned.
+    - If `order`, `t`, and `u` (if applicable) are fully numeric, the derivative
+      is evaluated numerically using the selected backend.
+
+    The function supports **tuple‑vectorisation**: if `t` or `u` are array‑like,
+    they are broadcast to a common shape and the derivative is evaluated for
+      all points simultaneously.
+
+    If `order` is array‑like, each order is processed independently, and the
     results are stacked along a new first axis.
 
     Parameters
     ----------
-    order : float, array-like, or sp.Basic
+    order : float, array-like, or sympy.Basic
         Derivative order(s). If array-like, each element is processed separately.
+        If a SymPy expression, the derivative is treated symbolically.
     prior : mitMGFprior
-        Prior object.
+        Prior object providing symbolic and/or backend MGF/PDF representations.
     method : str, optional
-        Derivative backend.
+        Derivative backend. For integer orders: `'symbolic'`, `'bell'`, `'jax'`.
+        For fractional orders: `'scipy'`, `'mpmath'`, `'symbolic'`.
+        Special value `'auto'` chooses the appropriate method automatically.
     t : float or array-like, optional
-        Evaluation point(s) for t.
+        Evaluation point(s) for the canonical variable `t`.
     simplify : bool, optional
         If True, simplify symbolic expressions.
     complete : bool, optional
-        If True, differentiate complete MGF; else incomplete.
+        If True, differentiate the complete MGF (`prior.mgf_sym`).
+        If False, differentiate the incomplete MGF (`prior.imgf_sym`).
     log : bool, optional
-        If True, return (log_abs, sign) for numeric outputs.
+        If True, numeric outputs return `(log_abs, sign)` where `log_abs` is
+        the natural logarithm of the absolute derivative and `sign` is ±1.
+        If False, return the ordinary derivative as a float.
     integer_method : str, optional
-        For fractional orders: method for integer derivatives.
+        For fractional orders: method for integer derivatives inside the
+        fractional integrator (`'symbolic'`, `'bell'`, `'jax'`).
     use_interpolation : bool, optional
-        If True, use cubic interpolation for near‑integer orders.
+        If True and the order is near an integer from below, use cubic
+        interpolation to speed up the computation.
     d_vec : tuple, optional
-        Complements of deviations for interpolation.
+        Complements of deviations for interpolation (default `(0.8, 0.9, 0.95)`).
+        Actual deviations are `1 - d_i`.
     int_tol : float, optional
-        Tolerance for treating order as integer.
+        Tolerance for detecting integer order. If `|order - round(order)| < int_tol`,
+        the order is treated as an integer.
     u : float or array-like, optional
-        Truncation point(s) for incomplete MGF (used when complete=False).
-        If array‑like, broadcast with t to form evaluation points (t, u).
-    **kwargs : passed to underlying functions.
+        Truncation point(s) for the incomplete MGF (used when `complete=False`).
+        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        points `(t, u)`.
+    **kwargs : additional keyword arguments passed to the underlying backend.
+        For integer methods: `symbolic_timeout`, `cgf_method`.
+        For fractional methods: `epsabs`, `epsrel`, `limit`, `dps`, `tol`, etc.
 
     Returns
     -------
-    If order is scalar:
-        - If log=True: (log_abs, sign) where log_abs and sign are scalars or arrays
-          (depending on the broadcasted shape of t and u).
-        - If log=False: scalar or array.
-    If order is array-like:
-        - If log=True: (log_abs_array, sign_array) where the arrays have shape
-          (len(order), broadcasted_shape).
-        - If log=False: array of shape (len(order), broadcasted_shape).
+    sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
+        - If `order` is symbolic or `t` is `None` or free symbols remain:
+          `sympy.Expr`.
+        - If numeric evaluation:
+            - `log=True`: `(log_abs, sign)` (scalars or arrays).
+            - `log=False`: numeric value (scalar or array).
+
+    Notes
+    -----
+    - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
+    - The `'auto'` method chooses `'symbolic'` for integer orders (if available)
+      and `'scipy'` for fractional orders by default.
+    - The interpolation (`use_interpolation=True`) is used when the order is
+      within `(n - max_dev, n)` where `n = ceil(order)` and `max_dev = 1 - max(d_vec)`.
+    - For `method='symbolic'`, vectorisation over `t` is achieved by looping
+      over elements using `.subs().evalf()` to maintain accuracy (mpmath).
+
+    Examples
+    --------
+    >>> # Integer derivative (2nd order) at t = -1.0 using symbolic method
+    >>> log_abs, sign = mgfDerivative(2, prior, method='symbolic', t=-1.0, log=True)
+
+    >>> # Fractional derivative (order 1.5) using scipy backend
+    >>> log_abs, sign = mgfDerivative(1.5, prior, method='scipy', t=-1.0, log=True)
+
+    >>> # Vectorised over t values (complete MGF)
+    >>> t_vals = np.linspace(-1.0, 1.0, 10)
+    >>> log_abs, sign = mgfDerivative(1.5, prior, method='scipy', t=t_vals, log=True)
+
+    >>> # Incomplete MGF (complete=False) with vectorised (t, u)
+    >>> t_vals = np.linspace(-1.0, 1.0, 5)
+    >>> u_vals = 2.0
+    >>> log_abs, sign = mgfDerivative(1.5, prior, method='mpmath',
+    ...                               t=t_vals, u=u_vals, complete=False, dps=60)
+
+    >>> # Multiple orders at once (array-like order)
+    >>> orders = np.array([1.0, 1.5, 2.0])
+    >>> log_abs, sign = mgfDerivative(orders, prior, method='scipy', t=-1.0, log=True)
+    # Returns arrays of shape (3,) for log_abs and sign
     """
     # ---- Validate d_vec (independent of order) ----
     if len(d_vec) != 3:

@@ -1,13 +1,32 @@
 """
-MGFderivative_class.py
+MGFDerivative_class.py
 
-Defines a class MGFDerivative that encapsulates the computation of MGF derivatives
-and marginal likelihoods (evidence) for various likelihoods and priors.
+Defines the `MGFDerivative` class, which encapsulates the computation of
+posterior distributions via MGF marginalisation. It computes the marginal
+likelihood (evidence) and provides a wide range of inference methods:
 
-Supports sequential updating via the `update` method, using the posterior MGF
-as the prior for the next chunk of data.
+- Posterior density (`post_density`)
+- Cumulative distribution function (`post_cdf`)
+- Quantiles (`post_quantile`)
+- Moment‑generating function (`post_mgf`)
+- Raw and central moments (`post_raw_moment`, `post_central_moment`)
+- Credible intervals (`post_interval`)
+- Posterior sampling (`post_sample`)
+- Posterior predictive density (`post_predictive`)
 
-Priors are represented as mitMGFprior objects.
+The class supports both symbolic and numeric evaluation, respecting the
+**symbol‑numeric principle**: the return type depends only on whether
+unresolved symbols remain. Numeric methods are fully vectorised for array
+inputs, following the **tuple‑vectorisation principle** for evaluation
+points `(t, u)`.
+
+Priors are represented as `mitMGFprior` objects. The class also supports
+sequential Bayesian updating via the `update` method, which treats the
+current posterior as the prior for a new dataset.
+
+Likelihoods are registered with `ready_func` (aggregated sufficient
+statistics) and `bereit_func` (per‑element statistics for vectorised
+predictive evaluation).
 """
 
 import math
@@ -19,7 +38,7 @@ import pandas as pd
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
-from jumufraktiv.symbols import t, theta, r, u
+from jumufraktiv.symbols import t, theta, r, u, q
 from jumufraktiv.root_finding import solve_root
 
 # ============================================================
@@ -67,7 +86,89 @@ LIKELIHOOD_REGISTRY = {
 # Core class
 # ============================================================
 class MGFDerivative:
+    """
+    Posterior distribution derived via MGF marginalisation.
 
+    This class encapsulates a posterior distribution obtained from a prior
+    (a `mitMGFprior` object) and a likelihood from the MGF‑marginalisable
+    family. It computes the posterior normalising constant (evidence) and
+    provides methods for density, CDF, quantiles, moments, and predictive
+    inference.
+
+    The core computation is based on fractional derivatives of the prior
+    moment‑generating function (MGF), evaluated at the posterior location
+    `t = -b`. The class stores either a symbolic expression or a numeric
+    value for the normalising constant, depending on the chosen backend.
+
+    Attributes
+    ----------
+    a : float
+        Combined sufficient statistic for the derivative order.
+    b : float
+        Combined sufficient statistic for the evaluation point.
+    log_c : float
+        Log‑normalising constant from the likelihood.
+    log : bool
+        Whether the normalising constant is stored in log‑scale.
+    prior : mitMGFprior
+        The prior object used.
+    method : str
+        Derivative backend method.
+    simplify : bool
+        Whether to simplify symbolic expressions.
+
+    Properties
+    ----------
+    is_symbolic : bool
+        True if the normalising constant is a symbolic expression.
+    value_numeric : float
+        Numeric value of the normalising constant (if numeric).
+    prior_has_iMGF : bool
+        True if the prior supports the incomplete MGF (iMGF).
+
+    Methods
+    -------
+    evidence()
+        Return the marginal likelihood (evidence).
+    post_density(theta_val, log=True)
+        Evaluate the posterior density.
+    post_cdf(u_val, log=True)
+        Evaluate the posterior CDF.
+    post_quantile(p, root_method='auto')
+        Compute quantiles (inverse CDF).
+    post_mgf(r_val, log=True)
+        Evaluate the posterior MGF.
+    post_raw_moment(q, numerator_method='auto', log=True)
+        Compute raw moments.
+    post_central_moment(order=None, log=True, numerator_method='auto')
+        Compute central moments (1,2,3,4).
+    post_interval(level=0.95, root_method='auto')
+        Compute credible intervals.
+    post_sample(n=None, u=None, root_method='auto')
+        Generate posterior samples.
+    post_predictive(new_data, log=True, individual=True)
+        Compute posterior predictive density.
+    to_prior_object()
+        Convert the posterior to a prior object for sequential updating.
+    update(new_data, **kwargs)
+        Perform a sequential Bayesian update.
+
+    Notes
+    -----
+    The class supports both symbolic and numeric evaluation, following the
+    **symbol‑numeric principle**: the return type of methods depends on
+    whether free symbols remain. Numeric methods are vectorised for array
+    inputs (tuple‑vectorisation for `(t, u)` pairs).
+
+    Examples
+    --------
+    >>> from jumufraktiv.mitMGFprior_class import mitMGFprior
+    >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
+    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+    >>> deriv = MGFDerivative(gamma_prior, data=[1.0, 2.0], likelihood='poisson', scale=1.0)
+    >>> log_ev, sign = deriv.evidence()
+    >>> print(log_ev)
+    """
     def __init__(
         self,
         prior,                  # mitMGFprior object ONLY
@@ -264,13 +365,34 @@ class MGFDerivative:
     # ========================================================
     def evidence(self):
         """
-        Return the marginal likelihood (evidence).
+        Return the marginal likelihood (evidence) of the model.
 
-        If `self.is_symbolic` is True, returns a symbolic expression.
+        The marginal likelihood is the normalising constant of the posterior
+        distribution, i.e., p(y) = ∫ p(y|θ) p(θ) dθ.
 
-        Otherwise:
-            - if self.log=True: returns (log_abs, sign)
-            - if self.log=False: returns ordinary numeric value
+        Returns
+        -------
+        sympy.Expr or tuple or float
+            - If the posterior is symbolic (`self._is_symbolic is True`):
+                Returns a SymPy expression for the evidence.
+            - If the posterior is numeric:
+                - If `self.log is True`: returns a tuple `(log_abs, sign)` where
+                `log_abs` is the natural logarithm of the absolute evidence,
+                and `sign` is the sign (±1) of the evidence.
+                - If `self.log is False`: returns the ordinary float value of the
+                evidence.
+
+        Notes
+        -----
+        The evidence is computed as:
+            evidence = c_func() * D^a M(t) |_{t=-b}
+        where `c_func` is the likelihood's normalising constant and the
+        derivative is evaluated at the posterior mode location `t = -b`.
+
+        Examples
+        --------
+        >>> evidence_log, sign = deriv.evidence()
+        >>> print(f"log evidence = {evidence_log:.4f}, sign = {sign}")
         """
 
         if self._is_symbolic:
@@ -292,25 +414,54 @@ class MGFDerivative:
         """
         Compute the posterior density (or log-density) at given θ.
 
-        If `self._deriv_is_symbolic` is True:
-            - If theta_val is None or a sympy Symbol: returns a symbolic expression.
-            - If theta_val is numeric (scalar or array): evaluates the expression numerically.
-            - Uses the prior's symbolic PDF if available.
-        If `self._deriv_is_symbolic` is False: performs numeric evaluation (vectorized).
+        This method respects the **symbol‑numeric principle**: the return type
+        depends only on whether unresolved symbols remain, not on the path taken.
+
+        - If `theta_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.theta`),
+        or if the derivative expression still contains free symbols, a symbolic
+        expression is returned.
+        - If `theta_val` is numeric (scalar or array), the expression is evaluated
+        numerically, respecting vectorisation.
 
         Parameters
         ----------
         theta_val : scalar, array-like, or sympy Symbol, optional
-            Evaluation point(s). If array, must be convertible to numpy array.
+            Evaluation point(s). If array-like, must be convertible to a NumPy array.
+            If a SymPy Symbol, the canonical symbol :data:`jumufraktiv.symbols.theta`
+            is typically used.
         log : bool, optional
-            If True, return log-density; else ordinary density.
+            If True, return the log-density; otherwise the ordinary density.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            If theta_val is scalar and numeric: returns scalar.
-            If theta_val is array-like: returns array.
-            If theta_val is symbolic or has free symbols: returns sympy.Expr.
+            - Scalar float for scalar numeric input.
+            - NumPy array for array‑like input.
+            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+
+        Notes
+        -----
+        The posterior density is computed as:
+            p(θ | y) = p(θ) * θ^a * exp(-b θ) / D^a M(t) |_{t=-b}
+        where `D^a M` is the fractional derivative of the prior MGF.
+
+        For vectorised symbolic input, all elements must evaluate to a pure numeric
+        result; if any free symbols remain, a `ValueError` is raised. For scalar
+        symbolic input, the expression is returned directly.
+
+        Examples
+        --------
+        >>> # Numeric evaluation at a single point
+        >>> deriv.post_density(0.2, log=False)
+        1.234567e+00
+
+        >>> # Vectorised evaluation on a grid
+        >>> theta_grid = np.linspace(0.0, 1.0, 100)
+        >>> log_dens = deriv.post_density(theta_grid, log=True)
+
+        >>> # Symbolic evaluation using the canonical symbol
+        >>> from jumufraktiv.symbols import theta
+        >>> expr = deriv.post_density(theta, log=False)  # SymPy expression
         """
         # ---- Symbolic path ----
         if self._deriv_is_symbolic and (theta_val is None or isinstance(theta_val, sp.Symbol)):
@@ -441,26 +592,57 @@ class MGFDerivative:
         """
         Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold(s) u.
 
-        If `self._is_symbolic` is True:
-            - If u_val is None or a sympy Symbol: returns a symbolic expression.
-            - If u_val is numeric (scalar or array): evaluates the expression numerically.
-            - Requires the prior's symbolic incomplete MGF (imgf_sym).
-        If `self._is_symbolic` is False: performs numeric evaluation using the prior's
-        numeric imgf/logimgf functions. Supports tuple‑vectorisation: u can be an array.
+        This method respects the **symbol‑numeric principle**: the return type
+        depends only on whether unresolved symbols remain.
+
+        - If `u_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.u`),
+        or if the expression still contains free symbols, a symbolic expression
+        is returned.
+        - If `u_val` is numeric (scalar or array), the CDF is evaluated numerically,
+        supporting tuple‑vectorisation: the evaluation point is the pair `(t, u)`,
+        where `t = -self.b` is fixed and `u` is broadcast to match the input.
 
         Parameters
         ----------
         u_val : scalar, array-like, or sympy Symbol, optional
-            Upper limit(s) for the CDF. If array-like, returns array of CDFs.
+            Upper limit(s) for the CDF. If array-like, returns an array of CDFs.
+            If a SymPy symbol, the canonical symbol :data:`jumufraktiv.symbols.u`
+            is typically used.
         log : bool, optional
-            If True, return log-CDF; else ordinary CDF.
+            If True, return the log-CDF; otherwise the ordinary CDF.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            If u_val is scalar and numeric: scalar.
-            If u_val is array-like: array.
-            If u_val is symbolic: sympy.Expr.
+            - Scalar float for scalar numeric input.
+            - NumPy array for array‑like input.
+            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+
+        Raises
+        ------
+        RuntimeError
+            If the prior does not support the incomplete MGF (iMGF) or if the
+            CDF becomes negative (indicating a numerical issue).
+
+        Notes
+        -----
+        The posterior CDF is computed as:
+            F(u | y) = D^a M_inc(t; u) / D^a M(t) |_{t=-b}
+        where `M_inc` is the incomplete MGF of the prior.
+
+        Examples
+        --------
+        >>> # Numeric evaluation at a single point
+        >>> deriv.post_cdf(0.2, log=False)
+        0.8574
+
+        >>> # Vectorised evaluation on a grid
+        >>> u_grid = np.linspace(0.0, 1.0, 100)
+        >>> log_cdf = deriv.post_cdf(u_grid, log=True)  # array of log-CDFs
+
+        >>> # Symbolic evaluation using the canonical symbol
+        >>> from jumufraktiv.symbols import u
+        >>> expr = deriv.post_cdf(u, log=False)  # SymPy expression
         """
         # ---- Ensure iMGF support ----
         if not hasattr(self.prior, "has_iMGF") or not self.prior.has_iMGF():
@@ -633,21 +815,69 @@ class MGFDerivative:
         """
         Compute the posterior predictive density (or log-density) for new data.
 
+        This method respects the **symbol‑numeric principle**: the return type
+        depends only on whether unresolved symbols remain.
+
+        - If `new_data` is a SymPy symbol, the posterior is symbolic, and a
+        symbolic expression for the predictive density is returned.
+        - If `new_data` is numeric (scalar or array), the predictive density
+        is evaluated numerically, supporting vectorisation.
+
+        The `individual` flag controls the aggregation:
+        - `individual=True` (default): returns a density for each element of `new_data`
+        (array or scalar).
+        - `individual=False`: returns the joint density (product of individual
+        densities) as a scalar.
+
         Parameters
         ----------
         new_data : scalar, array-like, or sympy.Symbol
             New observation(s). If array-like, each element is treated separately.
+            If a SymPy symbol, the posterior must be symbolic (`self._is_symbolic` is True).
         log : bool, optional
-            If True, return log-density; else ordinary density.
+            If True, return log-density; otherwise ordinary density.
         individual : bool, optional
             If True (default), return an array of densities for each new data point.
             If False, return the joint density (product of individual densities).
         **kwargs : additional arguments passed to the likelihood's `ready_func` or `bereit_func`.
+            For example, `scale` for Poisson or `shape` for Gamma.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            Depending on input and `individual` flag.
+            - If `new_data` is a scalar and numeric: returns a Python float.
+            - If `new_data` is array-like: returns a NumPy array of the same length.
+            - If `new_data` is a SymPy symbol: returns a SymPy expression.
+
+        Notes
+        -----
+        The posterior predictive density for a single new observation is:
+            p(y_new | y) = c(y_new) * D^{a(y_new)} M_{post}(t) |_{t = -b(y_new)}
+        where `M_{post}` is the posterior MGF, and `c`, `a`, `b` are the likelihood
+        statistics.
+
+        For a symbolic posterior, the computation uses the original scalar symbolic
+        logic; for array `new_data` with `individual=True`, it loops over elements
+        using a scalar helper (`_post_predictive_symbolic_scalar`).
+
+        Examples
+        --------
+        >>> # Numeric predictive density for a single new observation
+        >>> deriv.post_predictive(14, scale=125.76, log=False)
+        0.01234
+
+        >>> # Vectorised predictive masses for multiple y values
+        >>> y_vals = np.arange(0, 51)
+        >>> log_pred = deriv.post_predictive(y_vals, scale=125.76, log=True)
+        >>> pred_masses = np.exp(log_pred)  # array of masses
+
+        >>> # Joint predictive density for two new observations
+        >>> joint_log = deriv.post_predictive([14, 15], scale=125.76, log=True, individual=False)
+
+        >>> # Symbolic predictive mass for a new observation
+        >>> from sympy import Symbol
+        >>> y_sym = Symbol('y', integer=True, positive=True)
+        >>> expr = deriv_sym.post_predictive(y_sym, scale=125.76, log=False)
         """
         # ---- Symbolic new_data (single symbol) ----
         if isinstance(new_data, sp.Symbol):
@@ -760,22 +990,52 @@ class MGFDerivative:
     # ========================================================
     def post_mgf(self, r_val, log=True):
         """
-        Compute the posterior moment-generating function (MGF) at given r.
-        Supports scalar, array‑like, and symbolic `r_val`.
+        Compute the posterior moment‑generating function (MGF) at given r.
+
+        This method respects the **symbol‑numeric principle**: the return type
+        depends only on whether unresolved symbols remain.
+
+        - If `r_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.r`),
+        or if the expression still contains free symbols, a symbolic expression
+        is returned.
+        - If `r_val` is numeric (scalar or array), the MGF is evaluated numerically,
+        supporting vectorisation. The evaluation point is `r` (complete MGF only).
 
         Parameters
         ----------
         r_val : scalar, array-like, or sympy.Symbol
-            Evaluation point(s). If array-like, must be convertible to NumPy array.
+            Evaluation point(s). If array-like, must be convertible to a NumPy array.
+            If a SymPy symbol, the canonical symbol :data:`jumufraktiv.symbols.r`
+            is typically used.
         log : bool, optional
-            If True, return log-MGF; else ordinary MGF.
+            If True, return the log-MGF; otherwise the ordinary MGF.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            If r_val is scalar numeric: returns scalar.
-            If r_val is array-like: returns array.
-            If r_val is symbolic or has free symbols: returns sympy.Expr.
+            - Scalar float for scalar numeric input.
+            - NumPy array for array‑like input.
+            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+
+        Notes
+        -----
+        The posterior MGF is computed as:
+            M_{post}(r) = D^a M(t) / D^a M(t) |_{t = r - b}  /  (t = -b)
+        where `D^a M` is the fractional derivative of the prior MGF.
+
+        Examples
+        --------
+        >>> # Numeric evaluation at a single point
+        >>> deriv.post_mgf(0.2, log=False)
+        1.234567e+00
+
+        >>> # Vectorised evaluation on a grid
+        >>> r_grid = np.linspace(-1.0, 1.0, 100)
+        >>> log_mgf = deriv.post_mgf(r_grid, log=True)  # array of log-MGFs
+
+        >>> # Symbolic evaluation using the canonical symbol
+        >>> from jumufraktiv.symbols import r
+        >>> expr = deriv.post_mgf(r, log=False)  # SymPy expression
         """
         # ---- Symbolic path (if derivative is symbolic) ----
         if self._deriv_is_symbolic:
@@ -907,23 +1167,56 @@ class MGFDerivative:
     # ========================================================
     def post_raw_moment(self, q, numerator_method='auto', log=True):
         """
-        Compute the posterior moment of order q.
+        Compute the posterior raw moment of order q.
+
+        This method respects the **symbol‑numeric principle**: the return type
+        depends only on whether unresolved symbols remain.
+
+        - If `q` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.q`),
+        or if the expression still contains free symbols, a symbolic expression
+        (or list of expressions for array `q`) is returned.
+        - If `q` is numeric (scalar or array), the moment is evaluated numerically,
+        supporting vectorisation.
+
+        For integer orders 1–4, the computation is typically fast; for higher
+        orders, a warning is emitted as the calculation may be slow.
 
         Parameters
         ----------
-        q : scalar or array-like
-            Moment order(s). If array-like, returns array of results.
+        q : scalar, array-like, or sympy.Symbol
+            Moment order(s). If array-like, returns an array of results.
         numerator_method : str, optional
-            Method for derivative computation.
+            Method for derivative computation (passed to `mgfDerivative`).
         log : bool, optional
-            If True, return log of the moments; otherwise ordinary values.
+            If True, return the log‑moment; otherwise the ordinary moment.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            If q is scalar numeric: scalar.
-            If q is array-like: np.ndarray.
-            If q is symbolic and scalar: sympy.Expr.
+            - Scalar float for scalar numeric input.
+            - NumPy array for array‑like input.
+            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+
+        Notes
+        -----
+        The posterior moment is computed as:
+            E[Θ^q | y] = D^{a+q} M(t) / D^a M(t) |_{t=-b}
+        where `D^a M` is the fractional derivative of the prior MGF.
+
+        Examples
+        --------
+        >>> # Numeric moment of order 2
+        >>> deriv.post_raw_moment(2, log=False)
+        0.1234
+
+        >>> # Vectorised moments for multiple orders
+        >>> q_vals = np.array([1, 2, 3, 4])
+        >>> log_moments = deriv.post_raw_moment(q_vals, log=True)
+        >>> print(log_moments)  # array of log moments
+
+        >>> # Symbolic moment using the canonical symbol
+        >>> from jumufraktiv.symbols import q as q_sym
+        >>> expr = deriv.post_raw_moment(q_sym, log=False)  # SymPy expression
         """
         # ---- Determine if q is array-like ----
         if hasattr(q, '__len__') and not isinstance(q, (str, bytes, sp.Basic)):
@@ -1047,28 +1340,57 @@ class MGFDerivative:
     # ======================================================== 
     def post_central_moment(self, order=None, log=True, numerator_method='auto'):
         """
-        Compute central moments of order(s) 1, 2, 3, or 4.
+        Compute central moments of the posterior distribution.
+
+        Supported orders are 1 (mean), 2 (variance), 3 (skewness-related), and
+        4 (kurtosis-related). The method respects the **symbol‑numeric principle**:
+        if the raw moments are symbolic, the central moment will be a SymPy
+        expression; otherwise it is numeric.
 
         Parameters
         ----------
         order : int or list of ints, optional
-            Central moment order(s). If None (default), computes all four (1,2,3,4).
-            If an integer, returns a single result.
+            Central moment order(s). If `None` (default), computes all four
+            moments (1, 2, 3, 4). If an integer, returns a single result.
+            If a list, returns a dictionary mapping each order to its result.
         log : bool, optional
-            If True, return (log_abs, sign) for each central moment.
+            If True, return `(log_abs, sign)` for each central moment, where
+            `log_abs` is `log(|central moment|)` and `sign` is ±1.
             If False, return the ordinary central moment (float or sympy.Expr).
         numerator_method : str, optional
             Method for computing the numerator derivative in raw moments.
-            Passed to post_raw_moment.
+            Passed to `post_raw_moment`.
 
         Returns
         -------
-        If order is an integer:
-            - If log=True: (log_abs, sign) where log_abs is float or sympy.Expr,
-            sign is int or sympy.Expr.
-            - If log=False: float or sympy.Expr (ordinary central moment).
-        If order is None or a list:
-            - A dictionary {order: result} where each result is as above.
+        If `order` is an integer:
+            - If `log=True`: a tuple `(log_abs, sign)`.
+            - If `log=False`: a float or `sympy.Expr`.
+        If `order` is `None` or a list:
+            - A dictionary `{order: result}` where each result is as above.
+
+        Notes
+        -----
+        The central moment of order `k` is computed using the binomial expansion:
+            μ_k = Σ_{j=0}^k C(k, j) * μ'_j * (-μ_1)^{k-j}
+        where `μ'_j` are the raw moments. This method currently only supports
+        orders 1, 2, 3, and 4.
+
+        Examples
+        --------
+        >>> # Single central moment (variance)
+        >>> log_abs, sign = deriv.post_central_moment(order=2, log=True)
+        >>> print(f"log variance = {log_abs}, sign = {sign}")
+
+        >>> # All four central moments (ordinary scale)
+        >>> moments = deriv.post_central_moment(log=False)
+        >>> print(moments[1])  # mean
+        >>> print(moments[2])  # variance
+
+        >>> # Symbolic central moment
+        >>> from sympy import Symbol
+        >>> # (assuming deriv_sym is a symbolic derivative object)
+        >>> expr = deriv_sym.post_central_moment(order=2, log=False)  # SymPy expression
         """
         # Determine which orders to compute
         if order is None:
@@ -1162,23 +1484,61 @@ class MGFDerivative:
         """
         Compute quantiles (inverse CDF) for given probabilities.
 
+        This method numerically inverts the posterior CDF `F(u) = p` using
+        vectorised root‑finding. It supports both scalar and array inputs for `p`,
+        and automatically finds a valid bracketing interval if not supplied.
+
         Parameters
         ----------
         p : float or array-like
-            Probabilities (must be in (0, 1)).
+            Probabilities (must be strictly between 0 and 1). If array‑like,
+            returns quantiles of the same shape.
         root_method : str, optional
-            Root-finding method. See solve_root() for options.
+            Root‑finding method passed to `solve_root`. Options include:
+            - `"auto"` (default): tries JAX methods first, then NumPy fallbacks.
+            - `"bisectioned-newton-np"`, `"newton-np"`, `"bisection-np"` (NumPy).
+            - `"bisectioned-newton-jax"`, `"newton-jax"`, `"bisection-jax"` (JAX).
+            See `jumufraktiv.root_finding.solve_root` for full list.
         lower, upper : array-like, optional
-            Search interval bounds. If None, automatically expanded.
+            Search interval bounds. If not provided, an automatic expansion
+            from `1e-6` to `1e6` is performed until `CDF(lower) < p < CDF(upper)`.
         x0 : array-like, optional
-            Initial guess for Newton methods. If None, uses midpoint.
-        maxiter, tol, rel_tol : passed to solve_root.
-        **kwargs : additional arguments for solve_root.
+            Initial guess for Newton‑based methods. If `None`, uses the midpoint
+            of the bracket.
+        maxiter : int, optional
+            Maximum number of root‑finding iterations.
+        tol : float, optional
+            Absolute tolerance for `|CDF(x) - p|`.
+        rel_tol : float, optional
+            Relative tolerance for change in `x` (Newton methods only).
+        **kwargs : additional keyword arguments passed to `solve_root`.
 
         Returns
         -------
         scalar or np.ndarray
-            Quantiles matching the shape of p.
+            Quantiles such that `CDF(quantile) = p`. The shape matches `p`.
+
+        Notes
+        -----
+        - This method is purely numeric and does not support symbolic evaluation.
+        - The CDF and density functions are called on arrays, so the computation
+        is fully vectorised over the elements of `p`.
+        - If the automatic bracket expansion fails, you can provide explicit
+        `lower` and `upper` bounds to improve robustness.
+
+        Examples
+        --------
+        >>> # 95% quantile (single value)
+        >>> q = deriv.post_quantile(0.95)
+        >>> print(f"95% quantile = {q:.4f}")
+
+        >>> # Multiple quantiles at once
+        >>> p_vals = np.array([0.025, 0.5, 0.975])
+        >>> quantiles = deriv.post_quantile(p_vals)
+        >>> print(quantiles)  # array of three quantiles
+
+        >>> # Using a specific root method and providing a bracket
+        >>> q = deriv.post_quantile(0.5, root_method='bisection-np', lower=0.0, upper=1.0)
         """
 
         p_arr = np.asarray(p)
@@ -1245,20 +1605,47 @@ class MGFDerivative:
         """
         Generate posterior samples using inverse transform sampling.
 
+        This method draws samples from the posterior distribution by applying
+        the inverse CDF (`post_quantile`) to uniform random numbers. It is
+        fully vectorised and can generate large samples efficiently.
+
         Parameters
         ----------
         n : int, optional
-            Number of samples to generate. Ignored if u is provided.
+            Number of samples to generate. Ignored if `u` is provided.
         u : array-like, optional
-            Uniform random numbers in (0,1). If provided, n is ignored.
+            Uniform random numbers in (0, 1). If provided, `n` is ignored.
+            These are used as the probabilities for `post_quantile`.
         root_method : str, optional
-            Passed to post_quantile.
-        **kwargs : additional arguments passed to post_quantile (e.g., maxiter, tol).
+            Root‑finding method passed to `post_quantile`. See
+            `post_quantile` and `solve_root` for options.
+        **kwargs : additional keyword arguments passed to `post_quantile`
+            (e.g., `maxiter`, `tol`, `lower`, `upper`).
 
         Returns
         -------
         np.ndarray
-            Samples from the posterior distribution.
+            Samples from the posterior distribution. The shape is `(n,)` if
+            `n` is provided, or the shape of `u` if `u` is provided.
+
+        Notes
+        -----
+        The method uses the inverse transform:
+            X = F^{-1}(U), where U ~ Uniform(0, 1).
+        This is exact up to the numerical accuracy of the quantile computation.
+
+        Examples
+        --------
+        >>> # Generate 1000 posterior samples
+        >>> samples = deriv.post_sample(n=1000)
+
+        >>> # Use custom uniform variates for reproducibility
+        >>> rng = np.random.default_rng(42)
+        >>> u = rng.random(500)
+        >>> samples = deriv.post_sample(u=u)
+
+        >>> # Control the root‑finding method and tolerance
+        >>> samples = deriv.post_sample(n=100, root_method='bisection-np', tol=1e-10)
         """
         if u is None:
             if n is None:
@@ -1282,22 +1669,52 @@ class MGFDerivative:
         **kwargs
     ) -> tuple | np.ndarray:
         """
-        Compute central credible intervals (equal-tailed) for the posterior.
+        Compute central (equal-tailed) credible intervals for the posterior.
+
+        For a given credible level `α`, the interval is defined as:
+            [F^{-1}( (1-α)/2 ),  F^{-1}( (1+α)/2 ) ]
+        where `F` is the posterior CDF. This gives the central interval that
+        contains the middle `α` fraction of the posterior mass.
 
         Parameters
         ----------
         level : float or array-like, optional (default 0.95)
-            Credible level(s). Must be in (0, 1).
+            Credible level(s). Must be in (0, 1). If array‑like, returns
+            intervals for each level.
         root_method : str, optional
-            Root-finding method passed to post_quantile.
-        **kwargs : additional arguments passed to post_quantile (e.g., maxiter, tol).
+            Root‑finding method passed to `post_quantile`. See `post_quantile`
+            and `solve_root` for options.
+        **kwargs : additional keyword arguments passed to `post_quantile`
+            (e.g., `maxiter`, `tol`, `lower`, `upper`).
 
         Returns
         -------
-        If level is scalar:
-            (lower, upper) where lower and upper are floats.
-        If level is array-like:
-            np.ndarray of shape (len(level), 2) where each row is [lower, upper].
+        If `level` is scalar:
+            tuple (lower, upper) where both are Python floats.
+        If `level` is array‑like:
+            np.ndarray of shape `(len(level), 2)` where each row is `[lower, upper]`.
+
+        Notes
+        -----
+        - The method is fully vectorised: quantiles for all levels are computed
+        in a single call to `post_quantile`.
+        - The intervals are "equal-tailed", meaning the same probability mass
+        is left in each tail.
+
+        Examples
+        --------
+        >>> # 95% credible interval (single)
+        >>> lower, upper = deriv.post_interval(level=0.95)
+        >>> print(f"95% CI: [{lower:.4f}, {upper:.4f}]")
+
+        >>> # Multiple intervals at once
+        >>> levels = np.array([0.68, 0.95, 0.99])
+        >>> intervals = deriv.post_interval(level=levels)
+        >>> for level, (l, u) in zip(levels, intervals):
+        ...     print(f"{level*100:.0f}% CI: [{l:.4f}, {u:.4f}]")
+
+        >>> # Using a specific root method
+        >>> lower, upper = deriv.post_interval(level=0.9, root_method='bisection-np')
         """
         levels = np.asarray(level)
         scalar_input = levels.ndim == 0
@@ -1330,8 +1747,40 @@ class MGFDerivative:
     # ========================================================
     def to_prior_object(self):
         """
-        Convert current posterior into a mitMGFprior object.
-        Tries to construct a symbolic prior first if possible.
+        Convert the current posterior distribution into a prior object.
+
+        This method constructs a :class:`mitMGFprior` object that can be used
+        as a prior in a subsequent sequential update. It first attempts to create
+        a **symbolic** prior by extracting the symbolic MGF and PDF from the
+        current posterior (via `post_mgf` and `post_density`). The posterior MGF
+        is expressed in terms of the canonical variable `r` and then substituted
+        with `t` to become a prior MGF. The posterior PDF is expressed in terms
+        of the canonical `theta`.
+
+        If symbolic construction fails (e.g., the posterior is numeric or the
+        symbolic expression cannot be formed), it falls back to a **numeric**
+        backend prior that wraps the numeric `post_mgf` and `post_density` methods.
+
+        Returns
+        -------
+        mitMGFprior
+            A prior object representing the posterior distribution. The prior's MGF
+            and PDF are derived from the current posterior.
+
+        Notes
+        -----
+        - This method uses the canonical symbols `r`, `t`, and `theta` from
+        `jumufraktiv.symbols` for symbolic manipulation.
+        - The symbolic route requires that the posterior derivative is symbolic
+        (`self._deriv_is_symbolic is True`).
+        - The numeric fallback works for any posterior, but the resulting prior
+        cannot be used in symbolic computations.
+
+        Examples
+        --------
+        >>> # Convert a numeric posterior to a prior for sequential updating
+        >>> post_prior = deriv.to_prior_object()
+        >>> new_deriv = post_prior.update(new_data, likelihood='poisson')
         """
 
         if self._deriv_is_symbolic:
@@ -1372,8 +1821,58 @@ class MGFDerivative:
 
     def update(self, new_data, **kwargs):
         """
-        Sequential update returns a new MGFDerivative,
-        using posterior mitMGFprior as prior.
+        Perform a sequential Bayesian update.
+
+        This method treats the current posterior as the prior for a new dataset
+        and returns a new :class:`MGFDerivative` object for the updated posterior.
+        It uses `to_prior_object` to create a prior from the current posterior,
+        then constructs a new derivative object with the new data.
+
+        Parameters
+        ----------
+        new_data : array‑like
+            New observations to condition on. Must be compatible with the likelihood's
+            `ready_func` or `bereit_func`.
+        **kwargs : additional keyword arguments
+            - method : str, optional
+                Derivative backend for the new object. Defaults to the current method.
+                If 'symbolic' is chosen but the current posterior is numeric,
+                an error is raised.
+            - likelihood : str, optional
+                Likelihood name. Defaults to the current likelihood.
+            - simplify : bool, optional
+                Whether to simplify symbolic expressions. Defaults to current setting.
+            - log : bool, optional
+                Whether to store the normalising constant in log‑scale.
+                Defaults to current setting.
+            - Other arguments are passed to the new `MGFDerivative` constructor.
+
+        Returns
+        -------
+        MGFDerivative
+            A new derivative object representing the posterior after conditioning
+            on `new_data`.
+
+        Raises
+        ------
+        ValueError
+            If `method='symbolic'` is requested but the current posterior is
+            numeric (i.e., `self._is_symbolic is False`). This is because the
+            posterior prior would be numeric and cannot be used symbolically.
+
+        Notes
+        -----
+        - This method is the primary way to perform sequential Bayesian updating.
+        - The new object's `log` parameter can differ from the current one,
+        allowing you to switch between log‑scale and ordinary‑scale storage
+        at each update.
+
+        Examples
+        --------
+        >>> # Sequential update: add two new observations
+        >>> deriv2 = deriv.update(new_data=[5, 7], likelihood='poisson', scale=1.0)
+        >>> # Check the updated evidence
+        >>> log_ev, sign = deriv2.evidence()
         """
         # Extract known arguments
         method = kwargs.pop("method", self.method)
