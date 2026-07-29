@@ -3,15 +3,14 @@
 <html lang="en" data-content_root="./">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>API Reference &#8212; jumufraktiv 0.0.1 documentation</title>
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
-    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
-    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
-    <script src="_static/documentation_options.js?v=d45e8c67"></script>
-    <script src="_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <title>API Reference &#8212; jumufraktiv 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=61cd365c" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=12dfc556" />
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="prev" title="Welcome to jumufraktiv’s documentation!" href="index.html" />
@@ -37,6 +36,1348 @@
 <p>This section contains the complete API documentation for <code class="docutils literal notranslate"><span class="pre">jumufraktiv</span></code>.</p>
 <section id="main-classes">
 <h2>Main Classes<a class="headerlink" href="#main-classes" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">jumufraktiv.</span></span><span class="sig-name descname"><span class="pre">MGFDerivative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">likelihood</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'poisson'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simplify</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Posterior distribution derived via MGF marginalisation.</p>
+<p>This class encapsulates a posterior distribution obtained from a prior
+(a <cite>mitMGFprior</cite> object) and a likelihood from the MGF‑marginalisable
+family. It computes the posterior normalising constant (evidence) and
+provides methods for density, CDF, quantiles, moments, and predictive
+inference.</p>
+<p>The core computation is based on fractional derivatives of the prior
+moment‑generating function (MGF), evaluated at the posterior location
+<cite>t = -b</cite>. The class stores either a symbolic expression or a numeric
+value for the normalising constant, depending on the chosen backend.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.a">
+<span class="sig-name descname"><span class="pre">a</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.a" title="Link to this definition">¶</a></dt>
+<dd><p>Combined sufficient statistic for the derivative order.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.b">
+<span class="sig-name descname"><span class="pre">b</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.b" title="Link to this definition">¶</a></dt>
+<dd><p>Combined sufficient statistic for the evaluation point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.log_c">
+<span class="sig-name descname"><span class="pre">log_c</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.log_c" title="Link to this definition">¶</a></dt>
+<dd><p>Log‑normalising constant from the likelihood.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.log">
+<span class="sig-name descname"><span class="pre">log</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.log" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the normalising constant is stored in log‑scale.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.prior">
+<span class="sig-name descname"><span class="pre">prior</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.prior" title="Link to this definition">¶</a></dt>
+<dd><p>The prior object used.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#jumufraktiv.mitMGFprior" title="jumufraktiv.mitMGFprior">mitMGFprior</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.method">
+<span class="sig-name descname"><span class="pre">method</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.method" title="Link to this definition">¶</a></dt>
+<dd><p>Derivative backend method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.simplify">
+<span class="sig-name descname"><span class="pre">simplify</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.simplify" title="Link to this definition">¶</a></dt>
+<dd><p>Whether to simplify symbolic expressions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.Properties">
+<span class="sig-name descname"><span class="pre">Properties</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.Properties" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">----------</span></span></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.is_symbolic">
+<span class="sig-name descname"><span class="pre">is_symbolic</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.is_symbolic" title="Link to this definition">¶</a></dt>
+<dd><p>True if the normalising constant is a symbolic expression.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.value_numeric">
+<span class="sig-name descname"><span class="pre">value_numeric</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.value_numeric" title="Link to this definition">¶</a></dt>
+<dd><p>Numeric value of the normalising constant (if numeric).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.prior_has_iMGF">
+<span class="sig-name descname"><span class="pre">prior_has_iMGF</span></span><a class="headerlink" href="#jumufraktiv.MGFDerivative.prior_has_iMGF" title="Link to this definition">¶</a></dt>
+<dd><p>True if the prior supports the incomplete MGF (iMGF).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.evidence">
+<span class="sig-name descname"><span class="pre">evidence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.evidence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.evidence" title="Link to this definition">¶</a></dt>
+<dd><p>Return the marginal likelihood (evidence).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_density">
+<span class="sig-name descname"><span class="pre">post_density</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta_val</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_density"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_density" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate the posterior density.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_cdf">
+<span class="sig-name descname"><span class="pre">post_cdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u_val</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_cdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_cdf" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate the posterior CDF.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_quantile">
+<span class="sig-name descname"><span class="pre">post_quantile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_quantile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_quantile" title="Link to this definition">¶</a></dt>
+<dd><p>Compute quantiles (inverse CDF).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_mgf">
+<span class="sig-name descname"><span class="pre">post_mgf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">r_val</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_mgf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_mgf" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate the posterior MGF.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_raw_moment">
+<span class="sig-name descname"><span class="pre">post_raw_moment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">q</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">numerator_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_raw_moment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_raw_moment" title="Link to this definition">¶</a></dt>
+<dd><p>Compute raw moments.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_central_moment">
+<span class="sig-name descname"><span class="pre">post_central_moment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">numerator_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_central_moment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_central_moment" title="Link to this definition">¶</a></dt>
+<dd><p>Compute central moments (1,2,3,4).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_interval">
+<span class="sig-name descname"><span class="pre">post_interval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.95</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_interval"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_interval" title="Link to this definition">¶</a></dt>
+<dd><p>Compute credible intervals.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_sample">
+<span class="sig-name descname"><span class="pre">post_sample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_sample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_sample" title="Link to this definition">¶</a></dt>
+<dd><p>Generate posterior samples.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.post_predictive">
+<span class="sig-name descname"><span class="pre">post_predictive</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">individual</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_predictive"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.post_predictive" title="Link to this definition">¶</a></dt>
+<dd><p>Compute posterior predictive density.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.to_prior_object">
+<span class="sig-name descname"><span class="pre">to_prior_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.to_prior_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.to_prior_object" title="Link to this definition">¶</a></dt>
+<dd><p>Convert the posterior to a prior object for sequential updating.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.MGFDerivative.update">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">\*\*kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.MGFDerivative.update" title="Link to this definition">¶</a></dt>
+<dd><p>Perform a sequential Bayesian update.</p>
+</dd></dl>
+
+<p class="rubric">Notes</p>
+<p>The class supports both symbolic and numeric evaluation, following the
+<strong>symbol‑numeric principle</strong>: the return type of methods depends on
+whether free symbols remain. Numeric methods are vectorised for array
+inputs (tuple‑vectorisation for <cite>(t, u)</cite> pairs).</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.mitMGFprior_class</span> <span class="kn">import</span> <span class="n">mitMGFprior</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.MGFDerivative_class</span> <span class="kn">import</span> <span class="n">MGFDerivative</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gamma_prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="o">.</span><span class="n">from_registry</span><span class="p">(</span><span class="s1">&#39;gamma&#39;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;alpha&#39;</span><span class="p">:</span><span class="mf">2.0</span><span class="p">,</span> <span class="s1">&#39;beta&#39;</span><span class="p">:</span><span class="mf">3.0</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span> <span class="o">=</span> <span class="n">MGFDerivative</span><span class="p">(</span><span class="n">gamma_prior</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="n">likelihood</span><span class="o">=</span><span class="s1">&#39;poisson&#39;</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_ev</span><span class="p">,</span> <span class="n">sign</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">evidence</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">log_ev</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-name descname"><span class="pre">evidence</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.evidence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id0" title="Link to this definition">¶</a></dt>
+<dd><p>Return the marginal likelihood (evidence) of the model.</p>
+<p>The marginal likelihood is the normalising constant of the posterior
+distribution, i.e., p(y) = ∫ p(y|θ) p(θ) dθ.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><ul>
+<li><dl class="simple">
+<dt>If the posterior is symbolic (<cite>self._is_symbolic is True</cite>):</dt><dd><p>Returns a SymPy expression for the evidence.</p>
+</dd>
+</dl>
+</li>
+<li><dl>
+<dt>If the posterior is numeric:</dt><dd><ul class="simple">
+<li><p>If <cite>self.log is True</cite>: returns a tuple <cite>(log_abs, sign)</cite> where</p></li>
+</ul>
+<p><cite>log_abs</cite> is the natural logarithm of the absolute evidence,
+and <cite>sign</cite> is the sign (±1) of the evidence.
+- If <cite>self.log is False</cite>: returns the ordinary float value of the
+evidence.</p>
+</dd>
+</dl>
+</li>
+</ul>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>sympy.Expr or tuple or float</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The evidence is computed as:</dt><dd><p>evidence = c_func() * D^a M(t) <a href="#id1"><span class="problematic" id="id2">|</span></a>_{t=-b}</p>
+</dd>
+</dl>
+<p>where <cite>c_func</cite> is the likelihood’s normalising constant and the
+derivative is evaluated at the posterior mode location <cite>t = -b</cite>.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">evidence_log</span><span class="p">,</span> <span class="n">sign</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">evidence</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log evidence = </span><span class="si">{</span><span class="n">evidence_log</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, sign = </span><span class="si">{</span><span class="n">sign</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="id3">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_symbolic</span></span><a class="headerlink" href="#id3" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id4">
+<span class="sig-name descname"><span class="pre">post_cdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">u_val</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_cdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id4" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold(s) u.</p>
+<p>This method respects the <strong>symbol‑numeric principle</strong>: the return type
+depends only on whether unresolved symbols remain.</p>
+<ul class="simple">
+<li><p>If <cite>u_val</cite> is a SymPy symbol (canonically <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.u</span></code>),</p></li>
+</ul>
+<p>or if the expression still contains free symbols, a symbolic expression
+is returned.
+- If <cite>u_val</cite> is numeric (scalar or array), the CDF is evaluated numerically,
+supporting tuple‑vectorisation: the evaluation point is the pair <cite>(t, u)</cite>,
+where <cite>t = -self.b</cite> is fixed and <cite>u</cite> is broadcast to match the input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u_val</strong> (<em>scalar</em><em>, </em><em>array-like</em><em>, or </em><em>sympy Symbol</em><em>, </em><em>optional</em>) – Upper limit(s) for the CDF. If array-like, returns an array of CDFs.
+If a SymPy symbol, the canonical symbol <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.u</span></code>
+is typically used.</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return the log-CDF; otherwise the ordinary CDF.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>Scalar float for scalar numeric input.</p></li>
+<li><p>NumPy array for array‑like input.</p></li>
+<li><p>SymPy expression if symbolic evaluation is requested or free symbols remain.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar, np.ndarray, or sympy.Expr</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – If the prior does not support the incomplete MGF (iMGF) or if the
+    CDF becomes negative (indicating a numerical issue).</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The posterior CDF is computed as:</dt><dd><p>F(u | y) = D^a M_inc(t; u) / D^a M(t) <a href="#id5"><span class="problematic" id="id6">|</span></a>_{t=-b}</p>
+</dd>
+</dl>
+<p>where <cite>M_inc</cite> is the incomplete MGF of the prior.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Numeric evaluation at a single point</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span><span class="o">.</span><span class="n">post_cdf</span><span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">0.8574</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Vectorised evaluation on a grid</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">u_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_cdf</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_cdf</span><span class="p">(</span><span class="n">u_grid</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># array of log-CDFs</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic evaluation using the canonical symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">u</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_cdf</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># SymPy expression</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id7">
+<span class="sig-name descname"><span class="pre">post_central_moment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">numerator_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_central_moment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id7" title="Link to this definition">¶</a></dt>
+<dd><p>Compute central moments of the posterior distribution.</p>
+<p>Supported orders are 1 (mean), 2 (variance), 3 (skewness-related), and
+4 (kurtosis-related). The method respects the <strong>symbol‑numeric principle</strong>:
+if the raw moments are symbolic, the central moment will be a SymPy
+expression; otherwise it is numeric.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>order</strong> (<em>int</em><em> or </em><em>list</em><em> of </em><em>ints</em><em>, </em><em>optional</em>) – Central moment order(s). If <cite>None</cite> (default), computes all four
+moments (1, 2, 3, 4). If an integer, returns a single result.
+If a list, returns a dictionary mapping each order to its result.</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return <cite>(log_abs, sign)</cite> for each central moment, where
+<cite>log_abs</cite> is <cite>log(|central moment|)</cite> and <cite>sign</cite> is ±1.
+If False, return the ordinary central moment (float or sympy.Expr).</p></li>
+<li><p><strong>numerator_method</strong> (<em>str</em><em>, </em><em>optional</em>) – Method for computing the numerator derivative in raw moments.
+Passed to <cite>post_raw_moment</cite>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>If <cite>order</cite> is an integer –</p>
+<ul>
+<li><p>If <cite>log=True</cite>: a tuple <cite>(log_abs, sign)</cite>.</p></li>
+<li><p>If <cite>log=False</cite>: a float or <cite>sympy.Expr</cite>.</p></li>
+</ul>
+</li>
+<li><p>If <cite>order</cite> is <cite>None</cite> or a list –</p>
+<ul>
+<li><p>A dictionary <cite>{order: result}</cite> where each result is as above.</p></li>
+</ul>
+</li>
+</ul>
+</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The central moment of order <cite>k</cite> is computed using the binomial expansion:</dt><dd><p>μ_k = Σ_{j=0}^k C(k, j) * μ’_j * (-μ_1)^{k-j}</p>
+</dd>
+</dl>
+<p>where <cite>μ’_j</cite> are the raw moments. This method currently only supports
+orders 1, 2, 3, and 4.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Single central moment (variance)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_abs</span><span class="p">,</span> <span class="n">sign</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_central_moment</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log variance = </span><span class="si">{</span><span class="n">log_abs</span><span class="si">}</span><span class="s2">, sign = </span><span class="si">{</span><span class="n">sign</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># All four central moments (ordinary scale)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">moments</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_central_moment</span><span class="p">(</span><span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">moments</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>  <span class="c1"># mean</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">moments</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>  <span class="c1"># variance</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic central moment</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">sympy</span> <span class="kn">import</span> <span class="n">Symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># (assuming deriv_sym is a symbolic derivative object)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv_sym</span><span class="o">.</span><span class="n">post_central_moment</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># SymPy expression</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id8">
+<span class="sig-name descname"><span class="pre">post_density</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta_val</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_density"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id8" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the posterior density (or log-density) at given θ.</p>
+<p>This method respects the <strong>symbol‑numeric principle</strong>: the return type
+depends only on whether unresolved symbols remain, not on the path taken.</p>
+<ul class="simple">
+<li><p>If <cite>theta_val</cite> is a SymPy symbol (canonically <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.theta</span></code>),</p></li>
+</ul>
+<p>or if the derivative expression still contains free symbols, a symbolic
+expression is returned.
+- If <cite>theta_val</cite> is numeric (scalar or array), the expression is evaluated
+numerically, respecting vectorisation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta_val</strong> (<em>scalar</em><em>, </em><em>array-like</em><em>, or </em><em>sympy Symbol</em><em>, </em><em>optional</em>) – Evaluation point(s). If array-like, must be convertible to a NumPy array.
+If a SymPy Symbol, the canonical symbol <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.theta</span></code>
+is typically used.</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return the log-density; otherwise the ordinary density.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>Scalar float for scalar numeric input.</p></li>
+<li><p>NumPy array for array‑like input.</p></li>
+<li><p>SymPy expression if symbolic evaluation is requested or free symbols remain.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar, np.ndarray, or sympy.Expr</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The posterior density is computed as:</dt><dd><p>p(θ | y) = p(θ) * θ^a * exp(-b θ) / D^a M(t) <a href="#id9"><span class="problematic" id="id10">|</span></a>_{t=-b}</p>
+</dd>
+</dl>
+<p>where <cite>D^a M</cite> is the fractional derivative of the prior MGF.</p>
+<p>For vectorised symbolic input, all elements must evaluate to a pure numeric
+result; if any free symbols remain, a <cite>ValueError</cite> is raised. For scalar
+symbolic input, the expression is returned directly.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Numeric evaluation at a single point</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span><span class="o">.</span><span class="n">post_density</span><span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">1.234567e+00</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Vectorised evaluation on a grid</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">theta_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_dens</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_density</span><span class="p">(</span><span class="n">theta_grid</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic evaluation using the canonical symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">theta</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_density</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># SymPy expression</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id11">
+<span class="sig-name descname"><span class="pre">post_interval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">ndarray</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.95</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_interval"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id11" title="Link to this definition">¶</a></dt>
+<dd><p>Compute central (equal-tailed) credible intervals for the posterior.</p>
+<dl class="simple">
+<dt>For a given credible level <cite>α</cite>, the interval is defined as:</dt><dd><p>[F^{-1}( (1-α)/2 ),  F^{-1}( (1+α)/2 ) ]</p>
+</dd>
+</dl>
+<p>where <cite>F</cite> is the posterior CDF. This gives the central interval that
+contains the middle <cite>α</cite> fraction of the posterior mass.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>level</strong> (<em>float</em><em> or </em><em>array-like</em><em>, </em><em>optional</em><em> (</em><em>default 0.95</em><em>)</em>) – Credible level(s). Must be in (0, 1). If array‑like, returns
+intervals for each level.</p></li>
+<li><p><strong>root_method</strong> (<em>str</em><em>, </em><em>optional</em>) – Root‑finding method passed to <cite>post_quantile</cite>. See <cite>post_quantile</cite>
+and <cite>solve_root</cite> for options.</p></li>
+<li><p><strong>**kwargs</strong> (additional keyword arguments passed to <cite>post_quantile</cite>) – (e.g., <cite>maxiter</cite>, <cite>tol</cite>, <cite>lower</cite>, <cite>upper</cite>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>If <cite>level</cite> is scalar – tuple (lower, upper) where both are Python floats.</p></li>
+<li><p>If <cite>level</cite> is array‑like – np.ndarray of shape <cite>(len(level), 2)</cite> where each row is <cite>[lower, upper]</cite>.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The method is fully vectorised: quantiles for all levels are computed</p></li>
+</ul>
+<p>in a single call to <cite>post_quantile</cite>.
+- The intervals are “equal-tailed”, meaning the same probability mass
+is left in each tail.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># 95% credible interval (single)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_interval</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;95% CI: [</span><span class="si">{</span><span class="n">lower</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">upper</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Multiple intervals at once</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">levels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.68</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">intervals</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_interval</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">levels</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">level</span><span class="p">,</span> <span class="p">(</span><span class="n">l</span><span class="p">,</span> <span class="n">u</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">levels</span><span class="p">,</span> <span class="n">intervals</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">level</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">% CI: [</span><span class="si">{</span><span class="n">l</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">u</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Using a specific root method</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">lower</span><span class="p">,</span> <span class="n">upper</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_interval</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">root_method</span><span class="o">=</span><span class="s1">&#39;bisection-np&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id12">
+<span class="sig-name descname"><span class="pre">post_mgf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">r_val</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_mgf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id12" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the posterior moment‑generating function (MGF) at given r.</p>
+<p>This method respects the <strong>symbol‑numeric principle</strong>: the return type
+depends only on whether unresolved symbols remain.</p>
+<ul class="simple">
+<li><p>If <cite>r_val</cite> is a SymPy symbol (canonically <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.r</span></code>),</p></li>
+</ul>
+<p>or if the expression still contains free symbols, a symbolic expression
+is returned.
+- If <cite>r_val</cite> is numeric (scalar or array), the MGF is evaluated numerically,
+supporting vectorisation. The evaluation point is <cite>r</cite> (complete MGF only).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>r_val</strong> (<em>scalar</em><em>, </em><em>array-like</em><em>, or </em><em>sympy.Symbol</em>) – Evaluation point(s). If array-like, must be convertible to a NumPy array.
+If a SymPy symbol, the canonical symbol <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.r</span></code>
+is typically used.</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return the log-MGF; otherwise the ordinary MGF.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>Scalar float for scalar numeric input.</p></li>
+<li><p>NumPy array for array‑like input.</p></li>
+<li><p>SymPy expression if symbolic evaluation is requested or free symbols remain.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar, np.ndarray, or sympy.Expr</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The posterior MGF is computed as:</dt><dd><p>M_{post}(r) = D^a M(t) / D^a M(t) <a href="#id13"><span class="problematic" id="id14">|</span></a>_{t = r - b}  /  (t = -b)</p>
+</dd>
+</dl>
+<p>where <cite>D^a M</cite> is the fractional derivative of the prior MGF.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Numeric evaluation at a single point</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span><span class="o">.</span><span class="n">post_mgf</span><span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">1.234567e+00</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Vectorised evaluation on a grid</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">r_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_mgf</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_mgf</span><span class="p">(</span><span class="n">r_grid</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># array of log-MGFs</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic evaluation using the canonical symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">r</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_mgf</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># SymPy expression</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id15">
+<span class="sig-name descname"><span class="pre">post_predictive</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">individual</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_predictive"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id15" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the posterior predictive density (or log-density) for new data.</p>
+<p>This method respects the <strong>symbol‑numeric principle</strong>: the return type
+depends only on whether unresolved symbols remain.</p>
+<ul class="simple">
+<li><p>If <cite>new_data</cite> is a SymPy symbol, the posterior is symbolic, and a</p></li>
+</ul>
+<p>symbolic expression for the predictive density is returned.
+- If <cite>new_data</cite> is numeric (scalar or array), the predictive density
+is evaluated numerically, supporting vectorisation.</p>
+<p>The <cite>individual</cite> flag controls the aggregation:
+- <cite>individual=True</cite> (default): returns a density for each element of <cite>new_data</cite>
+(array or scalar).
+- <cite>individual=False</cite>: returns the joint density (product of individual
+densities) as a scalar.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_data</strong> (<em>scalar</em><em>, </em><em>array-like</em><em>, or </em><em>sympy.Symbol</em>) – New observation(s). If array-like, each element is treated separately.
+If a SymPy symbol, the posterior must be symbolic (<cite>self._is_symbolic</cite> is True).</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return log-density; otherwise ordinary density.</p></li>
+<li><p><strong>individual</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True (default), return an array of densities for each new data point.
+If False, return the joint density (product of individual densities).</p></li>
+<li><p><strong>**kwargs</strong> (additional arguments passed to the likelihood’s <cite>ready_func</cite> or <cite>bereit_func</cite>.) – For example, <cite>scale</cite> for Poisson or <cite>shape</cite> for Gamma.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>If <cite>new_data</cite> is a scalar and numeric: returns a Python float.</p></li>
+<li><p>If <cite>new_data</cite> is array-like: returns a NumPy array of the same length.</p></li>
+<li><p>If <cite>new_data</cite> is a SymPy symbol: returns a SymPy expression.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar, np.ndarray, or sympy.Expr</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The posterior predictive density for a single new observation is:</dt><dd><p>p(y_new | y) = c(y_new) * D^{a(y_new)} M_{post}(t) <a href="#id16"><span class="problematic" id="id17">|</span></a>_{t = -b(y_new)}</p>
+</dd>
+</dl>
+<p>where <cite>M_{post}</cite> is the posterior MGF, and <cite>c</cite>, <cite>a</cite>, <cite>b</cite> are the likelihood
+statistics.</p>
+<p>For a symbolic posterior, the computation uses the original scalar symbolic
+logic; for array <cite>new_data</cite> with <cite>individual=True</cite>, it loops over elements
+using a scalar helper (<cite>_post_predictive_symbolic_scalar</cite>).</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Numeric predictive density for a single new observation</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span><span class="o">.</span><span class="n">post_predictive</span><span class="p">(</span><span class="mi">14</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">125.76</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">0.01234</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Vectorised predictive masses for multiple y values</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">y_vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">51</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_pred</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_predictive</span><span class="p">(</span><span class="n">y_vals</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">125.76</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pred_masses</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_pred</span><span class="p">)</span>  <span class="c1"># array of masses</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Joint predictive density for two new observations</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">joint_log</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_predictive</span><span class="p">([</span><span class="mi">14</span><span class="p">,</span> <span class="mi">15</span><span class="p">],</span> <span class="n">scale</span><span class="o">=</span><span class="mf">125.76</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">individual</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic predictive mass for a new observation</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">sympy</span> <span class="kn">import</span> <span class="n">Symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">y_sym</span> <span class="o">=</span> <span class="n">Symbol</span><span class="p">(</span><span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="n">integer</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">positive</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv_sym</span><span class="o">.</span><span class="n">post_predictive</span><span class="p">(</span><span class="n">y_sym</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">125.76</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id18">
+<span class="sig-name descname"><span class="pre">post_quantile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lower</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upper</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rel_tol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">float</span></span></span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_quantile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id18" title="Link to this definition">¶</a></dt>
+<dd><p>Compute quantiles (inverse CDF) for given probabilities.</p>
+<p>This method numerically inverts the posterior CDF <cite>F(u) = p</cite> using
+vectorised root‑finding. It supports both scalar and array inputs for <cite>p</cite>,
+and automatically finds a valid bracketing interval if not supplied.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>p</strong> (<em>float</em><em> or </em><em>array-like</em>) – Probabilities (must be strictly between 0 and 1). If array‑like,
+returns quantiles of the same shape.</p></li>
+<li><p><strong>root_method</strong> (<em>str</em><em>, </em><em>optional</em>) – Root‑finding method passed to <cite>solve_root</cite>. Options include:
+- <cite>“auto”</cite> (default): tries JAX methods first, then NumPy fallbacks.
+- <cite>“bisectioned-newton-np”</cite>, <cite>“newton-np”</cite>, <cite>“bisection-np”</cite> (NumPy).
+- <cite>“bisectioned-newton-jax”</cite>, <cite>“newton-jax”</cite>, <cite>“bisection-jax”</cite> (JAX).
+See <cite>jumufraktiv.root_finding.solve_root</cite> for full list.</p></li>
+<li><p><strong>lower</strong> (<em>array-like</em><em>, </em><em>optional</em>) – Search interval bounds. If not provided, an automatic expansion
+from <cite>1e-6</cite> to <cite>1e6</cite> is performed until <cite>CDF(lower) &lt; p &lt; CDF(upper)</cite>.</p></li>
+<li><p><strong>upper</strong> (<em>array-like</em><em>, </em><em>optional</em>) – Search interval bounds. If not provided, an automatic expansion
+from <cite>1e-6</cite> to <cite>1e6</cite> is performed until <cite>CDF(lower) &lt; p &lt; CDF(upper)</cite>.</p></li>
+<li><p><strong>x0</strong> (<em>array-like</em><em>, </em><em>optional</em>) – Initial guess for Newton‑based methods. If <cite>None</cite>, uses the midpoint
+of the bracket.</p></li>
+<li><p><strong>maxiter</strong> (<em>int</em><em>, </em><em>optional</em>) – Maximum number of root‑finding iterations.</p></li>
+<li><p><strong>tol</strong> (<em>float</em><em>, </em><em>optional</em>) – Absolute tolerance for <cite>|CDF(x) - p|</cite>.</p></li>
+<li><p><strong>rel_tol</strong> (<em>float</em><em>, </em><em>optional</em>) – Relative tolerance for change in <cite>x</cite> (Newton methods only).</p></li>
+<li><p><strong>**kwargs</strong> (additional keyword arguments passed to <cite>solve_root</cite>.)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Quantiles such that <cite>CDF(quantile) = p</cite>. The shape matches <cite>p</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar or np.ndarray</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This method is purely numeric and does not support symbolic evaluation.</p></li>
+<li><p>The CDF and density functions are called on arrays, so the computation</p></li>
+</ul>
+<p>is fully vectorised over the elements of <cite>p</cite>.
+- If the automatic bracket expansion fails, you can provide explicit
+<cite>lower</cite> and <cite>upper</cite> bounds to improve robustness.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># 95% quantile (single value)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">q</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_quantile</span><span class="p">(</span><span class="mf">0.95</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;95% quantile = </span><span class="si">{</span><span class="n">q</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Multiple quantiles at once</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">p_vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.025</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.975</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">quantiles</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_quantile</span><span class="p">(</span><span class="n">p_vals</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>  <span class="c1"># array of three quantiles</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Using a specific root method and providing a bracket</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">q</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_quantile</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">root_method</span><span class="o">=</span><span class="s1">&#39;bisection-np&#39;</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id19">
+<span class="sig-name descname"><span class="pre">post_raw_moment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">q</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">numerator_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_raw_moment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id19" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the posterior raw moment of order q.</p>
+<p>This method respects the <strong>symbol‑numeric principle</strong>: the return type
+depends only on whether unresolved symbols remain.</p>
+<ul class="simple">
+<li><p>If <cite>q</cite> is a SymPy symbol (canonically <code class="xref py py-data docutils literal notranslate"><span class="pre">jumufraktiv.symbols.q</span></code>),</p></li>
+</ul>
+<p>or if the expression still contains free symbols, a symbolic expression
+(or list of expressions for array <cite>q</cite>) is returned.
+- If <cite>q</cite> is numeric (scalar or array), the moment is evaluated numerically,
+supporting vectorisation.</p>
+<p>For integer orders 1–4, the computation is typically fast; for higher
+orders, a warning is emitted as the calculation may be slow.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>q</strong> (<em>scalar</em><em>, </em><em>array-like</em><em>, or </em><em>sympy.Symbol</em>) – Moment order(s). If array-like, returns an array of results.</p></li>
+<li><p><strong>numerator_method</strong> (<em>str</em><em>, </em><em>optional</em>) – Method for derivative computation (passed to <cite>mgfDerivative</cite>).</p></li>
+<li><p><strong>log</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return the log‑moment; otherwise the ordinary moment.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p>Scalar float for scalar numeric input.</p></li>
+<li><p>NumPy array for array‑like input.</p></li>
+<li><p>SymPy expression if symbolic evaluation is requested or free symbols remain.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>scalar, np.ndarray, or sympy.Expr</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The posterior moment is computed as:</dt><dd><p>E[Θ^q | y] = D^{a+q} M(t) / D^a M(t) <a href="#id20"><span class="problematic" id="id21">|</span></a>_{t=-b}</p>
+</dd>
+</dl>
+<p>where <cite>D^a M</cite> is the fractional derivative of the prior MGF.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Numeric moment of order 2</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv</span><span class="o">.</span><span class="n">post_raw_moment</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">0.1234</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Vectorised moments for multiple orders</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">q_vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_moments</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_raw_moment</span><span class="p">(</span><span class="n">q_vals</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">log_moments</span><span class="p">)</span>  <span class="c1"># array of log moments</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic moment using the canonical symbol</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">q</span> <span class="k">as</span> <span class="n">q_sym</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">expr</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_raw_moment</span><span class="p">(</span><span class="n">q_sym</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># SymPy expression</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id22">
+<span class="sig-name descname"><span class="pre">post_sample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.post_sample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id22" title="Link to this definition">¶</a></dt>
+<dd><p>Generate posterior samples using inverse transform sampling.</p>
+<p>This method draws samples from the posterior distribution by applying
+the inverse CDF (<cite>post_quantile</cite>) to uniform random numbers. It is
+fully vectorised and can generate large samples efficiently.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of samples to generate. Ignored if <cite>u</cite> is provided.</p></li>
+<li><p><strong>u</strong> (<em>array-like</em><em>, </em><em>optional</em>) – Uniform random numbers in (0, 1). If provided, <cite>n</cite> is ignored.
+These are used as the probabilities for <cite>post_quantile</cite>.</p></li>
+<li><p><strong>root_method</strong> (<em>str</em><em>, </em><em>optional</em>) – Root‑finding method passed to <cite>post_quantile</cite>. See
+<cite>post_quantile</cite> and <cite>solve_root</cite> for options.</p></li>
+<li><p><strong>**kwargs</strong> (additional keyword arguments passed to <cite>post_quantile</cite>) – (e.g., <cite>maxiter</cite>, <cite>tol</cite>, <cite>lower</cite>, <cite>upper</cite>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Samples from the posterior distribution. The shape is <cite>(n,)</cite> if
+<cite>n</cite> is provided, or the shape of <cite>u</cite> if <cite>u</cite> is provided.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<dl class="simple">
+<dt>The method uses the inverse transform:</dt><dd><p>X = F^{-1}(U), where U ~ Uniform(0, 1).</p>
+</dd>
+</dl>
+<p>This is exact up to the numerical accuracy of the quantile computation.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Generate 1000 posterior samples</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">samples</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Use custom uniform variates for reproducibility</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">u</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">samples</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_sample</span><span class="p">(</span><span class="n">u</span><span class="o">=</span><span class="n">u</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Control the root‑finding method and tolerance</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">samples</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">post_sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">root_method</span><span class="o">=</span><span class="s1">&#39;bisection-np&#39;</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-10</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="id23">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">prior_has_iMGF</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#id23" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id24">
+<span class="sig-name descname"><span class="pre">to_prior_object</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.to_prior_object"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id24" title="Link to this definition">¶</a></dt>
+<dd><p>Convert the current posterior distribution into a prior object.</p>
+<p>This method constructs a <a class="reference internal" href="#jumufraktiv.mitMGFprior" title="jumufraktiv.mitMGFprior"><code class="xref py py-class docutils literal notranslate"><span class="pre">mitMGFprior</span></code></a> object that can be used
+as a prior in a subsequent sequential update. It first attempts to create
+a <strong>symbolic</strong> prior by extracting the symbolic MGF and PDF from the
+current posterior (via <cite>post_mgf</cite> and <cite>post_density</cite>). The posterior MGF
+is expressed in terms of the canonical variable <cite>r</cite> and then substituted
+with <cite>t</cite> to become a prior MGF. The posterior PDF is expressed in terms
+of the canonical <cite>theta</cite>.</p>
+<p>If symbolic construction fails (e.g., the posterior is numeric or the
+symbolic expression cannot be formed), it falls back to a <strong>numeric</strong>
+backend prior that wraps the numeric <cite>post_mgf</cite> and <cite>post_density</cite> methods.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A prior object representing the posterior distribution. The prior’s MGF
+and PDF are derived from the current posterior.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#jumufraktiv.mitMGFprior" title="jumufraktiv.mitMGFprior">mitMGFprior</a></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This method uses the canonical symbols <cite>r</cite>, <cite>t</cite>, and <cite>theta</cite> from</p></li>
+</ul>
+<p><cite>jumufraktiv.symbols</cite> for symbolic manipulation.
+- The symbolic route requires that the posterior derivative is symbolic
+(<cite>self._deriv_is_symbolic is True</cite>).
+- The numeric fallback works for any posterior, but the resulting prior
+cannot be used in symbolic computations.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Convert a numeric posterior to a prior for sequential updating</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">post_prior</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">to_prior_object</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">new_deriv</span> <span class="o">=</span> <span class="n">post_prior</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_data</span><span class="p">,</span> <span class="n">likelihood</span><span class="o">=</span><span class="s1">&#39;poisson&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id25">
+<span class="sig-name descname"><span class="pre">update</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_data</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/MGFDerivative_class.html#MGFDerivative.update"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id25" title="Link to this definition">¶</a></dt>
+<dd><p>Perform a sequential Bayesian update.</p>
+<p>This method treats the current posterior as the prior for a new dataset
+and returns a new <a class="reference internal" href="#jumufraktiv.MGFDerivative" title="jumufraktiv.MGFDerivative"><code class="xref py py-class docutils literal notranslate"><span class="pre">MGFDerivative</span></code></a> object for the updated posterior.
+It uses <cite>to_prior_object</cite> to create a prior from the current posterior,
+then constructs a new derivative object with the new data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_data</strong> (<em>array‑like</em>) – New observations to condition on. Must be compatible with the likelihood’s
+<cite>ready_func</cite> or <cite>bereit_func</cite>.</p></li>
+<li><p><strong>**kwargs</strong> (<em>additional keyword arguments</em>) – <ul>
+<li><dl class="simple">
+<dt>method<span class="classifier">str, optional</span></dt><dd><p>Derivative backend for the new object. Defaults to the current method.
+If ‘symbolic’ is chosen but the current posterior is numeric,
+an error is raised.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>likelihood<span class="classifier">str, optional</span></dt><dd><p>Likelihood name. Defaults to the current likelihood.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>simplify<span class="classifier">bool, optional</span></dt><dd><p>Whether to simplify symbolic expressions. Defaults to current setting.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>log<span class="classifier">bool, optional</span></dt><dd><p>Whether to store the normalising constant in log‑scale.
+Defaults to current setting.</p>
+</dd>
+</dl>
+</li>
+<li><p>Other arguments are passed to the new <cite>MGFDerivative</cite> constructor.</p></li>
+</ul>
+</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new derivative object representing the posterior after conditioning
+on <cite>new_data</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#jumufraktiv.MGFDerivative" title="jumufraktiv.MGFDerivative">MGFDerivative</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If <cite>method=’symbolic’</cite> is requested but the current posterior is
+    numeric (i.e., <cite>self._is_symbolic is False</cite>). This is because the
+    posterior prior would be numeric and cannot be used symbolically.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This method is the primary way to perform sequential Bayesian updating.</p></li>
+<li><p>The new object’s <cite>log</cite> parameter can differ from the current one,</p></li>
+</ul>
+<p>allowing you to switch between log‑scale and ordinary‑scale storage
+at each update.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Sequential update: add two new observations</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">deriv2</span> <span class="o">=</span> <span class="n">deriv</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_data</span><span class="o">=</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">],</span> <span class="n">likelihood</span><span class="o">=</span><span class="s1">&#39;poisson&#39;</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Check the updated evidence</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">log_ev</span><span class="p">,</span> <span class="n">sign</span> <span class="o">=</span> <span class="n">deriv2</span><span class="o">.</span><span class="n">evidence</span><span class="p">()</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="id26">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">value_numeric</span></span><a class="headerlink" href="#id26" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">jumufraktiv.</span></span><span class="sig-name descname"><span class="pre">mitMGFprior</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'custom'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mgf_sym</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Expr</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pdf_sym</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Expr</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mgf_backend</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pdf_backend</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mgf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cgf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mgf_jax</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cgf_jax</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pdf_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">logpdf_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mgf_sym_out</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cgf_sym</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pdf_sym_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.mitMGFprior" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Container for a prior distribution’s MGF, CGF, and PDF.</p>
+<p>This class holds both symbolic and numeric representations of a prior’s
+moment‑generating function (MGF), cumulant‑generating function (CGF),
+and probability density function (PDF). It also supports JAX‑compatible
+backends for high‑performance computation and incomplete MGF (iMGF)
+functions for truncated distributions.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.name">
+<span class="sig-name descname"><span class="pre">name</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.name" title="Link to this definition">¶</a></dt>
+<dd><p>Name of the prior distribution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str, default “custom”</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.mgf_sym">
+<span class="sig-name descname"><span class="pre">mgf_sym</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.mgf_sym" title="Link to this definition">¶</a></dt>
+<dd><p>Symbolic expression for the MGF.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>sympy.Expr, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.pdf_sym">
+<span class="sig-name descname"><span class="pre">pdf_sym</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.pdf_sym" title="Link to this definition">¶</a></dt>
+<dd><p>Symbolic expression for the PDF.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>sympy.Expr, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.mgf_backend">
+<span class="sig-name descname"><span class="pre">mgf_backend</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.mgf_backend" title="Link to this definition">¶</a></dt>
+<dd><p>Numeric MGF function (e.g., from a custom implementation).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>callable, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.pdf_backend">
+<span class="sig-name descname"><span class="pre">pdf_backend</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.pdf_backend" title="Link to this definition">¶</a></dt>
+<dd><p>Numeric PDF function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>callable, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.params">
+<span class="sig-name descname"><span class="pre">params</span></span><a class="headerlink" href="#jumufraktiv.mitMGFprior.params" title="Link to this definition">¶</a></dt>
+<dd><p>Dictionary of numeric parameters (e.g., <cite>{‘alpha’: 2.0, ‘beta’: 3.0}</cite>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">Compiled</span> <span class="pre">functions</span> <span class="pre">(populated</span> <span class="pre">by</span> <span class="pre">`as_mitMGFprior`</span> <span class="pre">or</span> <span class="pre">`from_registry`)</span></span></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">mgf,</span> <span class="pre">cgf</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>NumPy‑based MGF and CGF functions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">mgf_jax,</span> <span class="pre">cgf_jax</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>JAX‑based MGF and CGF functions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">pdf_func,</span> <span class="pre">logpdf_func</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>NumPy‑based PDF and log‑PDF functions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">Incomplete</span> <span class="pre">MGF</span> <span class="pre">(iMGF)</span> <span class="pre">attributes</span> <span class="pre">(if</span> <span class="pre">supported)</span></span></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">imgf,</span> <span class="pre">logimgf</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Numeric ordinary and log‑scale iMGF.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">imgf_jax,</span> <span class="pre">logimgf_jax</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>JAX versions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">-</span> <span class="pre">imgf_sym,</span> <span class="pre">logimgf_sym</span></span></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Symbolic expressions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.as_mitMGFprior">
+<span class="sig-name descname"><span class="pre">as_mitMGFprior</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.as_mitMGFprior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.mitMGFprior.as_mitMGFprior" title="Link to this definition">¶</a></dt>
+<dd><p>Compile the prior from symbolic or backend inputs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.from_registry">
+<span class="sig-name descname"><span class="pre">from_registry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cls</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prior_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simplify</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.from_registry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.mitMGFprior.from_registry" title="Link to this definition">¶</a></dt>
+<dd><p>Factory method to build a prior from the registry.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.is_mitMGFprior">
+<span class="sig-name descname"><span class="pre">is_mitMGFprior</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.is_mitMGFprior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.mitMGFprior.is_mitMGFprior" title="Link to this definition">¶</a></dt>
+<dd><p>Static method to check if an object is a fully compiled prior.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.has_iMGF">
+<span class="sig-name descname"><span class="pre">has_iMGF</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.has_iMGF"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#jumufraktiv.mitMGFprior.has_iMGF" title="Link to this definition">¶</a></dt>
+<dd><p>Return True if all iMGF components are present.</p>
+</dd></dl>
+
+<p class="rubric">Notes</p>
+<p>The class follows a two‑step construction pattern:
+1. Create an instance with raw inputs (symbolic or backend).
+2. Call <cite>as_mitMGFprior()</cite> to compile and populate all functions.</p>
+<p>The registry route (<cite>from_registry</cite>) performs both steps automatically.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Manual symbolic prior</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">t</span><span class="p">,</span> <span class="n">theta</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="p">(</span><span class="n">mgf_sym</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span><span class="o">**</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">pdf_sym</span><span class="o">=</span><span class="n">theta</span> <span class="o">*</span> <span class="n">sp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">theta</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">prior</span><span class="o">.</span><span class="n">as_mitMGFprior</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span><span class="o">.</span><span class="n">mgf</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="go">1.7777777778</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Registry‑based prior</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gamma_prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="o">.</span><span class="n">from_registry</span><span class="p">(</span><span class="s1">&#39;gamma&#39;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;alpha&#39;</span><span class="p">:</span><span class="mf">2.0</span><span class="p">,</span> <span class="s1">&#39;beta&#39;</span><span class="p">:</span><span class="mf">3.0</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gamma_prior</span><span class="o">.</span><span class="n">mgf</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="go">0.8888888889</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="id27">
+<span class="sig-name descname"><span class="pre">as_mitMGFprior</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.as_mitMGFprior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id27" title="Link to this definition">¶</a></dt>
+<dd><p>Compile the prior object from raw inputs into a fully functional prior.</p>
+<p>This method takes the raw symbolic or backend inputs stored in the instance
+(<cite>mgf_sym</cite>, <cite>pdf_sym</cite>, <cite>mgf_backend</cite>, <cite>pdf_backend</cite>) and compiles them into
+callable functions for MGF, CGF, PDF, and their JAX counterparts. It also
+populates the compiled attributes (<cite>mgf</cite>, <cite>cgf</cite>, <cite>mgf_jax</cite>, <cite>cgf_jax</cite>,
+<cite>pdf_func</cite>, <cite>logpdf_func</cite>).</p>
+<dl class="simple">
+<dt>Two construction modes are supported:</dt><dd><p>1. <strong>Symbolic mode</strong>: if both <cite>mgf_sym</cite> and <cite>pdf_sym</cite> are provided,
+they are lambdified to NumPy and JAX functions. The CGF is derived
+as <cite>log(mgf_sym)</cite>.
+2. <strong>Backend mode</strong>: if both <cite>mgf_backend</cite> and <cite>pdf_backend</cite> are provided,
+they are wrapped to accept a backend parameter (<cite>xp=np</cite> or <cite>xp=jnp</cite>),
+and the CGF and log‑PDF are derived numerically.</p>
+</dd>
+</dl>
+<p>The method modifies the instance in place and returns it for chaining.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The compiled prior object (self), with all callables populated.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#jumufraktiv.mitMGFprior" title="jumufraktiv.mitMGFprior">mitMGFprior</a></p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If neither a valid symbolic pair nor a valid backend pair is provided,
+    or if only one of a required pair is given.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The symbolic mode requires both <cite>mgf_sym</cite> and <cite>pdf_sym</cite> to be SymPy</p></li>
+</ul>
+<p>expressions containing the canonical variable <cite>t</cite> (for MGF) and <cite>theta</cite>
+(for PDF).
+- The backend mode requires both <cite>mgf_backend</cite> and <cite>pdf_backend</cite> to be
+callables with signature <cite>(x, xp, **params)</cite> where <cite>x</cite> is the evaluation
+point and <cite>xp</cite> is either <cite>numpy</cite> or <cite>jax.numpy</cite>.
+- The <cite>params</cite> dictionary (if provided) is passed to the backend functions.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Symbolic mode</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">jumufraktiv.symbols</span> <span class="kn">import</span> <span class="n">t</span><span class="p">,</span> <span class="n">theta</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">mgf_sym</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">t</span><span class="p">)</span><span class="o">**</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span>
+<span class="gp">... </span>    <span class="n">pdf_sym</span><span class="o">=</span><span class="n">theta</span> <span class="o">*</span> <span class="n">sp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">theta</span><span class="p">)</span>
+<span class="gp">... </span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">prior</span><span class="o">.</span><span class="n">as_mitMGFprior</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span><span class="o">.</span><span class="n">mgf</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="go">1.7777777778</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Backend mode</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">mgf_backend</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">xp</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span> <span class="nf">pdf_backend</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">xp</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">x</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="p">(</span><span class="n">mgf_backend</span><span class="o">=</span><span class="n">mgf_backend</span><span class="p">,</span> <span class="n">pdf_backend</span><span class="o">=</span><span class="n">pdf_backend</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">prior</span><span class="o">.</span><span class="n">as_mitMGFprior</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span><span class="o">.</span><span class="n">mgf</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="go">1.0</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.cgf">
+<span class="sig-name descname"><span class="pre">cgf</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.cgf" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.cgf_jax">
+<span class="sig-name descname"><span class="pre">cgf_jax</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.cgf_jax" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.cgf_sym">
+<span class="sig-name descname"><span class="pre">cgf_sym</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Any</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.cgf_sym" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id28">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_registry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simplify</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.from_registry"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id28" title="Link to this definition">¶</a></dt>
+<dd><p>Build a fully compiled prior object from the registry.</p>
+<p>This factory method retrieves the prior specification from the global
+<cite>PRIOR_REGISTRY</cite> and constructs a <cite>mitMGFprior</cite> instance with all
+symbolic and numeric functions compiled. It automatically includes
+both complete and incomplete MGF (iMGF) functions if they are available
+in the registry.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>prior_name</strong> (<em>str</em>) – Name of the prior distribution as registered in <cite>PRIOR_REGISTRY</cite>.</p></li>
+<li><p><strong>params</strong> (<em>dict</em><em>, </em><em>optional</em>) – Numeric hyperparameters for the prior (e.g., <cite>{‘alpha’:2.0, ‘beta’:3.0}</cite>).</p></li>
+<li><p><strong>simplify</strong> (<em>bool</em><em>, </em><em>default False</em>) – If True, simplify the symbolic expressions using SymPy.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A fully compiled prior object with all callables populated.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#jumufraktiv.mitMGFprior" title="jumufraktiv.mitMGFprior">mitMGFprior</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If <cite>prior_name</cite> is not in the registry, or if the registry does not
+    provide the required MGF and PDF functions.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The registry entry must provide at least <cite>mgf_sym</cite>, <cite>pdf_sym</cite>, <cite>mgf</cite>,</p></li>
+</ul>
+<p><cite>cgf</cite>, and <cite>pdf_func</cite>.
+- If iMGF functions (<cite>imgf_sym</cite>, <cite>imgf</cite>, <cite>imgf_jax</cite>, etc.) are present,
+they are also extracted and stored.
+- The method bypasses the manual <cite>as_mitMGFprior</cite> compiler and directly
+assigns the compiled functions to the object.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gamma_prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="o">.</span><span class="n">from_registry</span><span class="p">(</span><span class="s1">&#39;gamma&#39;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;alpha&#39;</span><span class="p">:</span><span class="mf">2.0</span><span class="p">,</span> <span class="s1">&#39;beta&#39;</span><span class="p">:</span><span class="mf">3.0</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gamma_prior</span><span class="o">.</span><span class="n">mgf</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="go">0.8888888889</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># With symbolic simplification</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="o">.</span><span class="n">from_registry</span><span class="p">(</span><span class="s1">&#39;pareto&#39;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;alpha&#39;</span><span class="p">:</span><span class="mf">0.5</span><span class="p">,</span> <span class="s1">&#39;xi&#39;</span><span class="p">:</span><span class="mf">1.0</span><span class="p">},</span> <span class="n">simplify</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id29">
+<span class="sig-name descname"><span class="pre">has_iMGF</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.has_iMGF"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id29" title="Link to this definition">¶</a></dt>
+<dd><p>Check if this prior object has complete incomplete MGF (iMGF) support.</p>
+<p>Returns True only if all six iMGF-related functions are present:
+- imgf         (numeric ordinary)
+- logimgf      (numeric log)
+- imgf_jax     (JAX ordinary)
+- logimgf_jax  (JAX log)
+- imgf_sym     (symbolic ordinary)
+- logimgf_sym  (symbolic log)</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="id30">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_mitMGFprior</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="_modules/jumufraktiv/mitMGFprior_class.html#mitMGFprior.is_mitMGFprior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#id30" title="Link to this definition">¶</a></dt>
+<dd><p>Check if an object is a fully compiled mitMGFprior.
+Requires all six compiled functions to be present.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.logpdf_func">
+<span class="sig-name descname"><span class="pre">logpdf_func</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.logpdf_func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.mgf">
+<span class="sig-name descname"><span class="pre">mgf</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.mgf" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id31">
+<span class="sig-name descname"><span class="pre">mgf_backend</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id31" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.mgf_jax">
+<span class="sig-name descname"><span class="pre">mgf_jax</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.mgf_jax" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id32">
+<span class="sig-name descname"><span class="pre">mgf_sym</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Expr</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id32" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.mgf_sym_out">
+<span class="sig-name descname"><span class="pre">mgf_sym_out</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Any</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.mgf_sym_out" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id33">
+<span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'custom'</span></em><a class="headerlink" href="#id33" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id34">
+<span class="sig-name descname"><span class="pre">params</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id34" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id35">
+<span class="sig-name descname"><span class="pre">pdf_backend</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id35" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.pdf_func">
+<span class="sig-name descname"><span class="pre">pdf_func</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.pdf_func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="id36">
+<span class="sig-name descname"><span class="pre">pdf_sym</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Expr</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#id36" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="jumufraktiv.mitMGFprior.pdf_sym_func">
+<span class="sig-name descname"><span class="pre">pdf_sym_func</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Any</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#jumufraktiv.mitMGFprior.pdf_sym_func" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
 </section>
 <section id="core-derivative-dispatch">
 <h2>Core Derivative Dispatch<a class="headerlink" href="#core-derivative-dispatch" title="Link to this heading">¶</a></h2>
@@ -71,7 +1412,7 @@
           
         </div>
       </div>
-      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
         <div class="sphinxsidebarwrapper">
 <h1 class="logo"><a href="index.html">jumufraktiv</a></h1>
 
@@ -82,16 +1423,7 @@
 
 
 
-
-<search id="searchbox" style="display: none" role="search">
-    <div class="searchformwrapper">
-    <form class="search" action="search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
-      <input type="submit" value="Go" />
-    </form>
-    </div>
-</search>
-<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<h3>Navigation</h3>
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
@@ -115,6 +1447,16 @@
   </ul></li>
 </ul>
 </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
 
 
 
@@ -131,8 +1473,8 @@
       &#169;2026, Si-Yang Li, Josh Speagle.
       
       |
-      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
-      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 7.3.7</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 0.7.16</a>
       
       |
       <a href="_sources/api.rst.txt"

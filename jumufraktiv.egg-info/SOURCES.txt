@@ -1,4 +1,6 @@
+README.md
 pyproject.toml
+jumufraktiv/MGFDerivative_class.py
 jumufraktiv/MGFderivative_class.py
 jumufraktiv/__init__.py
 jumufraktiv/derivativeDispatch.py
@@ -9,12 +11,12 @@ jumufraktiv/numeric_fractionalDeriv_mpmath.py
 jumufraktiv/numeric_fractionalDeriv_scipy.py
 jumufraktiv/numeric_integerDeriv_Bell.py
 jumufraktiv/numeric_integerDeriv_JAX.py
-jumufraktiv/numeric_integerDeriv_Torch.py
 jumufraktiv/numeric_symbolic_decision.py
 jumufraktiv/registry.py
+jumufraktiv/root_finding.py
 jumufraktiv/symbolic_fractionalDeriv.py
 jumufraktiv/symbolic_integerDeriv.py
-jumufraktiv/test_custom_features.py
+jumufraktiv/symbols.py
 jumufraktiv.egg-info/PKG-INFO
 jumufraktiv.egg-info/SOURCES.txt
 jumufraktiv.egg-info/dependency_links.txt
@@ -23,10 +25,12 @@ jumufraktiv.egg-info/top_level.txt
 jumufraktiv/MGFdictionary/__init__.py
 jumufraktiv/MGFdictionary/gammaMGF.py
 jumufraktiv/MGFdictionary/heavisideMGF.py
-jumufraktiv/MGFdictionary/logsum.py
 jumufraktiv/MGFdictionary/paretoMGF.py
 jumufraktiv/MGFdictionary/uniformMGF.py
 jumufraktiv/deprecated/evidence.py
+jumufraktiv/deprecated/numeric_integerDeriv_Torch.py
+jumufraktiv/deprecated/temporaty_backend_subs.py
+jumufraktiv/deprecated/temporaty_numeric_integerDeriv_Bell2.py
 jumufraktiv/like_stats/BurrXII.py
 jumufraktiv/like_stats/Dagum.py
 jumufraktiv/like_stats/Gamma.py
@@ -41,3 +45,5 @@ jumufraktiv/like_stats/Pareto.py
 jumufraktiv/like_stats/Poisson.py
 jumufraktiv/like_stats/Rayleigh.py
 jumufraktiv/like_stats/Weibull.py
+jumufraktiv/tests/mitMGFprior_test.py
+jumufraktiv/tests/test_custom_features.py

@@ -4,10 +4,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>jumufraktiv.mitMGFprior_class &#8212; jumufraktiv 0.0.1 documentation</title>
+    <title>jumufraktiv.mitMGFprior_class &#8212; jumufraktiv 0.1.0 documentation</title>
     <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=61cd365c" />
     <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=12dfc556" />
-    <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
     <script src="../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
@@ -85,7 +85,7 @@
 <span class="c1"># ============================================================</span>
 
 <div class="viewcode-block" id="mitMGFprior">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior_class.mitMGFprior">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">mitMGFprior</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -188,7 +188,7 @@
     <span class="c1"># USER ROUTE: manual construction compiler</span>
     <span class="c1"># ============================================================</span>
 <div class="viewcode-block" id="mitMGFprior.as_mitMGFprior">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior_class.mitMGFprior.as_mitMGFprior">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior.as_mitMGFprior">[docs]</a>
     <span class="k">def</span> <span class="nf">as_mitMGFprior</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compile the prior object from raw inputs into a fully functional prior.</span>
@@ -316,7 +316,7 @@
     <span class="c1"># REGISTRY ROUTE: automatic construction</span>
     <span class="c1"># ============================================================</span>
 <div class="viewcode-block" id="mitMGFprior.from_registry">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior_class.mitMGFprior.from_registry">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior.from_registry">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_registry</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">prior_name</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">simplify</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -455,7 +455,7 @@
     <span class="c1"># VALIDATION</span>
     <span class="c1"># ============================================================</span>
 <div class="viewcode-block" id="mitMGFprior.is_mitMGFprior">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior_class.mitMGFprior.is_mitMGFprior">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior.is_mitMGFprior">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">is_mitMGFprior</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -479,7 +479,7 @@
     <span class="c1"># iMGF SUPPORT CHECK</span>
     <span class="c1"># ============================================================</span>
 <div class="viewcode-block" id="mitMGFprior.has_iMGF">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior_class.mitMGFprior.has_iMGF">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.mitMGFprior.has_iMGF">[docs]</a>
     <span class="k">def</span> <span class="nf">has_iMGF</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Check if this prior object has complete incomplete MGF (iMGF) support.</span>

@@ -4,10 +4,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>jumufraktiv.MGFDerivative_class &#8212; jumufraktiv 0.0.1 documentation</title>
+    <title>jumufraktiv.MGFDerivative_class &#8212; jumufraktiv 0.1.0 documentation</title>
     <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=61cd365c" />
     <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=12dfc556" />
-    <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
     <script src="../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
@@ -118,7 +118,7 @@
 <span class="c1"># Core class</span>
 <span class="c1"># ============================================================</span>
 <div class="viewcode-block" id="MGFDerivative">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative">[docs]</a>
 <span class="k">class</span> <span class="nc">MGFDerivative</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Posterior distribution derived via MGF marginalisation.</span>
@@ -398,7 +398,7 @@
     <span class="c1"># EVIDENCE</span>
     <span class="c1"># ========================================================</span>
 <div class="viewcode-block" id="MGFDerivative.evidence">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.evidence">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.evidence">[docs]</a>
     <span class="k">def</span> <span class="nf">evidence</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Return the marginal likelihood (evidence) of the model.</span>
@@ -448,7 +448,7 @@
     <span class="c1"># ========================================================</span>
         
 <div class="viewcode-block" id="MGFDerivative.post_density">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_density">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_density">[docs]</a>
     <span class="k">def</span> <span class="nf">post_density</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta_val</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute the posterior density (or log-density) at given θ.</span>
@@ -629,7 +629,7 @@
     <span class="c1"># POSTERIOR CUMULATIVE DENSITY</span>
     <span class="c1"># ========================================================</span>
 <div class="viewcode-block" id="MGFDerivative.post_cdf">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_cdf">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_cdf">[docs]</a>
     <span class="k">def</span> <span class="nf">post_cdf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u_val</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold(s) u.</span>
@@ -855,7 +855,7 @@
 
 
 <div class="viewcode-block" id="MGFDerivative.post_predictive">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_predictive">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_predictive">[docs]</a>
     <span class="k">def</span> <span class="nf">post_predictive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_data</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">individual</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute the posterior predictive density (or log-density) for new data.</span>
@@ -1035,7 +1035,7 @@
     <span class="c1"># POSTERIOR MGF</span>
     <span class="c1"># ========================================================</span>
 <div class="viewcode-block" id="MGFDerivative.post_mgf">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_mgf">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_mgf">[docs]</a>
     <span class="k">def</span> <span class="nf">post_mgf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">r_val</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute the posterior moment‑generating function (MGF) at given r.</span>
@@ -1215,7 +1215,7 @@
     <span class="c1"># POSTERIOR RAW MOMENT</span>
     <span class="c1"># ========================================================</span>
 <div class="viewcode-block" id="MGFDerivative.post_raw_moment">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_raw_moment">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_raw_moment">[docs]</a>
     <span class="k">def</span> <span class="nf">post_raw_moment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">numerator_method</span><span class="o">=</span><span class="s1">&#39;auto&#39;</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute the posterior raw moment of order q.</span>
@@ -1391,7 +1391,7 @@
     <span class="c1"># POSTERIOR CENTRAL MOMENT</span>
     <span class="c1"># ======================================================== </span>
 <div class="viewcode-block" id="MGFDerivative.post_central_moment">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_central_moment">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_central_moment">[docs]</a>
     <span class="k">def</span> <span class="nf">post_central_moment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">numerator_method</span><span class="o">=</span><span class="s1">&#39;auto&#39;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compute central moments of the posterior distribution.</span>
@@ -1525,7 +1525,7 @@
     <span class="c1"># ========================================================        </span>
     <span class="c1"># Inside the MGFDerivative class</span>
 <div class="viewcode-block" id="MGFDerivative.post_quantile">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_quantile">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_quantile">[docs]</a>
     <span class="k">def</span> <span class="nf">post_quantile</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
@@ -1660,7 +1660,7 @@
     <span class="c1"># POSTERIOR SAMPLE</span>
     <span class="c1"># ========================================================     </span>
 <div class="viewcode-block" id="MGFDerivative.post_sample">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_sample">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_sample">[docs]</a>
     <span class="k">def</span> <span class="nf">post_sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">u</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">root_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generate posterior samples using inverse transform sampling.</span>
@@ -1724,7 +1724,7 @@
     <span class="c1"># CENTRAL POSTERIOR CREDIBLE INTERVAL</span>
     <span class="c1"># ========================================================     </span>
 <div class="viewcode-block" id="MGFDerivative.post_interval">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.post_interval">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.post_interval">[docs]</a>
     <span class="k">def</span> <span class="nf">post_interval</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">level</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
@@ -1810,7 +1810,7 @@
     <span class="c1"># SEQUENTIAL UPDATING</span>
     <span class="c1"># ========================================================</span>
 <div class="viewcode-block" id="MGFDerivative.to_prior_object">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.to_prior_object">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.to_prior_object">[docs]</a>
     <span class="k">def</span> <span class="nf">to_prior_object</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Convert the current posterior distribution into a prior object.</span>
@@ -1887,7 +1887,7 @@
 
 
 <div class="viewcode-block" id="MGFDerivative.update">
-<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative_class.MGFDerivative.update">[docs]</a>
+<a class="viewcode-back" href="../../api.html#jumufraktiv.MGFDerivative.update">[docs]</a>
     <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Perform a sequential Bayesian update.</span>

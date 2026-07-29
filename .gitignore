@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+docs/_build
 .DS_Store
 jumufraktiv.egg-info/
 
