@@ -5,6 +5,9 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+import sys
+import os
+sys.path.insert(0, os.path.abspath('..'))
 
 project = 'jumufraktiv'
 copyright = '2026, Si-Yang Li, Josh Speagle'
@@ -14,7 +17,20 @@ release = '0.0.1'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = []
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',          # for NumPy/Google docstrings
+    'sphinx.ext.viewcode',          # optional: links to source
+]
+
+html_theme = 'sphinx_rtd_theme'
+html_static_path = ['_static']
+
+autodoc_default_options = {
+    'members': True,
+    'undoc-members': True,
+    'show-inheritance': True,
+}
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']

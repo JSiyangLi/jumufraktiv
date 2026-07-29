@@ -1,17 +1,30 @@
-.. jumufraktiv documentation master file, created by
-   sphinx-quickstart on Wed Jul 29 19:14:51 2026.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+Welcome to jumufraktiv's documentation!
+=======================================
 
-jumufraktiv documentation
-=========================
+**jumufraktiv** is a Python package for Bayesian inference using MGF marginalisation.
+It provides tools for posterior density, CDF, quantiles, moments, and sequential updating.
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
+.. include:: ../README.md
+   :parser: myst_parser.sphinx_
 
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+
+   installation
+   tutorial
+   api
+   examples
+
+.. image:: _static/jumufraktiv_logo.png
+   :width: 200px
+   :alt: Logo
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 
