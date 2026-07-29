@@ -6,6 +6,8 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
 
 jobs:
   build-and-deploy:
@@ -37,3 +39,4 @@ jobs:
           publish_dir: ./docs/_build/html
           publish_branch: gh-pages
           keep_files: false
+
