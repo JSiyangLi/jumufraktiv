@@ -13,9 +13,13 @@ of likelihoods: those whose joint density factorises as
 L(θ; y) = c(y) · θ^a(y) · exp(−b(y)·θ)
 ```
 
-for sufficient statistics `a`, `b` and a normalising factor `c`. For such a
-likelihood the marginal likelihood is an `a`-th derivative of the prior
-moment-generating function `M`, evaluated at `t = −b`:
+where `(a(y), b(y))` is **jointly** sufficient for `θ` and `c` is a normalising
+factor. Neither `a` nor `b` is sufficient on its own, and they play different
+roles: `a` is the order of differentiation, `b` fixes the evaluation point. Say
+"the pair `(a, b)` is jointly sufficient", never "the sufficient statistic `a`".
+
+For such a likelihood the marginal likelihood is an `a`-th derivative of the
+prior moment-generating function `M`, evaluated at `t = −b`:
 
 ```
 p(y) = c(y) · Dᵃ M(t) |_{t = −b}
@@ -209,6 +213,49 @@ order: summary, Parameters, Returns, Raises, Notes, Examples. Docstrings must
 describe what the code *does*, not what it is intended to do — if they diverge,
 that is a bug in one of the two.
 
+**Mathematical statements are held to the standard of the paper, not of prose.**
+This package implements a published method and its authors read the docs, so a
+loose statement is a defect even when the code is right. Two rules:
+
+- *Do not weaken a joint statement into a marginal one.* `(a(y), b(y))` is
+  jointly sufficient; writing "the sufficient statistic `a(y)`" is wrong, and
+  was shipped in the README before an author caught it.
+- *Prefer the reference's terminology over the more familiar synonym.* The
+  operator is the Liouville–Caputo derivative with lower terminal −∞, because
+  that is what the paper calls it; "Weyl" is a defensible name for the same
+  object and is still the wrong word to use here.
+
+When stating a result, name what is being claimed about what: which variable is
+differentiated, which is integrated, what is held fixed, and over what domain
+the statement holds.
+
+**Parameterisation is part of the claim.** Whether a likelihood is
+MGF-marginalisable is a property of the *parameterisation*, not of the
+distribution family. The factorisation must hold in the particular `θ` the
+package treats as unknown. Rayleigh is the clearest case:
+
+```
+f(y; σ) = (y/σ²)·exp(−y²/(2σ²))
+
+  in the rate θ = 1/σ² :  y·θ·exp(−θy²/2)      ✓ c(y)·θ^a·exp(−bθ), a=1, b=y²/2
+  in the scale σ       :  (y/σ²)·exp(−y²/2σ²)  ✗ the exponent is −b/σ², not −bσ
+```
+
+Same distribution, same data; one parameterisation is in the family and the
+other is not. So "is the Rayleigh likelihood supported?" is not a well-posed
+question — "is it supported in the rate?" is. Every `like_stats` module states
+its parameterisation in the module docstring; read it before comparing against
+any reference density.
+
+**The `like_stats` modules are author-verified.** All fourteen have been checked
+by the package's author. A discrepancy found against an external reference is
+therefore **far more likely a parameterisation mismatch on the checker's side
+than a defect**, and the burden of proof sits with the checker. Before reporting
+one: re-derive the factorisation by hand, confirm which parameter the module
+treats as `θ`, and confirm the reference is expressed in that same parameter.
+Report only what survives that, and say explicitly which parameterisation was
+used on both sides.
+
 **Naming.** Some internals use German (`mitMGFprior`, `bereit*` for per-element
 statistics alongside `ready*` for aggregated ones). Anglicising the internals
 while keeping the package name is planned for a later wave; until then, follow
@@ -301,8 +348,11 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 |------|----|-------|--------|
 | 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
 | 0 | 2 | pytest + Hypothesis harness, CI, lint config | **merged** |
-| 1 | 3 | Import and registry integrity | **in review** |
-| 1 | 4 | Fractional-order path | planned |
+| 1 | 3 | Import and registry integrity | **merged** |
+| 1 | 3b | Constructor keyword-argument integrity | **in review** |
+| 1 | 4a | Fractional-order construction and dispatch | planned |
+| 1 | 4b | Fractional-order numerical accuracy | planned |
+| 1 | 4c | Symbolic fractional backend | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
 | 3 | 7 | De-duplicate `like_stats` | planned |

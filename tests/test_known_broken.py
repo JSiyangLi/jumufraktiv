@@ -39,7 +39,7 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
     "at construction",
 )
 def test_fractional_order_posterior_can_be_constructed(gamma_prior):
-    """A non-integer sufficient statistic must not break construction.
+    """A non-integer derivative order must not break construction.
 
     ``normal``, ``halfnormal`` and ``maxwell-boltzmann`` all produce a
     fractional ``a`` whenever the sample size is odd, so this is an ordinary

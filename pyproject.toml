@@ -158,9 +158,10 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 #
 # Deliberately NOT exempted, so they stay blocking everywhere: F821
 # (undefined-name) and F811 (redefined-while-unused). Those found real defects
-# rather than style issues — post_cdf references an undefined `t_sym`/`u_sym`,
-# and a stray `from unittest import result` shadows a local. Both are fixed in
-# PR 5, which is why the entries appear only for the two files involved.
+# rather than style issues. The stray `from unittest import result` they flagged
+# is gone (PR 3b); what remains under the two exemptions below is post_cdf's
+# undefined `t_sym`/`u_sym` and two method parameters shadowing canonical
+# symbols, both fixed in PR 5.
 # ---------------------------------------------------------------------------
 "jumufraktiv/**" = [
     "E402",   # module-import-not-at-top-of-file       -> PR 8  (module layout)
