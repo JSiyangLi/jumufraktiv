@@ -12,6 +12,18 @@ without a deprecation period.
 
 ### Added
 
+- A test suite under `tests/`: 213 passing tests plus 14 `xfail(strict=True)`
+  records of known defects. Most assertions compare against closed-form
+  references (the Gamma MGF and its derivatives, and the conjugate
+  Gamma/Poisson posterior) rather than recorded output, and the three normative
+  design principles are asserted directly with Hypothesis property tests.
+- A `CI` workflow running lint, the test suite on Python 3.10–3.13, and a
+  packaging check that builds both distributions, validates them with `twine`,
+  and confirms a clean install imports. It runs on pull requests, which no
+  previous workflow did.
+- `pytest` and `ruff` configuration in `pyproject.toml`, including an itemised
+  lint-debt baseline for the pre-audit library code in which every exempted
+  rule is annotated with the PR that removes it.
 - `LICENSE` (MIT), `CITATION.cff` and this changelog.
 - Complete PyPI distribution metadata in `pyproject.toml`: description, readme,
   `requires-python`, license, authors, keywords, classifiers and project URLs.
@@ -34,6 +46,22 @@ without a deprecation period.
   and added lower bounds to all runtime dependencies.
 - Moved `.gitattributes` from `jumufraktiv/` to the repository root, where it
   applies to the whole tree, and extended it to cover notebooks and binaries.
+- Consolidated the two documentation workflows, which shared a name, both fired
+  on every push to `main`, and deployed by different mechanisms. The surviving
+  workflow publishes through GitHub Pages' own deployment (the one actually
+  serving the site) and additionally builds the docs on pull requests without
+  publishing. The now-unused `gh-pages` branch can be deleted.
+- Moved the example notebooks out of the installable package to a top-level
+  `notebooks/` directory.
+
+### Removed
+
+- `jumufraktiv/tests/test_custom_features.py` and
+  `jumufraktiv/tests/mitMGFprior_test.py`. Neither was a test: both were
+  print-driven scripts with no assertions that nothing executed, and
+  `test_custom_features.py` had been dead since the `MGFDerivative`
+  constructor stopped accepting string priors — it could only raise
+  `TypeError`. Their coverage is now provided with assertions in `tests/`.
 
 ### Removed
 
