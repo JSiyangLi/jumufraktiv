@@ -227,9 +227,11 @@ class MGFDerivative:
     Attributes
     ----------
     a : float
-        Combined sufficient statistic for the derivative order.
+        Order of differentiation. Together with `b` this forms the pair
+        `(a, b)`, which is jointly sufficient for `theta`; neither component is
+        sufficient on its own.
     b : float
-        Combined sufficient statistic for the evaluation point.
+        Evaluation point, entering as `t = -b`. See `a`.
     log_c : float
         Log‑normalising constant from the likelihood.
     log : bool

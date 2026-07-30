@@ -29,16 +29,20 @@ as
 
    L(\theta; y) = c(y)\, \theta^{a(y)} \exp\!\big(-b(y)\,\theta\big),
 
-so the marginal likelihood is a derivative of the prior MGF :math:`M` evaluated
-at :math:`t = -b`:
+where :math:`\big(a(y), b(y)\big)` is **jointly** sufficient for :math:`\theta` —
+neither component is sufficient on its own. The marginal likelihood is then a
+derivative of the prior MGF :math:`M`, of order :math:`a(y)`, evaluated at
+:math:`t = -b(y)`:
 
 .. math::
 
    p(y) = c(y) \, \frac{\mathrm{d}^{a}}{\mathrm{d}t^{a}} M(t) \Big|_{t=-b}.
 
-When the sufficient statistic :math:`a(y)` is not an integer, the derivative is
-fractional — hence the name. Everything else (density, CDF, quantiles, moments,
-predictive, sequential updating) follows from the same object.
+So the two components play different roles: :math:`a(y)` sets the order of
+differentiation and :math:`b(y)` the point of evaluation. When :math:`a(y)` is
+not an integer the derivative is fractional — hence the name. Everything else
+(density, CDF, quantiles, moments, predictive, sequential updating) follows from
+the same object.
 
 Installation
 ============

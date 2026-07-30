@@ -13,9 +13,13 @@ of likelihoods: those whose joint density factorises as
 L(θ; y) = c(y) · θ^a(y) · exp(−b(y)·θ)
 ```
 
-for sufficient statistics `a`, `b` and a normalising factor `c`. For such a
-likelihood the marginal likelihood is an `a`-th derivative of the prior
-moment-generating function `M`, evaluated at `t = −b`:
+where `(a(y), b(y))` is **jointly** sufficient for `θ` and `c` is a normalising
+factor. Neither `a` nor `b` is sufficient on its own, and they play different
+roles: `a` is the order of differentiation, `b` fixes the evaluation point. Say
+"the pair `(a, b)` is jointly sufficient", never "the sufficient statistic `a`".
+
+For such a likelihood the marginal likelihood is an `a`-th derivative of the
+prior moment-generating function `M`, evaluated at `t = −b`:
 
 ```
 p(y) = c(y) · Dᵃ M(t) |_{t = −b}
@@ -208,6 +212,22 @@ on `sys.path` and break under normal installation.
 order: summary, Parameters, Returns, Raises, Notes, Examples. Docstrings must
 describe what the code *does*, not what it is intended to do — if they diverge,
 that is a bug in one of the two.
+
+**Mathematical statements are held to the standard of the paper, not of prose.**
+This package implements a published method and its authors read the docs, so a
+loose statement is a defect even when the code is right. Two rules:
+
+- *Do not weaken a joint statement into a marginal one.* `(a(y), b(y))` is
+  jointly sufficient; writing "the sufficient statistic `a(y)`" is wrong, and
+  was shipped in the README before an author caught it.
+- *Prefer the reference's terminology over the more familiar synonym.* The
+  operator is the Liouville–Caputo derivative with lower terminal −∞, because
+  that is what the paper calls it; "Weyl" is a defensible name for the same
+  object and is still the wrong word to use here.
+
+When stating a result, name what is being claimed about what: which variable is
+differentiated, which is integrated, what is held fixed, and over what domain
+the statement holds.
 
 **Naming.** Some internals use German (`mitMGFprior`, `bereit*` for per-element
 statistics alongside `ready*` for aggregated ones). Anglicising the internals
