@@ -399,7 +399,7 @@ def mgfDerivative_fractional(
             "Symbolic fractional derivatives can be very slow. "
             "Consider 'scipy' or 'mpmath' instead."
         )
-        from symbolic_fractionalDeriv import fractionalDeriv_symbolic
+        from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 
         expr = fractionalDeriv_symbolic(
             order=order,
@@ -787,10 +787,9 @@ def mgfDerivative(
                       f"Overriding method '{method}' with 'scipy'.")
             scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
             scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
-            try:
-                from numeric_fractionalDeriv_interpolation import fractionalDeriv_interpolated
-            except ImportError as e:
-                raise ImportError("Could not import numeric_fractionalDeriv_interpolation") from e
+            from jumufraktiv.numeric_fractionalDeriv_interpolation import (
+                fractionalDeriv_interpolated,
+            )
             return fractionalDeriv_interpolated(
                 order=order,
                 prior=prior,

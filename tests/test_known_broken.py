@@ -14,71 +14,19 @@ The bodies assert the *correct* behaviour, not the broken behaviour, so when the
 fix lands the assertion is already the right one.
 """
 
-import importlib.util
-import subprocess
-import sys
-import textwrap
-
 import numpy as np
 import pytest
 import sympy as sp
 
-from jumufraktiv import registry
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-
-HAS_TORCH = importlib.util.find_spec("torch") is not None
-
 
 # ==========================================================================
 # PR 3 — import and registry integrity
 # ==========================================================================
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 3: mitMGFprior.from_registry never calls registry.initialize(), "
-    "so it only works if some other registry function ran first",
-)
-def test_from_registry_initialises_registry():
-    """``from_registry`` must work as the first registry call in a fresh process."""
-    script = textwrap.dedent(
-        """
-        import warnings
-        warnings.simplefilter("ignore")
-        from jumufraktiv.mitMGFprior_class import mitMGFprior
-        mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
-        print("OK")
-        """
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "OK" in result.stdout
-
-
-@pytest.mark.skipif(
-    HAS_TORCH, reason="the defect only manifests when the torch extra is absent"
-)
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 3: MGFdictionary/paretoMGF.py imports torch eagerly and "
-    "MGFdictionary/__init__.py aborts its discovery loop on the first failure, "
-    "so a missing optional extra silently removes two unrelated priors",
-)
-def test_optional_backend_does_not_break_prior_discovery():
-    """A missing optional dependency must not cost unrelated priors."""
-    assert set(registry.list_priors()) >= {"gamma", "heaviside", "pareto", "uniform"}
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 3: derivativeDispatch.py imports symbolic_fractionalDeriv without "
-    "the package prefix, which never resolves in an installed package",
-)
-def test_symbolic_fractional_import_resolves(gamma_prior):
-    """The symbolic fractional backend must be importable."""
-    mgfDerivative(1.5, gamma_prior, method="symbolic", t=None)
+# All PR 3 entries (registry initialisation, prior-discovery isolation, the two
+# unqualified imports) are fixed. Their tests now live, unmarked, in
+# test_registry.py and test_dispatch_imports.py.
 
 
 # ==========================================================================
@@ -124,6 +72,60 @@ def test_array_order_does_not_truncate_fractional_orders(gamma_prior):
     ]
 
     assert batch_log == pytest.approx(np.array(scalar_log), rel=1e-8)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4: symbolic_fractionalDeriv never applies the 1/Gamma(gamma) "
+    "prefactor that all five numeric sites apply, so when it does return an "
+    "expression it is Gamma(gamma) times too large — 77% at order 0.5. It also "
+    "currently returns None for the Gamma prior because SymPy's laplace_transform "
+    "raises internally",
+)
+def test_symbolic_fractional_matches_numeric(gamma_prior):
+    """The symbolic and numeric fractional backends must agree."""
+    from conftest import gamma_mgf_derivative_log
+
+    expr = mgfDerivative(0.5, gamma_prior, method="symbolic", t=None)
+
+    assert expr is not None, "symbolic fractional backend returned None"
+    value = float(expr.subs(sp.Symbol("t", real=True), -1.0).evalf())
+    assert np.log(value) == pytest.approx(gamma_mgf_derivative_log(0.5, -1.0), rel=1e-8)
+
+
+def test_order_below_the_interpolation_threshold_is_accurate(gamma_prior):
+    """Order 1.9 is below the interpolation trigger and takes the plain path.
+
+    The dispatcher switches to interpolation only when the fractional part
+    exceeds ``max(d_vec) = 0.95``, so this goes straight to quadrature and is
+    exact. It is the control for the test below.
+    """
+    from conftest import gamma_mgf_derivative_log
+
+    log_abs, sign = mgfDerivative(1.9, gamma_prior, method="scipy", t=-1.0, log=True)
+
+    assert sign == 1
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(1.9, -1.0), rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4: above the interpolation threshold the dispatcher switches to "
+    "numeric_fractionalDeriv_interpolation, which fits a 4-point cubic spline in "
+    "the order and is markedly LESS accurate than the plain quadrature path just "
+    "below the threshold. The underlying difficulty is that gamma -> 0 makes the "
+    "result (1/Gamma(gamma)) x (a diverging integral); singularity subtraction "
+    "fixes that exactly and would let the interpolation module be retired",
+)
+@pytest.mark.parametrize("order", [1.99, 1.999])
+def test_near_integer_order_is_accurate(gamma_prior, order):
+    """Orders just below an integer must not lose accuracy."""
+    from conftest import gamma_mgf_derivative_log
+
+    log_abs, sign = mgfDerivative(order, gamma_prior, method="scipy", t=-1.0, log=True)
+
+    assert sign == 1
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(order, -1.0), rel=1e-10)
 
 
 # ==========================================================================

@@ -29,8 +29,6 @@ import scipy.stats as stats
 from sympy.functions.special.error_functions import expint
 import jax.numpy as jnp
 from jax.scipy.special import gammaln as jax_gammaln, gammaincc as jax_gammaincc
-import torch
-from torch.special import gammaincc as torch_gammaincc
 
 from jumufraktiv.registry import register_prior, make_prior_spec
 from jumufraktiv.symbols import t, theta, param, u
@@ -230,7 +228,29 @@ def pareto_mgf_torch(t, alpha, xi):
     -------
     torch.Tensor
         M(t).
+
+    Raises
+    ------
+    ImportError
+        If PyTorch is not installed. Install the optional extra with
+        ``pip install "jumufraktiv[torch]"``.
+
+    Notes
+    -----
+    PyTorch is imported here rather than at module scope. This function is not
+    referenced by the registry factory below — nothing in the package calls it —
+    so an eager import made an optional backend a hard requirement for
+    registering the ``pareto`` and ``uniform`` priors at all.
     """
+    try:
+        import torch
+        from torch.special import gammaincc as torch_gammaincc
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise ImportError(
+            "pareto_mgf_torch requires PyTorch. Install it with "
+            'pip install "jumufraktiv[torch]".'
+        ) from exc
+
     alpha_t = torch.tensor(alpha, dtype=t.dtype, device=t.device)
     xi_t = torch.tensor(xi, dtype=t.dtype, device=t.device)
     z = -xi_t * t
