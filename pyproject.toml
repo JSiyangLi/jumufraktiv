@@ -109,3 +109,96 @@ version = { attr = "jumufraktiv._version.__version__" }
 [tool.setuptools.packages.find]
 include = ["jumufraktiv*"]
 exclude = ["jumufraktiv.tests*", "tests*", "docs*"]
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `tests/` is not a package, so conftest.py's helpers are imported by module
+# name; prepend keeps that working without an __init__.py.
+pythonpath = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+filterwarnings = [
+    "error",
+    # Raised by registry.initialize() when the optional torch extra is absent,
+    # which also silently drops the pareto and uniform priors. Remove this
+    # entry once PR 3 makes the paretoMGF import lazy.
+    "ignore:.*Failed to load MGFdictionary.*:UserWarning",
+    # The package warns on legitimately slow paths; those are not test failures.
+    "ignore:computing high-order posterior moments can be very slow:RuntimeWarning",
+    "ignore:Symbolic fractional derivatives can be very slow.*:UserWarning",
+]
+
+# ---------------------------------------------------------------------------
+# Lint
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+# The example notebooks are illustrative prose-with-code, not shipped library
+# code. Linting them mostly flags mathematical notation in comments, and
+# reformatting them would churn stored output cells for no benefit.
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# ---------------------------------------------------------------------------
+# Lint debt baseline for the pre-audit library code.
+#
+# This is an itemised, shrinking list, not a blanket suppression: every code
+# below is owned by a scheduled PR, and that PR deletes its entries. New code
+# is held to the full rule set, and `tests/` carries no exemptions at all.
+#
+# Deliberately NOT exempted, so they stay blocking everywhere: F821
+# (undefined-name) and F811 (redefined-while-unused). Those found real defects
+# rather than style issues — post_cdf references an undefined `t_sym`/`u_sym`,
+# and a stray `from unittest import result` shadows a local. Both are fixed in
+# PR 5, which is why the entries appear only for the two files involved.
+# ---------------------------------------------------------------------------
+"jumufraktiv/**" = [
+    "E402",   # module-import-not-at-top-of-file       -> PR 8  (module layout)
+    "E501",   # line-too-long                          -> PR 14 (docstring sweep)
+    "E713",   # not-in-test                            -> PR 8
+    "E731",   # lambda-assignment                      -> PR 8
+    "F401",   # unused-import                          -> PR 8
+    "F541",   # f-string-missing-placeholders          -> PR 11 (diagnostics)
+    "F841",   # unused-variable                        -> PR 5  (correctness)
+    "I001",   # unsorted-imports                       -> PR 8
+    "B007",   # unused-loop-control-variable           -> PR 9  (vectorisation)
+    "B028",   # no-explicit-stacklevel                 -> PR 11
+    "B904",   # raise-without-from-inside-except       -> PR 11 (error handling)
+    "B905",   # zip-without-explicit-strict            -> PR 9
+    "SIM102", # collapsible-if                         -> PR 8
+    "SIM108", # if-else-block-instead-of-if-exp        -> PR 8
+    "SIM110", # reimplemented-builtin                  -> PR 8
+    "SIM114", # if-with-same-arms                      -> PR 8
+    "SIM300", # yoda-conditions                        -> PR 8
+    "UP006",  # non-pep585-annotation                  -> PR 12 (API surface)
+    "UP007",  # non-pep604-annotation-union            -> PR 12
+    "UP035",  # deprecated-import                      -> PR 12
+    "UP045",  # non-pep604-annotation-optional         -> PR 12
+    "RUF001", # ambiguous-unicode-character-string     -> PR 14
+    "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
+    "RUF003", # ambiguous-unicode-character-comment    -> PR 14
+    "RUF046", # unnecessary-cast-to-int                -> PR 4  (fractional path)
+    "RUF059", # unused-unpacked-variable               -> PR 5
+    "W291",   # trailing-whitespace                    -> PR 14
+    "W292",   # missing-newline-at-end-of-file         -> PR 14
+    "W293",   # whitespace-on-blank-line               -> PR 14
+]
+# These two files carry the F821/F811 defects described above. The exemption is
+# removed by PR 5 together with the underlying bugs.
+"jumufraktiv/MGFDerivative_class.py" = ["F811", "F821"]
+"jumufraktiv/numeric_fractionalDeriv_interpolation.py" = ["F811", "F821"]
+# Redundant re-imports of a name already bound at module level. Harmless today
+# (both bind the same object), so they are left alone to keep this PR from
+# touching library code; removed by PR 8 with the rest of the import cleanup.
+"jumufraktiv/MGFdictionary/gammaMGF.py" = ["F811"]
+"jumufraktiv/mitMGFprior_class.py" = ["F811"]

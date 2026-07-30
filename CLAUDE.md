@@ -118,11 +118,17 @@ Hyperparameters are created with `symbols.param(name)`, which carries the
 Which `method` is valid depends on the *order type*, and `mgfDerivative`
 enforces it:
 
-| Order type   | Valid `method`                  | `auto` resolves to |
-|--------------|---------------------------------|--------------------|
-| symbolic     | `symbolic`                      | `symbolic`         |
-| integer      | `symbolic`, `bell`, `jax`       | `symbolic`         |
-| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            |
+| Order type   | Valid `method`                  | `auto` resolves to | Works today |
+|--------------|---------------------------------|--------------------|-------------|
+| symbolic     | `symbolic`                      | `symbolic`         | **no** — see below |
+| integer      | `symbolic`, `bell`, `jax`       | `symbolic`         | yes         |
+| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | **no** — see below |
+
+The last column is not decoration. Only the integer row is reachable at
+present: the symbolic-order row raises `TypeError`, and the fractional row
+cannot be constructed through `MGFDerivative`. Both are listed under
+"Known-broken" below with the PR that repairs them. Treat the first two rows as
+the intended contract, not as a description of current behaviour.
 
 For fractional orders, `integer_method` separately selects the integer backend
 used *inside* the fractional integrator (`symbolic`, `bell`, `jax`).
@@ -177,11 +183,54 @@ other priors from registering.
 ## Commands
 
 ```bash
-pip install -e ".[dev]"      # development install
-pytest                       # test suite            (added in PR 2)
-ruff check . && ruff format --check .   # lint        (added in PR 2)
-cd docs && make html         # build documentation
+pip install -e ".[dev]"          # development install
+pytest                           # full test suite
+pytest -m "not slow" -x -q       # quick pass
+ruff check .                     # lint
+ruff format --check tests/       # formatting (tests/ only, see below)
+sphinx-build -b html docs docs/_build/html   # documentation
 ```
+
+---
+
+## Testing
+
+`tests/` holds the suite; run it from the repository root so `conftest.py` is
+importable (`pythonpath` is set in `pyproject.toml`).
+
+**Assert mathematics, not recorded output.** A Gamma prior has a closed-form
+MGF and all of its derivatives; a Gamma prior against a Poisson likelihood is
+conjugate, so the entire posterior is a known Gamma. `tests/conftest.py`
+exposes those references (`gamma_mgf_derivative_log`, `poisson_log_evidence`)
+and most of the suite compares against them. A test that merely pins today's
+number cannot tell a refactor from a regression.
+
+| File | Covers |
+|------|--------|
+| `conftest.py` | fixtures and closed-form references |
+| `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
+| `test_design_principles.py` | the three normative principles, with Hypothesis |
+| `test_likelihood_stats.py` | the `ready`/`bereit`/`c` contract across all 14 likelihoods |
+| `test_registry.py` | registry, prior container, custom-prior route, constructor validation |
+| `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
+
+**`test_known_broken.py` is the mechanism that keeps this document honest.**
+Each test asserts the *correct* behaviour and is marked `xfail(strict=True)`,
+so the suite stays green while the defect exists — but the moment a PR fixes
+one, the test XPASSes and *fails* the build. That forces the fix to be recorded
+both there and in the "Known-broken" list below. When you repair something,
+expect a red build and remove the marker; do not weaken the assertion.
+
+**Lint debt.** `pyproject.toml` carries an itemised `per-file-ignores` baseline
+for the pre-audit library code — one entry per rule, each annotated with the PR
+that removes it. It is a shrinking list, not a blanket suppression. `tests/`
+has no exemptions. `F821` (undefined-name) and `F811` (redefined-while-unused)
+are deliberately left blocking wherever possible, because they found real
+defects rather than style issues.
+
+`ruff format` currently runs over `tests/` only. Reformatting 13k lines of
+library code would bury the audit's real diffs; that lands as its own PR in
+wave 6.
 
 ---
 
@@ -191,8 +240,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 
 | Wave | PR | Scope | Status |
 |------|----|-------|--------|
-| 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **in review** |
-| 0 | 2 | pytest + Hypothesis harness, CI, lint config | planned |
+| 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
+| 0 | 2 | pytest + Hypothesis harness, CI, lint config | **in review** |
 | 1 | 3 | Import and registry integrity | planned |
 | 1 | 4 | Fractional-order path | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
@@ -208,7 +257,9 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 
 ### Known-broken, scheduled for repair
 
-Do not build on these paths; do not paper over them. Each has a PR assigned.
+Do not build on these paths; do not paper over them. Each has a PR assigned and
+a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
+where noted as "no runtime repro".
 
 - **Fractional orders cannot be constructed.** `MGFDerivative._build_derivative`
   calls `mgfDerivative(..., t=None)`, but the fractional branch requires `t`.
@@ -226,9 +277,38 @@ Do not build on these paths; do not paper over them. Each has a PR assigned.
   `derivativeDispatch.py:671` silently rounds; `post_predictive` uses this
   path. *(PR 4)*
 - **`post_density` discards its hyperparameter substitution** — `log_prior` is
-  formed before the `subs` call. *(PR 5)*
+  formed before the `subs` call. *(PR 5, no runtime repro yet)*
+- **The symbolic-order path is dead.** `integerDeriv_symbolic` rejects any order
+  that is not a Python `int`, so `mgfDerivative` warns that it will return an
+  analytic continuation and then raises `TypeError` — even for `sp.Integer(2)`.
+  The symbolic row of the backend matrix is unreachable. *(PR 5)*
+- **`post_cdf`'s symbolic branch references undefined names.** It uses `t_sym`
+  and `u_sym`, but the module imports `t` and `u`. The resulting `NameError` is
+  swallowed by a broad `except` and re-raised as a confusing `RuntimeError`.
+  Found by `ruff` `F821`, which is why that rule stays blocking. *(PR 5)*
+- **`post_quantile`, `post_interval` and `post_sample` fail for every prior.**
+  `post_quantile` brackets from a lower bound of `1e-6`, where the
+  incomplete-MGF derivative underflows and its computed sign flips negative,
+  tripping the guard in `post_cdf`. The other two call it. *(PR 6)*
+- **`post_cdf` has no domain validation on `u`.** `theta` is constrained
+  positive, but `u = -1e-9` recurses to `RecursionError` and `u = -0.5` returns
+  a probability greater than one. *(PR 6)*
+- **`post_raw_moment` and `post_central_moment` disagree on return shape.** With
+  the same `log=True`, one returns a bare scalar and the other `(log_abs,
+  sign)` — a direct violation of the log principle. *(PR 12)*
 - **`post_sample` is not reproducible** — unseeded `np.random.rand`, no `rng`
   argument. *(PR 12)*
+
+### Verified correct
+
+Worth recording, because it bounds where the bugs are. Against closed-form
+references, on the paths that do run, the mathematics is right: evidence,
+posterior density, CDF, MGF, raw and central moments, posterior predictive, and
+sequential updating all match exact values for the conjugate Gamma/Poisson
+model to within `1e-8`. Integer derivatives of the Gamma MGF match the
+analytic formula for orders 0–5, and the `symbolic` and `bell` backends agree.
+The defects above are in dispatch, plumbing and edge handling — not in the
+core mathematics.
 
 ### Deferred decisions
 
