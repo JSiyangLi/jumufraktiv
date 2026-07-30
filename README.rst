@@ -119,7 +119,7 @@ Citation
 This package implements the method of
 
    Li, S.-Y., van Dyk, D. A., & Autenrieth, M. *Using fractional derivatives to
-   derive marginal densities.* Biometrika (2026).
+   derive marginal densities.* [manuscript in preparation] (2026).
    `arXiv:2409.11167 <https://arxiv.org/abs/2409.11167>`_
 
 Please cite that paper if you use ``jumufraktiv`` in published work. Machine-
