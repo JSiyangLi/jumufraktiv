@@ -229,6 +229,33 @@ When stating a result, name what is being claimed about what: which variable is
 differentiated, which is integrated, what is held fixed, and over what domain
 the statement holds.
 
+**Parameterisation is part of the claim.** Whether a likelihood is
+MGF-marginalisable is a property of the *parameterisation*, not of the
+distribution family. The factorisation must hold in the particular `θ` the
+package treats as unknown. Rayleigh is the clearest case:
+
+```
+f(y; σ) = (y/σ²)·exp(−y²/(2σ²))
+
+  in the rate θ = 1/σ² :  y·θ·exp(−θy²/2)      ✓ c(y)·θ^a·exp(−bθ), a=1, b=y²/2
+  in the scale σ       :  (y/σ²)·exp(−y²/2σ²)  ✗ the exponent is −b/σ², not −bσ
+```
+
+Same distribution, same data; one parameterisation is in the family and the
+other is not. So "is the Rayleigh likelihood supported?" is not a well-posed
+question — "is it supported in the rate?" is. Every `like_stats` module states
+its parameterisation in the module docstring; read it before comparing against
+any reference density.
+
+**The `like_stats` modules are author-verified.** All fourteen have been checked
+by the package's author. A discrepancy found against an external reference is
+therefore **far more likely a parameterisation mismatch on the checker's side
+than a defect**, and the burden of proof sits with the checker. Before reporting
+one: re-derive the factorisation by hand, confirm which parameter the module
+treats as `θ`, and confirm the reference is expressed in that same parameter.
+Report only what survives that, and say explicitly which parameterisation was
+used on both sides.
+
 **Naming.** Some internals use German (`mitMGFprior`, `bereit*` for per-element
 statistics alongside `ready*` for aggregated ones). Anglicising the internals
 while keeping the package name is planned for a later wave; until then, follow
