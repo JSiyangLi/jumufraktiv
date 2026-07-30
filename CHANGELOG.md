@@ -12,6 +12,35 @@ without a deprecation period.
 
 ### Fixed
 
+- **Non-finite data and known parameters are now rejected.** `np.any(x <= 0)`
+  is `False` for NaN, so a NaN passed every positivity guard in all fourteen
+  likelihood modules and landed in `a`, `b` or `log_c`. It never reached the
+  user as a NaN — it surfaced much later as an error naming the wrong thing
+  ("Derivative at t=-b is negative" for Rayleigh, "t must be provided" for
+  Normal, "cannot convert float NaN to integer" for Poisson). Rejection happens
+  at the single point where values enter, and the message names the offending
+  input. Infinities are covered too, and scalar known parameters — which took a
+  separate branch that bypassed the check entirely — now go through the same
+  guard.
+- **A derivative order whose moment does not exist is rejected at `t = 0`.**
+  The evaluation point is `t = -b`, so `b = 0` puts it at the origin, where
+  `D^a M(0) = E[Theta^a]` and the moment must be finite. `b = 0` arises from
+  ordinary data — every observation at the known mean (`laplace`, `normal`), at
+  zero (`halfnormal`), or at the scale (`pareto`) — and is common once data is
+  rounded. Previously this returned `inf` at order 2 and raised
+  `TypeError: Cannot convert complex to float` at order 3 against a Pareto(2)
+  prior, neither naming the cause.
+
+### Added
+
+- `mitMGFprior.max_finite_moment`, the strict supremum of admissible derivative
+  orders at `t = 0`: infinite for `gamma` and `uniform`, the tail index for
+  `pareto`, and zero for the improper `heaviside` prior, which has no finite
+  moments at all. Defaults to infinity for custom priors, deferring to the
+  numerical result rather than guessing. Only consulted at `t = 0`; no moment
+  condition is imposed anywhere else, since imposing one would wrongly reject
+  the heavy-tailed priors the operator exists to support.
+
 - **Unrecognised keyword arguments to `MGFDerivative` are now an error rather
   than a silently wrong answer.** The constructor split `**kwargs` against the
   *union* of every likelihood's parameter names and forwarded everything else to

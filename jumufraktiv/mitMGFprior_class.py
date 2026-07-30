@@ -134,6 +134,18 @@ class mitMGFprior:
 
     params: Optional[Dict[str, Any]] = None
 
+    #: Supremum of the orders `a` for which `E[Θ^a]` is finite, i.e. the moment
+    #: domain. Only consulted when the evaluation point is `t = 0`, where
+    #: `Dᵃ M(0) = E[Θ^a]` and the moment must exist. Everywhere else (`t < 0`)
+    #: the exponential dominates any polynomial and no moment condition is
+    #: needed — see "The operator" in CLAUDE.md.
+    #:
+    #: The bound is **strict**: order `a` is admissible iff `a < max_finite_moment`.
+    #: Defaults to infinity, which is correct for any prior with all moments and
+    #: is the safe default for a custom prior: it defers to the numerical result
+    #: rather than pre-emptively rejecting.
+    max_finite_moment: float = float("inf")
+
     # -----------------------------
     # compiled outputs
     # -----------------------------
@@ -418,6 +430,10 @@ class mitMGFprior:
         obj.logimgf_jax = logimgf_jax
 
         # Store symbolic outputs
+        obj.max_finite_moment = float(
+            spec.get("max_finite_moment", float("inf"))
+        )
+
         obj.mgf_sym_out = mgf_sym
         obj.cgf_sym = cgf_sym
         obj.pdf_sym_func = spec.get("pdf_sym_func")

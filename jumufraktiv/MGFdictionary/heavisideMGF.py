@@ -220,6 +220,11 @@ def heaviside_factory(params):
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
 
+        # Improper prior: int_k^inf theta^a dtheta diverges for every a >= 0,
+        # including a = 0. Its MGF exists only for t < 0, so no order is
+        # admissible at t = 0.
+        max_finite_moment=0.0,
+
         mgf=lambda t_val: heaviside_mgf(t_val, k_val),
         cgf=lambda t_val: heaviside_cgf(t_val, k_val),
 
