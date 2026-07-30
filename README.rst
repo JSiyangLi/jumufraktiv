@@ -1,8 +1,125 @@
-# jumufraktiv
-A package that returns model evidence, posterior density, posterior predictive, posterior MGF and posterior moments by calculating fractional derivatives of prior MGF
+===========
+jumufraktiv
+===========
 
-## Things to check before start
-1. This package only supports strictly positive parameters. Does not matter if the parameter space takes the entire positive real line or not.
-2. The options of likelihoods that this package supports is limited to Poisson, Laplace with known mean, normal with known mean, Rayleigh, Maxwell-Boltzmann, gamma with known shape, inverse gamma with known shape, Levy with known mean, Weibull with known rho=shape/scale, Burr XII with known c, Pareto with known scale, Dagum with known a and b, and Gompertz with known scale.
-3. There is no limitations on the prior distributions this package supports, except for improper priors with MGF values of ∞ on the negative half of the real line.
-### If any of the above is found not suitable for your particular use, then please consider other packages available.
+Bayesian inference via fractional derivatives of prior moment-generating
+functions.
+
+.. image:: https://img.shields.io/pypi/pyversions/jumufraktiv.svg
+   :target: https://pypi.org/project/jumufraktiv/
+   :alt: Supported Python versions
+
+.. image:: https://img.shields.io/badge/license-MIT-blue.svg
+   :target: https://github.com/JSiyangLi/jumufraktiv/blob/main/LICENSE
+   :alt: MIT license
+
+.. readme-body-start
+
+Overview
+========
+
+``jumufraktiv`` computes model evidence, posterior densities, posterior
+predictive densities, posterior moment-generating functions and posterior
+moments by taking **fractional derivatives of the prior MGF**.
+
+For a likelihood in the MGF-marginalisable family, the joint density factorises
+as
+
+.. math::
+
+   L(\theta; y) = c(y)\, \theta^{a(y)} \exp\!\big(-b(y)\,\theta\big),
+
+so the marginal likelihood is a derivative of the prior MGF :math:`M` evaluated
+at :math:`t = -b`:
+
+.. math::
+
+   p(y) = c(y) \, \frac{\mathrm{d}^{a}}{\mathrm{d}t^{a}} M(t) \Big|_{t=-b}.
+
+When the sufficient statistic :math:`a(y)` is not an integer, the derivative is
+fractional — hence the name. Everything else (density, CDF, quantiles, moments,
+predictive, sequential updating) follows from the same object.
+
+Installation
+============
+
+.. code-block:: bash
+
+   pip install jumufraktiv
+
+To work from a checkout:
+
+.. code-block:: bash
+
+   git clone https://github.com/JSiyangLi/jumufraktiv.git
+   cd jumufraktiv
+   pip install -e ".[dev]"
+
+Optional extras: ``torch`` (PyTorch backend for the Pareto prior), ``docs``
+(Sphinx), ``examples`` (notebook dependencies), ``dev`` (tests and linting).
+
+.. note::
+
+   The ``pareto`` and ``uniform`` priors currently require the ``torch`` extra.
+   The Pareto module imports PyTorch while the prior dictionary is being loaded,
+   and a failure there stops the priors after it from registering as well. The
+   registry reports this as a warning, not an error, so the two priors are simply
+   absent from ``registry.list_priors()``. Install with::
+
+      pip install "jumufraktiv[torch]"
+
+   if you need either of them. A future release will make the import lazy so
+   that a missing extra costs only the Pareto Torch backend.
+
+Quick start
+===========
+
+.. code-block:: python
+
+   from jumufraktiv import registry
+   from jumufraktiv.mitMGFprior_class import mitMGFprior
+   from jumufraktiv.MGFDerivative_class import MGFDerivative
+
+   registry.initialize()
+
+   prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+   post = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
+
+   log_evidence, sign = post.evidence()
+   log_density = post.post_density(0.5)
+
+Before you start
+================
+
+This package makes three assumptions. If any of them does not fit your problem,
+another package will serve you better.
+
+1. **Strictly positive parameters.** The parameter space may be the whole
+   positive real line or a subset of it, but it must not include zero or
+   negative values.
+
+2. **A supported likelihood.** Fourteen named likelihoods are built in:
+   Poisson, Laplace (known mean), Normal (known mean), half-normal, Rayleigh,
+   Maxwell-Boltzmann, Gamma (known shape), inverse-gamma (known shape),
+   Lévy (known location), Weibull (known ``rho`` = shape/scale), Burr XII
+   (known ``c``), Pareto (known scale), Dagum (known ``a`` and ``b``), and
+   Gompertz (known scale). Custom likelihoods are supported by supplying your
+   own ``a()``, ``b()`` and ``c()`` sufficient-statistic functions.
+
+3. **A prior with a finite MGF.** Any prior works provided its MGF is finite on
+   the negative half of the real line; improper priors whose MGF diverges there
+   are not supported. Priors may come from the built-in dictionary
+   (``gamma``, ``pareto``, ``uniform``, ``heaviside`` — see the note under
+   *Installation* about ``pareto`` and ``uniform``) or be supplied directly as
+   symbolic or callable MGF/PDF pairs.
+
+Status
+======
+
+Alpha. The API is not yet stable and may change without a deprecation period
+before version 1.0. See ``CHANGELOG.md`` for release notes.
+
+License
+=======
+
+MIT. See ``LICENSE``.
