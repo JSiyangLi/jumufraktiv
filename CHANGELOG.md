@@ -62,9 +62,6 @@ without a deprecation period.
   `test_custom_features.py` had been dead since the `MGFDerivative`
   constructor stopped accepting string priors — it could only raise
   `TypeError`. Their coverage is now provided with assertions in `tests/`.
-
-### Removed
-
 - `jumufraktiv/deprecated/` (four unreferenced modules: `evidence.py`,
   `numeric_integerDeriv_Torch.py`, `temporaty_backend_subs.py`,
   `temporaty_numeric_integerDeriv_Bell2.py`). Recoverable from git history.
