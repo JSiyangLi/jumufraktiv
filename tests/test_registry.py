@@ -46,6 +46,45 @@ class TestRegistry:
 
         assert set(registry.list_priors()) == before
 
+    def test_every_dictionary_prior_registers(self):
+        """One prior module's optional backend must not cost the others.
+
+        `paretoMGF` used to `import torch` eagerly, and discovery aborted on the
+        first module that raised — so a missing optional extra silently removed
+        both `pareto` and `uniform`, and the registry came up with half its
+        contents and a warning.
+        """
+        assert set(registry.list_priors()) >= {
+            "gamma",
+            "heaviside",
+            "pareto",
+            "uniform",
+        }
+
+    def test_no_prior_module_failed_to_import(self):
+        assert registry.failed_prior_modules() == {}
+
+    def test_missing_prior_error_mentions_failed_modules(self, monkeypatch):
+        """An absent prior must say whether a module failed, not just 'not found'.
+
+        'Prior not found' is unactionable when the real cause is an optional
+        dependency; naming the module and the exception makes it fixable.
+        """
+        import jumufraktiv.MGFdictionary as dictionary
+
+        monkeypatch.setitem(
+            dictionary.FAILED_MODULES,
+            "brokenMGF",
+            ImportError("no module named 'nope'"),
+        )
+
+        with pytest.raises(KeyError) as excinfo:
+            registry.get_prior("brokenprior")
+
+        message = str(excinfo.value)
+        assert "brokenMGF" in message
+        assert "failed to import" in message
+
     @pytest.mark.parametrize("missing", ["mgf", "cgf"])
     def test_make_prior_spec_requires_mgf_and_cgf(self, missing):
         fields = {"mgf": lambda x: x, "cgf": lambda x: x}
@@ -80,6 +119,37 @@ class TestMitMGFPrior:
     def test_unknown_prior_name_raises_valueerror(self):
         with pytest.raises(ValueError, match="Unknown prior"):
             mitMGFprior.from_registry("no-such-prior")
+
+    def test_from_registry_works_as_the_first_registry_call(self):
+        """`from_registry` must not depend on some other call having run first.
+
+        It read `PRIOR_REGISTRY` directly without initialising it, so in a fresh
+        process it raised "Unknown prior 'gamma'" — the registry was simply
+        empty. A subprocess is the only honest way to test this: once any test
+        in this session touches the registry, the module-level cache hides it.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        script = textwrap.dedent(
+            """
+            import warnings
+            warnings.simplefilter("ignore")
+            from jumufraktiv.mitMGFprior_class import mitMGFprior
+            prior = mitMGFprior.from_registry(
+                "gamma", params={"alpha": 2.0, "beta": 3.0}
+            )
+            assert prior.name == "gamma"
+            print("OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout
 
     def test_compiled_mgf_matches_the_closed_form(self, gamma_prior):
         """The compiled numeric MGF must equal (beta / (beta - t)) ** alpha."""

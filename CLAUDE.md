@@ -27,7 +27,66 @@ density, CDF, quantiles, moments, predictive density, sequential updates) is
 derived from the same object, which is why almost everything routes through one
 dispatcher.
 
-Parameters are assumed **strictly positive**.
+Parameters are assumed **strictly positive**. That is not a convenience
+assumption: `θ > 0` is exactly the condition that makes the defining integral
+converge (see "The operator" below).
+
+## Reference
+
+The package implements the method of
+
+> Li, S.-Y., van Dyk, D. A., & Autenrieth, M. *Using fractional derivatives to
+> derive marginal densities.* **Biometrika** (2026).
+> [arXiv:2409.11167](https://arxiv.org/abs/2409.11167)
+
+Cite it in new docstrings that state the identity, and check it before changing
+any of the mathematics. Its Theorem 4.1 gives a characterisation worth knowing:
+a likelihood is MGF-marginalisable **iff** it admits a gamma conjugate prior,
+i.e. iff it factorises in exactly the form above. That is a testable criterion
+for anything added to `LIKELIHOOD_REGISTRY`.
+
+The paper also describes a *second* family, marginalisable by a derivative with
+lower terminal **0** acting on `t^a M(log t)` — the Mellin-side analogue,
+covering Beta, Beta-prime and Dirichlet likelihoods. That is a different
+operator and a different code path; this package does not implement it.
+
+---
+
+## The operator
+
+`Dᵃ` is the **Liouville–Caputo fractional derivative with lower terminal at
+−∞**, written `D^a_{(−∞)+}`. With `n = ⌊a⌋` and `γ = n+1−a ∈ (0,1]`:
+
+```
+Dᵃ M(t) = (1/Γ(γ)) ∫_{−∞}^{t} (t − x)^{γ−1} M^{(n+1)}(x) dx
+```
+
+**The lower terminal is the load-bearing part, and it must not be changed.**
+The operator is required to satisfy `Dᵃ e^{tθ} = θᵃ e^{tθ}`, which is what makes
+`Dᵃ M(t) = E[θᵃ e^{tθ}]` and hence the whole construction work. That property
+depends on the terminal being −∞, and on `θ > 0` (the inner integral is a Gamma
+integral, convergent only for positive `θ`).
+
+Three specific ways to get this wrong:
+
+- **Terminal 0 (ordinary Riemann–Liouville or Caputo).** Fails outright. The
+  evaluation point is `t = −b(y) < 0`, so `∫₀ᵗ` runs backwards past the origin.
+  Even where it is defined it differs from the correct answer by a factor of the
+  regularised incomplete gamma `P(1−a, θt)`.
+- **The Riemann–Liouville *form* at −∞** (fractionally integrate, then
+  differentiate). It has the right eigenfunction property, but it needs the
+  prior's shape `c > γ` and **diverges** for priors with density mass piling up
+  at `θ → 0`. Worse, adaptive quadrature on the divergent integral returns a
+  plausible-looking wrong value without raising. The Caputo form used here
+  differentiates first, which improves decay and converges for all `c > 0`.
+- **Requiring `E[Θ^{⌊a⌋+1}] < ∞`.** Sufficient but *not* necessary at `t < 0`,
+  where the exponential dominates any polynomial. Do not enforce it — it would
+  wrongly reject heavy-tailed priors such as `pareto` for which the identity
+  holds perfectly well.
+
+A related strength worth preserving: the operator reads `M` only on `(−∞, t]`.
+It never needs `M` to the right of the evaluation point, so it works for priors
+whose MGF exists only for `t ≤ 0` — Pareto and lognormal among them.
 
 ---
 
@@ -241,8 +300,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | Wave | PR | Scope | Status |
 |------|----|-------|--------|
 | 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
-| 0 | 2 | pytest + Hypothesis harness, CI, lint config | **in review** |
-| 1 | 3 | Import and registry integrity | planned |
+| 0 | 2 | pytest + Hypothesis harness, CI, lint config | **merged** |
+| 1 | 3 | Import and registry integrity | **in review** |
 | 1 | 4 | Fractional-order path | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
@@ -265,17 +324,17 @@ where noted as "no runtime repro".
   calls `mgfDerivative(..., t=None)`, but the fractional branch requires `t`.
   Any non-integer `a` raises at construction — which includes `normal`,
   `halfnormal` and `maxwell-boltzmann` whenever *n* is odd. *(PR 4)*
-- **Two unqualified imports always fail.** `derivativeDispatch.py:402` and
-  `:791`. *(PR 3)*
-- **The registry silently drops priors.** `registry.initialize` converts an
-  import failure into a warning; `MGFdictionary/paretoMGF.py` imports `torch`
-  eagerly, so a missing optional extra removes `pareto` *and* `uniform` from
-  the registry. *(PR 3)*
-- **`mitMGFprior.from_registry` does not initialise the registry**, so it fails
-  in a fresh process unless some other registry function ran first. *(PR 3)*
 - **Fractional orders are truncated in the array path.** `int(o)` at
   `derivativeDispatch.py:671` silently rounds; `post_predictive` uses this
   path. *(PR 4)*
+- **The symbolic fractional backend omits the `1/Γ(γ)` prefactor** that all five
+  numeric sites apply, so its result is `Γ(γ)` times too large — 77% at order
+  0.5. It also currently returns `None` for the Gamma prior because SymPy's
+  `laplace_transform` raises internally. *(PR 4)*
+- **Near-integer orders lose accuracy.** Above the interpolation threshold
+  (fractional part > 0.95) the dispatcher switches to a 4-point cubic spline in
+  the order, which is *less* accurate than the plain quadrature just below the
+  threshold. See "Numerical policy" for the exact fix. *(PR 4)*
 - **`post_density` discards its hyperparameter substitution** — `log_prior` is
   formed before the `subs` call. *(PR 5, no runtime repro yet)*
 - **The symbolic-order path is dead.** `integerDeriv_symbolic` rejects any order
@@ -309,6 +368,73 @@ model to within `1e-8`. Integer derivatives of the Gamma MGF match the
 analytic formula for orders 0–5, and the `symbolic` and `bell` backends agree.
 The defects above are in dispatch, plumbing and edge handling — not in the
 core mathematics.
+
+---
+
+## Numerical policy
+
+Conclusions from a background research pass, recorded so later waves do not
+re-litigate them. Each was measured against this repository's own environment.
+
+**The weak singularity is already handled.** The substitution `z = e^u` turns
+the kernel into `z^{γ−1} dz = e^{γu} du`, so Gauss–Jacobi, QAWS and
+product-integration rules are unnecessary here. The transformed integrand
+decays single-exponentially on ℝ, which is precisely the class where a **plain
+uniform-grid trapezoid rule converges geometrically** and adaptive
+Gauss–Kronrod does not. Measured: trapezoid reaches 2e−15 in 321 evaluations
+where the current adaptive scheme needs 1092. A fixed grid is also what makes
+the tuple-vectorisation principle achievable — fixed nodes mean one batched
+evaluation instead of an independent adaptive loop per point.
+
+**Near-integer orders have an exact fix, not a heuristic one.** As `a → (n+1)⁻`,
+`γ → 0`, and the answer is computed as `(1/Γ(γ)) × (a diverging integral)` —
+0 × ∞. Subtracting a function with the same value at `z = 0` and a known
+weighted integral removes it exactly, because `∫₀^∞ z^{γ−1}e^{−z}dz = Γ(γ)`:
+
+```
+Dᵃ M(t) = M^{(n+1)}(t) + (1/Γ(γ)) ∫ e^{γu} [ M^{(n+1)}(t − e^u)
+                                            − M^{(n+1)}(t)·e^{−e^u} ] du
+```
+
+The bracket is `O(z)` near zero, so the left tail decays like `e^{(γ+1)u}`
+*independently of γ*, and the leading term is already the exact `γ → 0` limit.
+Measured relative error at order 1.999: 0.96 before, 2e−16 after. **This
+supersedes `numeric_fractionalDeriv_interpolation.py`, which should be retired
+rather than repaired** — spline-in-the-order is uncontrolled, costs 4× the work,
+and takes its sign from an endpoint.
+
+**Truncation must scale with γ.** The left tail decays like `e^{γu}`, so
+reaching tolerance needs `U ≳ log(1/tol)/γ` — about 55 at `a = 1.5` but 2763 at
+`a = 1.99`. The current `initial_L = 10` with a doubling test cannot get there,
+and `math.exp(u)` overflows above `u = 709` regardless, so `max_L = 1e4` is
+unreachable.
+
+**`logminus` is wrong for small gaps.** It implements only the `log1p` branch.
+The standard two-branch form (Mächler 2012, the `Rmpfr` `log1mexp` vignette)
+switches at `log 2`: use `log(−expm1(−a))` below and `log1p(−exp(−a))` above.
+Measured: the current version returns `−inf` at a gap of 1e−17 and is wrong by
+3.6e−09 at 1e−10 — and this function is used to form incomplete-MGF
+differences, which is exactly the small-gap regime.
+
+**Use `lambdify(..., modules=["scipy", "numpy"])`, never `"numpy"` alone.**
+Measured speedup over `subs().evalf()` in a loop: ~6400×, at a cost of ~3 ulp.
+`"numpy"` alone *fails* on `lowergamma`, `uppergamma`, `polygamma` and `Ei`,
+all of which appear in this package's priors. Cache the compiled function on a
+structural key and pass hyperparameters as arguments rather than substituting.
+
+**Invert the CDF in log space.** Solve `log F(x) = log p`, switching to the
+complement above the median. `F(x) − p` is identically zero wherever `F`
+underflows, so no bracketing method can converge there; `log F` stays finite to
+`e^{−745}`. This mirrors SciPy's own `ilogcdf` design.
+
+**Bell recurrence conditioning.** The recurrence and the explicit partition sum
+are numerically equivalent — the recurrence wins on cost, not accuracy. The
+useful runtime diagnostic is the cancellation ratio `Σ|term| / |Σ term|`: it is
+1.0 for priors whose CGF has one-signed derivatives (gamma, exponential — exact
+to machine precision even at order 40) and ~3e6 for alternating ones such as
+uniform, where double precision degrades from order ~12.
+
+---
 
 ### Deferred decisions
 

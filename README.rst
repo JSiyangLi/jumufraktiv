@@ -113,6 +113,25 @@ another package will serve you better.
    *Installation* about ``pareto`` and ``uniform``) or be supplied directly as
    symbolic or callable MGF/PDF pairs.
 
+Citation
+========
+
+This package implements the method of
+
+   Li, S.-Y., van Dyk, D. A., & Autenrieth, M. *Using fractional derivatives to
+   derive marginal densities.* Biometrika (2026).
+   `arXiv:2409.11167 <https://arxiv.org/abs/2409.11167>`_
+
+Please cite that paper if you use ``jumufraktiv`` in published work. Machine-
+readable metadata is in ``CITATION.cff``.
+
+The derivative is the Liouville–Caputo fractional derivative with lower terminal
+at :math:`-\infty`. That terminal is essential rather than conventional: it is
+what gives :math:`D^{a} e^{t\theta} = \theta^{a} e^{t\theta}`, and hence
+:math:`D^{a} M(t) = \mathbb{E}[\theta^{a} e^{t\theta}]`. It also means the
+operator reads :math:`M` only on :math:`(-\infty, t]`, so the method works for
+priors whose MGF exists only for :math:`t \le 0`, such as the Pareto.
+
 Status
 ======
 

@@ -327,17 +327,32 @@ class mitMGFprior:
         >>> # With symbolic simplification
         >>> prior = mitMGFprior.from_registry('pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True)
         """
-        from jumufraktiv.registry import PRIOR_REGISTRY
+        from jumufraktiv.registry import failed_prior_modules, get_prior
 
         params = params or {}
-
-        if prior_name not in PRIOR_REGISTRY:
-            raise ValueError(f"Unknown prior '{prior_name}'")
 
         # ---------------------------------------------------------
         # Get the factory function and call it
         # ---------------------------------------------------------
-        factory = PRIOR_REGISTRY[prior_name]
+        # get_prior initialises the registry. Reading PRIOR_REGISTRY directly
+        # here used to make this method fail in a fresh process unless some
+        # other registry function had already run, and its error could not
+        # distinguish a typo from an unpopulated registry.
+        try:
+            factory = get_prior(prior_name)
+        except KeyError as exc:
+            message = f"Unknown prior '{prior_name}'. Available: {sorted(PRIOR_REGISTRY)}"
+            failed = failed_prior_modules()
+            if failed:
+                details = "; ".join(
+                    f"{module} ({type(err).__name__}: {err})"
+                    for module, err in sorted(failed.items())
+                )
+                message += (
+                    f". Note that {len(failed)} prior module(s) failed to import, "
+                    f"so priors they define are missing from that list: {details}"
+                )
+            raise ValueError(message) from exc
         spec = factory(params)  # <-- this is the make_prior_spec dict
 
         # ---------------------------------------------------------

@@ -26,3 +26,34 @@ keywords:
   - posterior
 license: MIT
 version: 0.1.0
+preferred-citation:
+  type: article
+  title: "Using fractional derivatives to derive marginal densities"
+  authors:
+    - family-names: Li
+      given-names: Si-Yang
+    - family-names: van Dyk
+      given-names: David A.
+    - family-names: Autenrieth
+      given-names: Maximilian
+  journal: Biometrika
+  year: 2026
+  identifiers:
+    - type: other
+      value: "arXiv:2409.11167"
+      description: arXiv preprint
+  url: "https://arxiv.org/abs/2409.11167"
+references:
+  - type: article
+    title: "Using fractional derivatives to derive marginal densities"
+    authors:
+      - family-names: Li
+        given-names: Si-Yang
+      - family-names: van Dyk
+        given-names: David A.
+      - family-names: Autenrieth
+        given-names: Maximilian
+    journal: Biometrika
+    year: 2026
+    url: "https://arxiv.org/abs/2409.11167"
+    notes: The method this package implements.

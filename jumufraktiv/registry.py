@@ -61,25 +61,61 @@ def initialize():
     """
     Trigger import‑time discovery of all priors.
 
-    This function imports `jumufraktiv.MGFdictionary`, which in turn
-    imports all prior modules and runs their `@register_prior` decorators.
-    It is safe to call multiple times.
+    This function imports `jumufraktiv.MGFdictionary`, which in turn imports all
+    prior modules and runs their `@register_prior` decorators. It is safe to
+    call multiple times, and every public function in this module calls it, so
+    callers rarely need to.
+
+    Individual prior modules are isolated: one that cannot import is recorded
+    and warned about without preventing the others from registering. See
+    :func:`failed_prior_modules`.
 
     Returns
     -------
     None
+
+    Raises
+    ------
+    ImportError
+        If the `MGFdictionary` subpackage itself cannot be imported. This is a
+        packaging or installation fault rather than a missing optional backend,
+        so it is raised rather than downgraded to a warning — a registry that
+        quietly comes up empty produced silently wrong results before.
     """
     global _LOADED
 
     if _LOADED:
         return
 
-    try:
-        import jumufraktiv.MGFdictionary  # triggers auto‑registration
-    except Exception as e:
-        warnings.warn(f"[registry] Failed to load MGFdictionary: {e}")
+    # Deliberately not wrapped in try/except. A failure here means the
+    # subpackage itself is broken or absent, which no caller can work around
+    # and which must not be mistaken for "this prior does not exist".
+    import jumufraktiv.MGFdictionary
 
     _LOADED = True
+
+
+def failed_prior_modules():
+    """
+    Return the prior modules that failed to import, and why.
+
+    Returns
+    -------
+    dict
+        Maps module name (e.g. ``'paretoMGF'``) to the exception instance that
+        stopped it. Empty when everything imported cleanly.
+
+    Examples
+    --------
+    >>> from jumufraktiv import registry
+    >>> registry.failed_prior_modules()
+    {}
+    """
+    initialize()
+
+    from jumufraktiv.MGFdictionary import FAILED_MODULES
+
+    return dict(FAILED_MODULES)
 
 
 # ============================================================
@@ -112,10 +148,25 @@ def get_prior(name: str):
     initialize()
 
     if name not in PRIOR_REGISTRY:
-        raise KeyError(
-            f"Prior '{name}' not found. "
-            f"Available: {list(PRIOR_REGISTRY.keys())}"
+        message = (
+            f"Prior '{name}' not found. Available: {sorted(PRIOR_REGISTRY)}"
         )
+
+        # A prior can be absent because its module failed to import rather than
+        # because it does not exist. Saying so turns an unactionable "not found"
+        # into a fixable one (usually: install an optional extra).
+        failed = failed_prior_modules()
+        if failed:
+            details = "; ".join(
+                f"{module} ({type(exc).__name__}: {exc})"
+                for module, exc in sorted(failed.items())
+            )
+            message += (
+                f". Note that {len(failed)} prior module(s) failed to import, so "
+                f"priors they define are missing from that list: {details}"
+            )
+
+        raise KeyError(message)
 
     return PRIOR_REGISTRY[name]
 

@@ -22,10 +22,60 @@ from sympy.integrals.transforms import laplace_transform, mellin_transform
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t  # only t is needed
 
-try:
-    from func_timeout import func_timeout, FunctionTimedOut
-except ImportError:
-    raise ImportError("Please install func_timeout: pip install func_timeout")
+import concurrent.futures
+
+
+class FunctionTimedOut(TimeoutError):
+    """Raised when a symbolic transform exceeds its time budget."""
+
+
+def func_timeout(timeout_seconds, func, args=()):
+    """
+    Run ``func`` with a wall-clock budget, raising if it overruns.
+
+    Parameters
+    ----------
+    timeout_seconds : float
+        Wall-clock budget in seconds.
+    func : callable
+        Zero-argument callable (or one accepting ``*args``).
+    args : tuple, optional
+        Positional arguments for ``func``.
+
+    Returns
+    -------
+    object
+        Whatever ``func`` returns.
+
+    Raises
+    ------
+    FunctionTimedOut
+        If ``func`` has not returned within ``timeout_seconds``.
+
+    Notes
+    -----
+    This replaces the third-party ``func_timeout`` package, which is
+    unmaintained and no longer installable: its ``setup.py`` reads the
+    ``install_layout`` attribute that setuptools removed, so building it fails
+    and the whole module became unimportable — taking the ``symbolic`` backend
+    for fractional orders with it.
+
+    The worker thread cannot be killed once started, so an overrunning SymPy
+    call keeps consuming CPU in the background even after this raises. That is
+    a real limitation, but it matches what the previous dependency provided in
+    practice, and it restores control to the caller, which is the point.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(func, *args)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError as exc:
+            raise FunctionTimedOut(
+                f"call exceeded its {timeout_seconds}s budget"
+            ) from exc
+        finally:
+            # Do not block interpreter shutdown waiting on a runaway transform.
+            pool.shutdown(wait=False)
 
 
 def _is_unevaluated_transform(expr):
