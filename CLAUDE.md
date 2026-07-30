@@ -247,6 +247,39 @@ order: summary, Parameters, Returns, Raises, Notes, Examples. Docstrings must
 describe what the code *does*, not what it is intended to do — if they diverge,
 that is a bug in one of the two.
 
+**Pull request descriptions are written for the reviewer, not for the author.**
+The people reviewing this repository are experts in the statistics and the
+numerical analysis, and are not necessarily fluent in its Python internals. A
+description that can only be followed by someone who already knows the module
+layout has failed at the one job it has: letting a reviewer judge whether the
+change is *correct*.
+
+Length is not the constraint — clarity is. A longer description that can be
+read start to finish beats a compressed one that has to be decoded. But most
+of the bulk that creeps in is not explanation, it is shorthand, and removing it
+usually makes the text both clearer and shorter.
+
+- **Open with what changed for someone using the package**, not with the
+  private method that was wrong. "Six of the fourteen likelihoods could not be
+  used at all" orients a reader; `_build_derivative` passes `t=None` does not.
+- **Introduce every internal term on first use**, including the ones this
+  document treats as vocabulary — *backend*, *symbolic versus numeric*,
+  *deferred construction*, *strict xfail*. One clause is usually enough.
+- **Say what a number means before showing it.** A table of measurements needs
+  to state what the reference is and what counts as agreement. Numbers without
+  that are decoration.
+- **Write in full sentences.** Clipped fragments ("Both fixed." "Two thirds of
+  the matrix, unreachable.") read as notes to self.
+- **Name the mechanism, not just the symptom** — a reviewer checking
+  correctness needs to know *why* it was wrong, and that is the part only the
+  author can supply.
+- **Flag what you did not fix, and why**, in the same voice as the rest. A
+  loosened tolerance or a deferred repair must be visible, never buried.
+- Keep the mathematics exactly as precise as the rules below require. Accessible
+  prose is not licence to loosen a mathematical statement.
+
+The same applies to commit messages, at proportionate length.
+
 **Mathematical statements are held to the standard of the paper, not of prose.**
 This package implements a published method and its authors read the docs, so a
 loose statement is a defect even when the code is right. Two rules:
