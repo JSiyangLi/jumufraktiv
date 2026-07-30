@@ -61,8 +61,16 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-# PyTorch backend for the Pareto prior's MGF. Optional: the package must import
-# and register every prior without it.
+# PyTorch backend for the Pareto prior's MGF.
+#
+# Nominally optional, but not optional in practice today: MGFdictionary/paretoMGF.py
+# imports torch at module import time, and MGFdictionary/__init__.py aborts its
+# discovery loop on the first module that raises. Without this extra installed,
+# `pareto` *and* `uniform` both fail to register, and registry.initialize()
+# downgrades the failure to a warning rather than an error.
+#
+# Making the import lazy so a missing extra costs only the Pareto Torch backend
+# is PR 3; see the "Known-broken" section of CLAUDE.md.
 torch = ["torch>=2.0"]
 
 # Running the example notebooks.

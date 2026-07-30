@@ -58,6 +58,19 @@ To work from a checkout:
 Optional extras: ``torch`` (PyTorch backend for the Pareto prior), ``docs``
 (Sphinx), ``examples`` (notebook dependencies), ``dev`` (tests and linting).
 
+.. note::
+
+   The ``pareto`` and ``uniform`` priors currently require the ``torch`` extra.
+   The Pareto module imports PyTorch while the prior dictionary is being loaded,
+   and a failure there stops the priors after it from registering as well. The
+   registry reports this as a warning, not an error, so the two priors are simply
+   absent from ``registry.list_priors()``. Install with::
+
+      pip install "jumufraktiv[torch]"
+
+   if you need either of them. A future release will make the import lazy so
+   that a missing extra costs only the Pareto Torch backend.
+
 Quick start
 ===========
 
@@ -96,8 +109,9 @@ another package will serve you better.
 3. **A prior with a finite MGF.** Any prior works provided its MGF is finite on
    the negative half of the real line; improper priors whose MGF diverges there
    are not supported. Priors may come from the built-in dictionary
-   (``gamma``, ``pareto``, ``uniform``, ``heaviside``) or be supplied directly
-   as symbolic or callable MGF/PDF pairs.
+   (``gamma``, ``pareto``, ``uniform``, ``heaviside`` — see the note under
+   *Installation* about ``pareto`` and ``uniform``) or be supplied directly as
+   symbolic or callable MGF/PDF pairs.
 
 Status
 ======
