@@ -34,7 +34,6 @@ import traceback
 from unittest import result
 import sympy as sp
 import numpy as np
-import pandas as pd
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
