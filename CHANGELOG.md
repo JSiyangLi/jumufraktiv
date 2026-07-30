@@ -66,9 +66,9 @@ without a deprecation period.
   backend.
 - `CLAUDE.md` describing the architecture, design principles and conventions.
 - Citation of the paper this package implements — Li, van Dyk & Autenrieth,
-  "Using fractional derivatives to derive marginal densities", Biometrika
-  (2026), arXiv:2409.11167 — in `CITATION.cff`, the README and `CLAUDE.md`. The
-  repository previously cited it nowhere.
+  "Using fractional derivatives to derive marginal densities", manuscript in
+  preparation (2026), arXiv:2409.11167 — in `CITATION.cff`, the README and
+  `CLAUDE.md`. The repository previously cited it nowhere.
 - A statement in `CLAUDE.md` of which fractional-derivative operator is correct
   and why the lower terminal at −∞ cannot be changed, together with a
   research-backed numerical policy covering quadrature, near-integer orders,

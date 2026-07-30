@@ -53,7 +53,7 @@ references:
         given-names: David A.
       - family-names: Autenrieth
         given-names: Maximilian
-    journal: Biometrika
+    journal: [manuscript in preparation]
     year: 2026
     url: "https://arxiv.org/abs/2409.11167"
     notes: The method this package implements.
