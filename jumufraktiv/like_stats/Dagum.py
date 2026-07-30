@@ -135,7 +135,7 @@ def readyDagum(
     # ---- Handle r and s (vectorization) ----
     def _handle_param(param, name):
         if _is_1d_dataframe(param):
-            vals = _extract_1d(param)
+            vals = _extract_1d(param, name)
             if len(vals) != n:
                 raise ValueError(f"{name} must have same length as data or be scalar")
             return vals
@@ -143,7 +143,7 @@ def readyDagum(
             return _extract_1d(np.full(n, float(param)), name)
         else:
             try:
-                vals = _extract_1d(param)
+                vals = _extract_1d(param, name)
                 if len(vals) != n:
                     raise ValueError(f"{name} must have same length as data or be scalar")
                 return vals
@@ -213,7 +213,7 @@ def bereitDagum(
     # ---- Reuse parameter handling ----
     def _handle_param(param, name):
         if _is_1d_dataframe(param):
-            vals = _extract_1d(param)
+            vals = _extract_1d(param, name)
             if len(vals) != n:
                 raise ValueError(f"{name} must have same length as data or be scalar")
             return vals
@@ -221,7 +221,7 @@ def bereitDagum(
             return _extract_1d(np.full(n, float(param)), name)
         else:
             try:
-                vals = _extract_1d(param)
+                vals = _extract_1d(param, name)
                 if len(vals) != n:
                     raise ValueError(f"{name} must have same length as data or be scalar")
                 return vals

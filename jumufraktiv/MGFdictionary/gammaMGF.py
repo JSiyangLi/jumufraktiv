@@ -435,6 +435,10 @@ def gamma_factory(params):
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
 
+        # E[Theta^a] = Gamma(a+alpha)/(beta^a Gamma(alpha)) is finite for every
+        # a >= 0, so no order is inadmissible at t = 0.
+        max_finite_moment=float("inf"),
+
         mgf=lambda t_val: (beta_val / (beta_val - t_val)) ** alpha_val,
         cgf=lambda t_val: alpha_val * (np.log(beta_val) - np.log(beta_val - t_val)),
 

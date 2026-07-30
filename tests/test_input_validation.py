@@ -99,6 +99,23 @@ def test_non_finite_scalar_parameter_names_the_parameter(name, kwargs, offender)
         ready(_data_for(name), **kwargs)
 
 
+@pytest.mark.parametrize("offender", ["r", "s"])
+def test_non_finite_vector_parameter_names_the_parameter(offender):
+    """Vector known parameters must name themselves too, not report as "data".
+
+    Dagum routes both `r` and `s` through a shared `_handle_param` helper whose
+    array-like branches passed no label, so a NaN in a vector `r` was reported
+    as if it were in the data.
+    """
+    pd = pytest.importorskip("pandas")
+    ready, _, _ = LIKELIHOOD_REGISTRY["dagum"]
+    kwargs = {"r": 1.0, "s": 1.0}
+    kwargs[offender] = pd.DataFrame({"v": [1.0, np.nan, 1.0]})
+
+    with pytest.raises(ValueError, match=f"{offender} contains NaN"):
+        ready(DATA, **kwargs)
+
+
 # ==========================================================================
 # The guard must not over-reject
 # ==========================================================================
@@ -204,17 +221,37 @@ class TestMomentDomain:
             MGFDerivative(prior, data=[0.5, 0.5], likelihood="laplace", mean=0.5)
 
 
-def test_registry_priors_all_declare_a_moment_domain():
-    """A new prior must not silently inherit an unexamined default."""
+REGISTRY_PARAMS = {
+    "gamma": {"alpha": 2.0, "beta": 3.0},
+    "pareto": {"alpha": 2.0, "xi": 1.0},
+    "uniform": {"a": 0.5, "b": 2.0},
+    "heaviside": {"k": 0.5},
+}
+
+
+def test_registry_params_table_covers_every_prior():
     registry.initialize()
 
-    for name in registry.list_priors():
-        params = {
-            "gamma": {"alpha": 2.0, "beta": 3.0},
-            "pareto": {"alpha": 2.0, "xi": 1.0},
-            "uniform": {"a": 0.5, "b": 2.0},
-            "heaviside": {"k": 0.5},
-        }[name]
-        prior = mitMGFprior.from_registry(name, params=params)
+    assert set(REGISTRY_PARAMS) == set(registry.list_priors())
 
-        assert prior.max_finite_moment >= 0.0
+
+@pytest.mark.parametrize("name", sorted(REGISTRY_PARAMS))
+def test_registry_priors_all_declare_a_moment_domain(name):
+    """A new prior must not silently inherit an unexamined default.
+
+    This inspects the **spec returned by the factory**, not the compiled prior.
+    Checking the compiled object cannot distinguish "declared infinity after
+    working out that all moments exist" from "declared nothing and inherited
+    the default", because both produce `max_finite_moment == inf`. An earlier
+    version of this test asserted `>= 0.0` on the compiled prior, which every
+    possible value satisfies — it enforced nothing at all.
+    """
+    registry.initialize()
+    spec = registry.get_prior(name)(REGISTRY_PARAMS[name])
+
+    assert "max_finite_moment" in spec, (
+        f"prior '{name}' does not declare max_finite_moment. Work out the "
+        f"supremum of orders a for which E[Theta^a] is finite and state it; "
+        f"use float('inf') if all moments exist."
+    )
+    assert float(spec["max_finite_moment"]) >= 0.0
