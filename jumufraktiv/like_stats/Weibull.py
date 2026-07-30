@@ -6,7 +6,13 @@ Functions for preparing Weibull likelihood statistics for MGF marginalisation.
 For a Weibull distribution with known shape parameter ρ (scalar or vector) and unknown rate λ,
 the density for y > 0 is:
 
-    f(y; λ, ρ) = ρ λ^ρ y^{ρ-1} exp(-λ y^ρ)
+    f(y; λ, ρ) = ρ λ y^{ρ-1} exp(-λ y^ρ)
+
+Note the rate convention: λ = scale^{-ρ}, so λ appears to the first power, not
+the ρ-th. The alternative convention λ' = 1/scale gives ρ λ'^ρ y^{ρ-1}
+exp(-λ'^ρ y^ρ); mixing the prefactor of one with the exponential of the other
+yields a function integrating to λ^{ρ-1} rather than 1, and would imply
+a(y) = ρ instead of 1.
 
 This can be written as:
     L(λ; y) = c(y) * λ^{a(y)} * exp(-b(y) λ)

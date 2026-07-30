@@ -336,6 +336,10 @@ number cannot tell a refactor from a regression.
 | `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
 | `test_design_principles.py` | the three normative principles, with Hypothesis |
 | `test_likelihood_stats.py` | the `ready`/`bereit`/`c` contract across all 14 likelihoods |
+| `test_likelihood_correctness.py` | that `a`, `b`, `log_c` reconstruct the true density, vs. `scipy.stats` |
+| `test_input_validation.py` | non-finite inputs, and the moment domain at `t = 0` |
+| `test_constructor_kwargs.py` | keyword-argument routing on the constructor |
+| `test_dispatch_imports.py` | the dispatcher's lazily-imported backends |
 | `test_registry.py` | registry, prior container, custom-prior route, constructor validation |
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 

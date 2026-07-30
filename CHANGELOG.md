@@ -12,6 +12,15 @@ without a deprecation period.
 
 ### Fixed
 
+- Corrected the density in `like_stats/Weibull.py`'s module docstring. It read
+  `f(y; λ, ρ) = ρ λ^ρ y^{ρ-1} exp(-λ y^ρ)`, which is not a density — it
+  integrates to `λ^{ρ-1}`, giving 2.0 at (ρ=2, λ=2) and 4.0 at (ρ=3, λ=2). It
+  mixed the prefactor of one rate convention with the exponential of the other,
+  and implied `a(y) = ρ` where the code correctly uses `a(y) = 1`. Only that one
+  line was affected; every other statement in the module, and all of its
+  arithmetic, used the correct convention. The existing tests exercised only
+  `rho=1.0`, the single value at which `λ^ρ = λ` and the error is invisible.
+
 - **Non-finite data and known parameters are now rejected.** `np.any(x <= 0)`
   is `False` for NaN, so a NaN passed every positivity guard in all fourteen
   likelihood modules and landed in `a`, `b` or `log_c`. It never reached the
@@ -122,6 +131,13 @@ without a deprecation period.
   log-space arithmetic, symbolic evaluation and CDF inversion.
 - `registry.failed_prior_modules()`, reporting prior modules that failed to
   import and the exception that stopped each.
+- `tests/test_likelihood_correctness.py`, checking the MGF-marginalisable
+  criterion itself: that each module's own `a`, `b` and `log_c` reconstruct the
+  true log density, `log L = log_c + a·log θ − b·θ`, against an independent
+  `scipy.stats` reference across five orders of magnitude of `θ` and three
+  sample sizes. The existing likelihood tests checked the *contract* — shapes,
+  finiteness, additivity — so nothing would have caught a `b` off by a factor
+  of two. All fourteen pass.
 
 ### Changed
 
