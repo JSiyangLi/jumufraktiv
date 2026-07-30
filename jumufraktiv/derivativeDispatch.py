@@ -652,7 +652,20 @@ def resolve_backend(
     ('fractional', 'scipy', 'symbolic')
     >>> resolve_backend(1.5, 'bell')     # reinterpreted, with a warning
     ('fractional', 'scipy', 'bell')
+
+    Backend names are matched case-insensitively and returned canonicalised,
+    so callers may compare the result directly:
+
+    >>> resolve_backend(2, 'SYMBOLIC')
+    ('integer', 'symbolic', 'symbolic')
     """
+    # Canonicalise before anything else. The backends have always matched
+    # method names case-insensitively, so 'SYMBOLIC' is a legal spelling; a
+    # caller comparing the *returned* name against a lowercase literal would
+    # otherwise silently take the wrong branch.
+    method = method.lower()
+    integer_method = integer_method.lower()
+
     # ---- Determine order type ----
     if isinstance(order, sp.Basic):
         order_type = "symbolic"
@@ -662,12 +675,12 @@ def resolve_backend(
         order_type = "fractional"
 
     # ---- Resolve 'auto' ----
-    if method.lower() == "auto":
+    if method == "auto":
         method = "scipy" if order_type == "fractional" else "symbolic"
 
     # ---- Validate against the row ----
     if order_type == "symbolic":
-        if method.lower() != "symbolic":
+        if method != "symbolic":
             raise ValueError(
                 f"Invalid method '{method}' for symbolic order. "
                 "Only 'symbolic' is allowed."
@@ -675,7 +688,7 @@ def resolve_backend(
 
     elif order_type == "integer":
         valid_int_methods = {"symbolic", "bell", "jax"}
-        if method.lower() not in valid_int_methods:
+        if method not in valid_int_methods:
             raise ValueError(
                 f"Invalid method '{method}' for integer order. "
                 f"Choose from {valid_int_methods}."
@@ -683,7 +696,7 @@ def resolve_backend(
 
     else:
         valid_frac_methods = {"scipy", "mpmath", "symbolic"}
-        if method.lower() in {"jax", "bell"}:
+        if method in {"jax", "bell"}:
             warnings.warn(
                 f"Method '{method}' cannot take a fractional derivative. "
                 f"Interpreting it as integer_method='{method}' and using the "
@@ -694,14 +707,14 @@ def resolve_backend(
             )
             integer_method = method
             method = "scipy"
-        elif method.lower() not in valid_frac_methods:
+        elif method not in valid_frac_methods:
             raise ValueError(
                 f"Invalid method '{method}' for fractional order. "
                 f"Choose from {valid_frac_methods}."
             )
 
         valid_int_methods = {"symbolic", "jax", "bell"}
-        if integer_method.lower() not in valid_int_methods:
+        if integer_method not in valid_int_methods:
             raise ValueError(
                 f"Invalid integer_method '{integer_method}'. "
                 f"Choose from {valid_int_methods}."

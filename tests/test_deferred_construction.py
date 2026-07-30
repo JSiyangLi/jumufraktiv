@@ -162,6 +162,43 @@ class TestResolveBackend:
             warnings.simplefilter("error")
             assert resolve_backend(2, "bell")[1] == "bell"
 
+    @pytest.mark.parametrize(
+        ("order", "method"),
+        [
+            (2, "symbolic"),
+            (2, "bell"),
+            (2, "jax"),
+            (1.5, "scipy"),
+            (1.5, "mpmath"),
+            (1.5, "symbolic"),
+            (2, "auto"),
+            (1.5, "auto"),
+        ],
+    )
+    @pytest.mark.parametrize("spelling", [str.upper, str.title, str.lower])
+    def test_returned_names_are_canonical_lowercase(self, order, method, spelling):
+        """Backend names match case-insensitively, so they must return canonical.
+
+        Every backend has always accepted any casing — each lowercases on
+        entry. Callers compare the *returned* name against a lowercase literal,
+        so returning the caller's spelling silently sends them down the wrong
+        branch: `method='SYMBOLIC'` produced the correct evidence but a numeric
+        representation, which disables `update` and every other symbolic path.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, resolved, integer_method = resolve_backend(order, spelling(method))
+
+        assert resolved == resolved.lower()
+        assert integer_method == integer_method.lower()
+        assert resolved == resolve_backend(order, method.lower())[1]
+
+    @pytest.mark.parametrize("spelling", ["symbolic", "jax", "bell"])
+    def test_integer_method_is_canonicalised_too(self, spelling):
+        assert resolve_backend(1.5, "scipy", integer_method=spelling.upper())[2] == (
+            spelling
+        )
+
 
 # ==========================================================================
 # Construction: every likelihood, every backend
@@ -260,6 +297,20 @@ class TestDeferral:
         value = _build("halfnormal", log=False).evidence()
         assert not isinstance(value, tuple)
         assert np.isfinite(float(value))
+
+    @pytest.mark.parametrize("spelling", ["symbolic", "SYMBOLIC", "Symbolic"])
+    def test_casing_does_not_change_the_representation(self, spelling):
+        """The end-to-end consequence of the canonicalisation above.
+
+        Without it the evidence was still right — `mgfDerivative` lowercases
+        internally — so only the *representation* was wrong, and the failure
+        surfaced far away, as `update` refusing a posterior that could update.
+        """
+        post = _build("poisson", method=spelling)
+
+        assert post._deriv_is_symbolic
+        assert isinstance(post._deriv, sp.Expr)
+        post.update([4], likelihood="poisson", scale=1.0)
 
     def test_int_tol_reaches_the_deferred_thunk(self):
         """An option that changes backend selection must survive the deferral."""
