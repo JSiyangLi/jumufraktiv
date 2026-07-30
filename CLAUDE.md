@@ -301,8 +301,11 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 |------|----|-------|--------|
 | 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
 | 0 | 2 | pytest + Hypothesis harness, CI, lint config | **merged** |
-| 1 | 3 | Import and registry integrity | **in review** |
-| 1 | 4 | Fractional-order path | planned |
+| 1 | 3 | Import and registry integrity | **merged** |
+| 1 | 3b | Constructor keyword-argument integrity | **in review** |
+| 1 | 4a | Fractional-order construction and dispatch | planned |
+| 1 | 4b | Fractional-order numerical accuracy | planned |
+| 1 | 4c | Symbolic fractional backend | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
 | 3 | 7 | De-duplicate `like_stats` | planned |

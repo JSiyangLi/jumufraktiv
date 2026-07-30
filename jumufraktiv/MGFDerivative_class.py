@@ -29,9 +29,10 @@ statistics) and `bereit_func` (per‑element statistics for vectorised
 predictive evaluation).
 """
 
+import difflib
+import inspect
 import math
 import traceback
-from unittest import result
 import sympy as sp
 import numpy as np
 
@@ -79,6 +80,130 @@ LIKELIHOOD_REGISTRY = {
     'gompertz': (readyGompertz, cGompertz, bereitGompertz),
     'halfnormal': (readyHalfNormal, cHalfNormal, bereitHalfNormal),
 }
+
+
+# ============================================================
+# Keyword-argument routing
+# ============================================================
+#: Keyword arguments understood by the derivative layer. These are forwarded to
+#: :func:`~jumufraktiv.derivativeDispatch.mgfDerivative` and, through it, to the
+#: selected backend. Kept explicit rather than inferred, because the backends
+#: terminate in ``**kwargs`` and so cannot be introspected reliably.
+DERIVATIVE_KWARGS = frozenset({
+    # mgfDerivative's own named parameters that a caller may reasonably set
+    "integer_method", "use_interpolation", "d_vec", "int_tol",
+    # popped from **kwargs inside mgfDerivative
+    "cgf_method", "symbolic_timeout",
+    # scipy backend
+    "epsabs", "epsrel", "limit", "initial_L", "max_L", "tol", "use_tan",
+    # mpmath backend
+    "dps",
+})
+
+#: Arguments this class supplies to ``mgfDerivative`` itself. A caller must not
+#: be able to set them: ``complete`` in particular is ``True`` for the evidence
+#: and ``False`` for the incomplete-MGF path behind ``post_cdf``, so accepting it
+#: from the caller would either be ignored or raise "multiple values for
+#: keyword argument". Enforced by a test.
+_RESERVED_DERIVATIVE_KWARGS = frozenset({
+    "order", "prior", "method", "t", "u", "simplify", "complete", "log",
+})
+
+
+def _likelihood_kwargs(ready_func) -> frozenset:
+    """Return the keyword arguments a likelihood's ``ready`` function accepts.
+
+    Derived from the function's signature rather than a hardcoded list, so it
+    cannot drift out of step with the likelihood modules, and so each likelihood
+    is checked against *its own* parameters instead of the union of everyone's.
+
+    Parameters
+    ----------
+    ready_func : callable
+        A ``readyX`` function from :mod:`jumufraktiv.like_stats`.
+
+    Returns
+    -------
+    frozenset of str
+        Named parameters other than ``data``. A trailing ``**kwargs`` on the
+        function is deliberately ignored: every ``ready`` function has one, and
+        it is what silently absorbed misspelled arguments.
+    """
+    parameters = inspect.signature(ready_func).parameters
+    return frozenset(
+        name
+        for name, param in parameters.items()
+        if name != "data"
+        and param.kind not in (param.VAR_KEYWORD, param.VAR_POSITIONAL)
+    )
+
+
+def _split_kwargs(kwargs, ready_func, likelihood):
+    """Route keyword arguments to the likelihood or the derivative layer.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Extra keyword arguments given to :class:`MGFDerivative`.
+    ready_func : callable
+        The chosen likelihood's ``ready`` function.
+    likelihood : str
+        Name of the chosen likelihood, used in the error message.
+
+    Returns
+    -------
+    tuple of dict
+        ``(likelihood_kwargs, derivative_kwargs)``.
+
+    Raises
+    ------
+    TypeError
+        If any argument belongs to neither group.
+
+    Notes
+    -----
+    The previous implementation matched against the *union* of every
+    likelihood's parameter names and sent everything else to the derivative
+    layer, where ``**kwargs`` absorbed it. Two mistakes were therefore silent
+    and produced a confidently wrong number rather than an error:
+
+    - a misspelling (``scal=2.0``) fell through to the derivative layer, so the
+      likelihood used its default and the evidence was wrong by 0.92 nats;
+    - a parameter valid for a *different* likelihood (``rho=`` on a Poisson) was
+      forwarded into ``ready_func`` and swallowed by its ``**kwargs``.
+
+    Both now raise.
+    """
+    accepted = _likelihood_kwargs(ready_func)
+
+    likelihood_kwargs = {k: v for k, v in kwargs.items() if k in accepted}
+    derivative_kwargs = {k: v for k, v in kwargs.items() if k in DERIVATIVE_KWARGS}
+
+    unknown = set(kwargs) - accepted - DERIVATIVE_KWARGS
+    if unknown:
+        raise TypeError(_unknown_kwargs_message(unknown, accepted, likelihood))
+
+    return likelihood_kwargs, derivative_kwargs
+
+
+def _unknown_kwargs_message(unknown, accepted, likelihood):
+    """Build an actionable message for unrecognised keyword arguments."""
+    lines = []
+    for name in sorted(unknown):
+        suggestions = difflib.get_close_matches(
+            name, sorted(accepted | DERIVATIVE_KWARGS), n=1, cutoff=0.7
+        )
+        if suggestions:
+            lines.append(f"'{name}' (did you mean '{suggestions[0]}'?)")
+        else:
+            lines.append(f"'{name}'")
+
+    accepted_text = ", ".join(sorted(accepted)) if accepted else "none"
+    return (
+        f"Unexpected keyword argument(s) for MGFDerivative: {', '.join(lines)}. "
+        f"The '{likelihood}' likelihood accepts: {accepted_text}. "
+        f"Derivative options are: {', '.join(sorted(DERIVATIVE_KWARGS))}."
+    )
 
 
 # ============================================================
@@ -207,12 +332,9 @@ class MGFDerivative:
         # ----------------------------------------------------
         # Separate kwargs for ready vs derivative
         # ----------------------------------------------------
-        _ready_keys = {
-            'scale', 'shape', 'mean', 'location', 'rho',
-            'known_shape', 'r', 's',
-        }
-        self._ready_kwargs = {k: v for k, v in kwargs.items() if k in _ready_keys}
-        self._deriv_kwargs = {k: v for k, v in kwargs.items() if k not in _ready_keys}
+        self._ready_kwargs, self._deriv_kwargs = _split_kwargs(
+            kwargs, self.ready_func, self.likelihood
+        )
 
         # ----------------------------------------------------
         # Sufficient statistics

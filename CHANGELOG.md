@@ -12,6 +12,24 @@ without a deprecation period.
 
 ### Fixed
 
+- **Unrecognised keyword arguments to `MGFDerivative` are now an error rather
+  than a silently wrong answer.** The constructor split `**kwargs` against the
+  *union* of every likelihood's parameter names and forwarded everything else to
+  the derivative layer, where `**kwargs` absorbed it. Two ordinary mistakes were
+  therefore silent:
+  - a misspelling — `scal=2.0` instead of `scale=2.0` — left the likelihood on
+    its default, giving a log-evidence wrong by 0.92 nats with no error and no
+    warning;
+  - a parameter valid for a *different* likelihood — `rho=` on a Poisson — was
+    forwarded into the `ready` function and swallowed by its `**kwargs`.
+
+  Accepted names are now derived from each likelihood's own signature, so the
+  check cannot drift out of step with the likelihood modules and each likelihood
+  is validated against its own parameters. Unknown arguments raise `TypeError`
+  naming the offending key, suggesting a close match, and listing what is
+  accepted.
+- Removed a stray `from unittest import result` that shadowed a local name.
+
 - `mitMGFprior.from_registry` now initialises the registry. It previously read
   `PRIOR_REGISTRY` directly, so in a fresh process it raised
   `Unknown prior 'gamma'` — the registry was simply empty — unless some other
