@@ -552,6 +552,10 @@ def pareto_factory(params):
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: pareto_imgf(t_val, alpha_val, xi_val, u_val),
         logimgf=lambda t_val, u_val: pareto_logimgf(t_val, alpha_val, xi_val, u_val),
+        # E[Theta^a] = alpha xi^a / (alpha - a) converges iff a < alpha, so the
+        # bound is the tail index itself. Only consulted at t = 0.
+        max_finite_moment=float(alpha_val),
+
         imgf_jax=lambda t_val, u_val: pareto_imgf_jax(t_val, alpha_val, xi_val, u_val),
         logimgf_jax=lambda t_val, u_val: pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val),
 

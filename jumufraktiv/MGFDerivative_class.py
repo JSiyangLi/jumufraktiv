@@ -36,7 +36,10 @@ import traceback
 import sympy as sp
 import numpy as np
 
-from jumufraktiv.derivativeDispatch import mgfDerivative
+from jumufraktiv.derivativeDispatch import (
+    _check_moment_exists_at_origin,
+    mgfDerivative,
+)
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t, theta, r, u, q
 from jumufraktiv.root_finding import solve_root
@@ -345,6 +348,12 @@ class MGFDerivative:
         self.a = stats['a']
         self.b = stats['b']
         self.log_c = stats['log_c']
+
+        # The posterior is evaluated at t = -b. When b == 0 that is the origin,
+        # where D^a M(0) = E[Theta^a] and the moment must exist. Checked here
+        # rather than only in mgfDerivative because _build_derivative passes
+        # t=None, so the dispatcher never sees the concrete evaluation point.
+        _check_moment_exists_at_origin(self.a, self.prior, -self.b)
 
         # ----------------------------------------------------
         # Build derivative representation

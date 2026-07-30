@@ -88,6 +88,25 @@ Three specific ways to get this wrong:
   wrongly reject heavy-tailed priors such as `pareto` for which the identity
   holds perfectly well.
 
+**The one exception is `t = 0` exactly.** There the exponential is 1 and the
+identity reduces to `Dᵃ M(0) = E[Θᵃ]`, so the moment *does* have to exist. That
+boundary is reachable: `b(y) = 0` whenever every observation sits at the value
+the likelihood subtracts — `y ≡ mean` (laplace, normal), `y ≡ 0` (halfnormal),
+`y ≡ scale` (pareto). Measure-zero for continuous data, ordinary once data is
+rounded.
+
+Priors therefore declare `max_finite_moment`, the strict supremum of admissible
+orders: `∞` for gamma and uniform, `α` for pareto, and `0` for the improper
+heaviside prior, which has no finite moments at all. `mitMGFprior` defaults it
+to `∞`, which is the right default for a custom prior — it defers to the
+numerical result instead of guessing.
+
+Note where this check lives and why. Admissibility is a joint property of
+`(a, prior)`, **not** of the data: the same `b = 0` is fine against a Gamma
+prior at every order and fatal against `pareto(α=2)` at order 2. So
+`like_stats` cannot decide it — those modules are pure functions of the data
+and cannot see the prior. It belongs where both are visible.
+
 A related strength worth preserving: the operator reads `M` only on `(−∞, t]`.
 It never needs `M` to the right of the evaluation point, so it works for priors
 whose MGF exists only for `t ≤ 0` — Pareto and lognormal among them.

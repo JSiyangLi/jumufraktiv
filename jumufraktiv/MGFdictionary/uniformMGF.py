@@ -247,6 +247,10 @@ def uniform_factory(params):
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
 
+        # Bounded support, so every moment is finite and no order is
+        # inadmissible at t = 0.
+        max_finite_moment=float("inf"),
+
         mgf=lambda t_val: uniform_mgf(t_val, a_val, b_val),
         cgf=lambda t_val: uniform_cgf(t_val, a_val, b_val),
 

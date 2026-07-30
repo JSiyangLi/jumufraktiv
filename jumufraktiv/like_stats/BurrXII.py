@@ -37,16 +37,53 @@ def _is_1d_dataframe(obj: Any) -> bool:
     return isinstance(obj, pd.DataFrame) and obj.shape[1] == 1
 
 
-def _extract_1d(obj: Any) -> np.ndarray:
-    """Extract a 1D numpy array from a pandas Series, DataFrame, or array-like."""
+def _extract_1d(obj: Any, label: str = "data") -> np.ndarray:
+    """Extract a 1D numpy array from a pandas Series, DataFrame, or array-like.
+
+    Parameters
+    ----------
+    obj : array-like, pandas.Series or 1-column pandas.DataFrame
+        Values to extract.
+    label : str, optional
+        What ``obj`` represents, used in error messages.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 1-D float array.
+
+    Raises
+    ------
+    ValueError
+        If ``obj`` is a DataFrame with more than one column, or if any value is
+        NaN or infinite.
+
+    Notes
+    -----
+    The finiteness check is not decoration. NumPy's ordering comparisons are
+    ``False`` for NaN, so ``np.any(values <= 0)`` — the positivity guard every
+    likelihood module applies next — passes a NaN straight through. It then
+    lands in ``a``, ``b`` or ``log_c`` and surfaces much later as an error that
+    names the wrong thing: "Derivative at t=-b is negative" for Rayleigh, "t
+    must be provided" for Normal, "cannot convert float NaN to integer" for
+    Poisson. None of those mention the data.
+    """
     if isinstance(obj, pd.DataFrame):
         if obj.shape[1] != 1:
             raise ValueError("DataFrame must have exactly 1 column.")
-        return obj.iloc[:, 0].values.astype(float)
+        values = obj.iloc[:, 0].values.astype(float)
     elif isinstance(obj, pd.Series):
-        return obj.values.astype(float)
+        values = obj.values.astype(float)
     else:
-        return np.asarray(obj, dtype=float)
+        values = np.asarray(obj, dtype=float)
+
+    if values.size and not np.all(np.isfinite(values)):
+        kind = "NaN" if np.any(np.isnan(values)) else "infinite"
+        raise ValueError(
+            f"{label} contains {kind} values; every entry must be finite."
+        )
+
+    return values
 
 
 def readyBurrXII(
@@ -96,14 +133,14 @@ def readyBurrXII(
 
     # ---- 2. Handle known_shape ----
     if _is_1d_dataframe(known_shape):
-        c_vals = _extract_1d(known_shape)
+        c_vals = _extract_1d(known_shape, "known_shape")
         if len(c_vals) != n:
             raise ValueError("known_shape must have same length as data or be scalar")
     elif isinstance(known_shape, (int, float)):
-        c_vals = np.full(n, float(known_shape))
+        c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
         try:
-            c_vals = _extract_1d(known_shape)
+            c_vals = _extract_1d(known_shape, "known_shape")
             if len(c_vals) != n:
                 raise ValueError("known_shape must have same length as data or be scalar")
         except Exception:
@@ -164,14 +201,14 @@ def bereitBurrXII(
 
     # ---- Handle known_shape ----
     if _is_1d_dataframe(known_shape):
-        c_vals = _extract_1d(known_shape)
+        c_vals = _extract_1d(known_shape, "known_shape")
         if len(c_vals) != n:
             raise ValueError("known_shape must have same length as data or be scalar")
     elif isinstance(known_shape, (int, float)):
-        c_vals = np.full(n, float(known_shape))
+        c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
         try:
-            c_vals = _extract_1d(known_shape)
+            c_vals = _extract_1d(known_shape, "known_shape")
             if len(c_vals) != n:
                 raise ValueError("known_shape must have same length as data or be scalar")
         except Exception:

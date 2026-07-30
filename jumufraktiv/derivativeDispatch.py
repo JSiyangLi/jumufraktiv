@@ -531,6 +531,71 @@ def mgfDerivative_fractional(
 
     raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
 
+def _check_moment_exists_at_origin(order, prior, t) -> None:
+    """
+    Reject an order whose moment does not exist, when evaluating at ``t = 0``.
+
+    Parameters
+    ----------
+    order : float or sympy.Basic
+        Derivative order. Symbolic orders are not checked.
+    prior : mitMGFprior
+        Prior, consulted for its ``max_finite_moment``.
+    t : float, array-like or None
+        Evaluation point(s). Only ``t = 0`` is checked.
+
+    Raises
+    ------
+    ValueError
+        If ``t`` includes 0 and ``order >= prior.max_finite_moment``.
+
+    Notes
+    -----
+    ``Dᵃ M(t) = E[Θᵃ e^{tΘ}]``. For ``t < 0`` the exponential dominates any
+    polynomial, so the moment condition is *not* required and must not be
+    enforced — that is what lets heavy-tailed priors such as ``pareto`` work,
+    and it is stated as a rule in CLAUDE.md.
+
+    At ``t = 0`` exactly, the exponential is 1 and the identity reduces to
+    ``E[Θᵃ]``, so the moment must exist. That boundary is reachable from
+    ordinary data: ``b(y) = 0`` whenever every observation sits at the known
+    mean (``laplace``, ``normal``), at zero (``halfnormal``), or at the scale
+    (``pareto``) — measure-zero for continuous data, but common once data is
+    rounded.
+
+    Without this check the failure is silent or misleading. With the registry's
+    Pareto(α=2) prior at ``t = 0``: order 1 returns a correct value, order 2
+    returns ``inf``, and order 3 raises ``TypeError: Cannot convert complex to
+    float`` from inside the quadrature.
+
+    The bound is a property of the *prior*, not of the data, which is why this
+    lives here rather than in ``like_stats`` — those modules are pure functions
+    of the data and cannot see the prior. The same ``b = 0`` is perfectly valid
+    against a Gamma prior at every order.
+    """
+    if t is None or isinstance(order, sp.Basic):
+        return
+
+    limit = float(getattr(prior, "max_finite_moment", np.inf))
+    if np.isinf(limit):
+        return
+
+    if not np.any(np.asarray(t, dtype=float) == 0.0):
+        return
+
+    if float(order) >= limit:
+        name = getattr(prior, "name", "this prior")
+        raise ValueError(
+            f"Cannot evaluate a derivative of order {float(order)} at t = 0 for "
+            f"prior '{name}': that requires the moment E[Theta^{float(order)}] "
+            f"to be finite, but it exists only for orders strictly below "
+            f"{limit}. t = 0 arises when the sufficient statistic b(y) is zero, "
+            f"which happens when every observation sits at the boundary the "
+            f"likelihood subtracts (for example y == mean, y == 0, or "
+            f"y == scale). Away from t = 0 no moment condition applies."
+        )
+
+
 def mgfDerivative(
     order: float | np.ndarray | list | sp.Basic,
     prior,
@@ -702,6 +767,8 @@ def mgfDerivative(
     # ---- Continue with scalar order (original logic) ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
     symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
+
+    _check_moment_exists_at_origin(order, prior, t)
 
     # Determine order type
     if isinstance(order, sp.Basic):
