@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: jumufraktiv
+message: >-
+  If you use this software in your research, please cite it
+  using the metadata from this file.
+type: software
+authors:
+  - family-names: Li
+    given-names: Si-Yang
+  - family-names: Speagle
+    given-names: Josh
+repository-code: "https://github.com/JSiyangLi/jumufraktiv"
+url: "https://jsiyangli.github.io/jumufraktiv/"
+abstract: >-
+  A Python package for Bayesian inference in the
+  MGF-marginalisable family. It computes model evidence,
+  posterior densities, posterior predictive densities,
+  posterior moment-generating functions and posterior moments
+  by evaluating fractional derivatives of the prior
+  moment-generating function.
+keywords:
+  - Bayesian inference
+  - moment-generating function
+  - fractional derivative
+  - marginal likelihood
+  - posterior
+license: MIT
+version: 0.1.0

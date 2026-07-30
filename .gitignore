@@ -1,6 +1,55 @@
+# ---- Python bytecode / caches ----
 __pycache__/
-*.pyc
-docs/_build
-.DS_Store
-jumufraktiv.egg-info/
+*.py[cod]
+*$py.class
 
+# ---- Build & distribution artefacts ----
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+
+# ---- Test, coverage & type-checker caches ----
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Documentation build output ----
+docs/_build/
+docs/generated/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Editor & IDE settings ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- Notebook checkpoints ----
+.ipynb_checkpoints/
+
+# ---- OS cruft ----
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ---- Language-server / REPL history ----
+.Rhistory
+.Rapp.history
+.python_history

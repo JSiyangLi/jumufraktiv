@@ -1,6 +1,0 @@
-{
-    "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python.defaultInterpreterPath": "/Users/jl1023/anaconda3/envs/mgf2post_conda/bin/python",
-    "python.useEnvironmentsExtension": true
-}

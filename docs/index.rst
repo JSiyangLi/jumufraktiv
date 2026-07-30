@@ -5,6 +5,7 @@ Welcome to jumufraktiv's documentation!
 It provides tools for posterior density, CDF, quantiles, moments, and sequential updating.
 
 .. include:: ../README.rst
+   :start-after: .. readme-body-start
 
 
 .. toctree::
