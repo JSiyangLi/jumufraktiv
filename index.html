@@ -12,6 +12,7 @@
     <script src="_static/documentation_options.js?v=01f34227"></script>
     <script src="_static/doctools.js?v=9bcbadda"></script>
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="API Reference" href="api.html" />
@@ -36,13 +37,98 @@
 <h1>Welcome to jumufraktiv’s documentation!<a class="headerlink" href="#welcome-to-jumufraktiv-s-documentation" title="Link to this heading">¶</a></h1>
 <p><strong>jumufraktiv</strong> is a Python package for Bayesian inference using MGF marginalisation.
 It provides tools for posterior density, CDF, quantiles, moments, and sequential updating.</p>
-<p># jumufraktiv
-A package that returns model evidence, posterior density, posterior predictive, posterior MGF and posterior moments by calculating fractional derivatives of prior MGF</p>
-<p>## Things to check before start
-1. This package only supports strictly positive parameters. Does not matter if the parameter space takes the entire positive real line or not.
-2. The options of likelihoods that this package supports is limited to Poisson, Laplace with known mean, normal with known mean, Rayleigh, Maxwell-Boltzmann, gamma with known shape, inverse gamma with known shape, Levy with known mean, Weibull with known rho=shape/scale, Burr XII with known c, Pareto with known scale, Dagum with known a and b, and Gompertz with known scale.
-3. There is no limitations on the prior distributions this package supports, except for improper priors with MGF values of ∞ on the negative half of the real line.
-### If any of the above is found not suitable for your particular use, then please consider other packages available.</p>
+</section>
+<section id="overview">
+<h1>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">jumufraktiv</span></code> computes model evidence, posterior densities, posterior
+predictive densities, posterior moment-generating functions and posterior
+moments by taking <strong>fractional derivatives of the prior MGF</strong>.</p>
+<p>For a likelihood in the MGF-marginalisable family, the joint density factorises
+as</p>
+<div class="math notranslate nohighlight">
+\[L(\theta; y) = c(y)\, \theta^{a(y)} \exp\!\big(-b(y)\,\theta\big),\]</div>
+<p>so the marginal likelihood is a derivative of the prior MGF <span class="math notranslate nohighlight">\(M\)</span> evaluated
+at <span class="math notranslate nohighlight">\(t = -b\)</span>:</p>
+<div class="math notranslate nohighlight">
+\[p(y) = c(y) \, \frac{\mathrm{d}^{a}}{\mathrm{d}t^{a}} M(t) \Big|_{t=-b}.\]</div>
+<p>When the sufficient statistic <span class="math notranslate nohighlight">\(a(y)\)</span> is not an integer, the derivative is
+fractional — hence the name. Everything else (density, CDF, quantiles, moments,
+predictive, sequential updating) follows from the same object.</p>
+</section>
+<section id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>jumufraktiv
+</pre></div>
+</div>
+<p>To work from a checkout:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JSiyangLi/jumufraktiv.git
+<span class="nb">cd</span><span class="w"> </span>jumufraktiv
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+</pre></div>
+</div>
+<p>Optional extras: <code class="docutils literal notranslate"><span class="pre">torch</span></code> (PyTorch backend for the Pareto prior), <code class="docutils literal notranslate"><span class="pre">docs</span></code>
+(Sphinx), <code class="docutils literal notranslate"><span class="pre">examples</span></code> (notebook dependencies), <code class="docutils literal notranslate"><span class="pre">dev</span></code> (tests and linting).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">pareto</span></code> and <code class="docutils literal notranslate"><span class="pre">uniform</span></code> priors currently require the <code class="docutils literal notranslate"><span class="pre">torch</span></code> extra.
+The Pareto module imports PyTorch while the prior dictionary is being loaded,
+and a failure there stops the priors after it from registering as well. The
+registry reports this as a warning, not an error, so the two priors are simply
+absent from <code class="docutils literal notranslate"><span class="pre">registry.list_priors()</span></code>. Install with:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="s2">&quot;jumufraktiv[torch]&quot;</span>
+</pre></div>
+</div>
+<p>if you need either of them. A future release will make the import lazy so
+that a missing extra costs only the Pareto Torch backend.</p>
+</div>
+</section>
+<section id="quick-start">
+<h1>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h1>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">jumufraktiv</span><span class="w"> </span><span class="kn">import</span> <span class="n">registry</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jumufraktiv.mitMGFprior_class</span><span class="w"> </span><span class="kn">import</span> <span class="n">mitMGFprior</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jumufraktiv.MGFDerivative_class</span><span class="w"> </span><span class="kn">import</span> <span class="n">MGFDerivative</span>
+
+<span class="n">registry</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+
+<span class="n">prior</span> <span class="o">=</span> <span class="n">mitMGFprior</span><span class="o">.</span><span class="n">from_registry</span><span class="p">(</span><span class="s2">&quot;gamma&quot;</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;alpha&quot;</span><span class="p">:</span> <span class="mf">2.0</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">})</span>
+<span class="n">post</span> <span class="o">=</span> <span class="n">MGFDerivative</span><span class="p">(</span><span class="n">prior</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">likelihood</span><span class="o">=</span><span class="s2">&quot;poisson&quot;</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+
+<span class="n">log_evidence</span><span class="p">,</span> <span class="n">sign</span> <span class="o">=</span> <span class="n">post</span><span class="o">.</span><span class="n">evidence</span><span class="p">()</span>
+<span class="n">log_density</span> <span class="o">=</span> <span class="n">post</span><span class="o">.</span><span class="n">post_density</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="before-you-start">
+<h1>Before you start<a class="headerlink" href="#before-you-start" title="Link to this heading">¶</a></h1>
+<p>This package makes three assumptions. If any of them does not fit your problem,
+another package will serve you better.</p>
+<ol class="arabic simple">
+<li><p><strong>Strictly positive parameters.</strong> The parameter space may be the whole
+positive real line or a subset of it, but it must not include zero or
+negative values.</p></li>
+<li><p><strong>A supported likelihood.</strong> Fourteen named likelihoods are built in:
+Poisson, Laplace (known mean), Normal (known mean), half-normal, Rayleigh,
+Maxwell-Boltzmann, Gamma (known shape), inverse-gamma (known shape),
+Lévy (known location), Weibull (known <code class="docutils literal notranslate"><span class="pre">rho</span></code> = shape/scale), Burr XII
+(known <code class="docutils literal notranslate"><span class="pre">c</span></code>), Pareto (known scale), Dagum (known <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code>), and
+Gompertz (known scale). Custom likelihoods are supported by supplying your
+own <code class="docutils literal notranslate"><span class="pre">a()</span></code>, <code class="docutils literal notranslate"><span class="pre">b()</span></code> and <code class="docutils literal notranslate"><span class="pre">c()</span></code> sufficient-statistic functions.</p></li>
+<li><p><strong>A prior with a finite MGF.</strong> Any prior works provided its MGF is finite on
+the negative half of the real line; improper priors whose MGF diverges there
+are not supported. Priors may come from the built-in dictionary
+(<code class="docutils literal notranslate"><span class="pre">gamma</span></code>, <code class="docutils literal notranslate"><span class="pre">pareto</span></code>, <code class="docutils literal notranslate"><span class="pre">uniform</span></code>, <code class="docutils literal notranslate"><span class="pre">heaviside</span></code> — see the note under
+<em>Installation</em> about <code class="docutils literal notranslate"><span class="pre">pareto</span></code> and <code class="docutils literal notranslate"><span class="pre">uniform</span></code>) or be supplied directly as
+symbolic or callable MGF/PDF pairs.</p></li>
+</ol>
+</section>
+<section id="status">
+<h1>Status<a class="headerlink" href="#status" title="Link to this heading">¶</a></h1>
+<p>Alpha. The API is not yet stable and may change without a deprecation period
+before version 1.0. See <code class="docutils literal notranslate"><span class="pre">CHANGELOG.md</span></code> for release notes.</p>
+</section>
+<section id="license">
+<h1>License<a class="headerlink" href="#license" title="Link to this heading">¶</a></h1>
+<p>MIT. See <code class="docutils literal notranslate"><span class="pre">LICENSE</span></code>.</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
