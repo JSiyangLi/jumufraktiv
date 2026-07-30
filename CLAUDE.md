@@ -197,26 +197,41 @@ Hyperparameters are created with `symbols.param(name)`, which carries the
 
 ## Backend matrix
 
-Which `method` is valid depends on the *order type*, and `mgfDerivative`
-enforces it:
+Which `method` is valid depends on the *order type*. `resolve_backend` is the
+single place this table is encoded; `mgfDerivative` calls it to dispatch, and
+anything that needs to know how a request *will* be served asks it rather than
+re-deriving the rules.
 
 | Order type   | Valid `method`                  | `auto` resolves to | Works today |
 |--------------|---------------------------------|--------------------|-------------|
 | symbolic     | `symbolic`                      | `symbolic`         | **no** — see below |
 | integer      | `symbolic`, `bell`, `jax`       | `symbolic`         | yes         |
-| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | **no** — see below |
+| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | yes, except `symbolic` |
 
-The last column is not decoration. Only the integer row is reachable at
-present: the symbolic-order row raises `TypeError`, and the fractional row
-cannot be constructed through `MGFDerivative`. Both are listed under
-"Known-broken" below with the PR that repairs them. Treat the first two rows as
-the intended contract, not as a description of current behaviour.
+The last column is not decoration. The symbolic-*order* row still raises
+`TypeError`, and the `symbolic` backend for fractional orders returns `None`
+for every registry prior; both are listed under "Known-broken" below with the
+PR that repairs them.
+
+Requesting `bell` or `jax` for a fractional order is not an error. Neither can
+take a fractional derivative, so the argument is reinterpreted as
+`integer_method` and the fractional backend falls back to `scipy`, with a
+warning that the argument was not used as written.
 
 For fractional orders, `integer_method` separately selects the integer backend
 used *inside* the fractional integrator (`symbolic`, `bell`, `jax`).
 
 An order counts as integer when `|order − round(order)| < int_tol`
 (default `1e-12`).
+
+**Only the `symbolic` backend can be built before an evaluation point is
+known.** It differentiates the prior's MGF and returns an expression in `t`;
+every numeric backend quadratures at a particular `t` and has nothing to return
+until one arrives. `MGFDerivative` therefore holds one of two representations:
+a `sympy.Expr` (`_deriv_is_symbolic`), or a thunk that runs the dispatcher once
+an evaluation point is supplied. Methods that need to manipulate the derivative
+symbolically — `post_density`, `post_cdf`, `post_mgf`, `update` — branch on
+that flag.
 
 ---
 
@@ -341,6 +356,7 @@ number cannot tell a refactor from a regression.
 | `test_constructor_kwargs.py` | keyword-argument routing on the constructor |
 | `test_dispatch_imports.py` | the dispatcher's lazily-imported backends |
 | `test_registry.py` | registry, prior container, custom-prior route, constructor validation |
+| `test_deferred_construction.py` | `resolve_backend`, the deferred representation, all 14 likelihoods on every backend |
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
@@ -372,9 +388,10 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
 | 0 | 2 | pytest + Hypothesis harness, CI, lint config | **merged** |
 | 1 | 3 | Import and registry integrity | **merged** |
-| 1 | 3b | Constructor keyword-argument integrity | **in review** |
-| 1 | 4a | Fractional-order construction and dispatch | planned |
-| 1 | 4b | Fractional-order numerical accuracy | planned |
+| 1 | 3b | Constructor keyword-argument integrity | **merged** |
+| 1 | 3c | Likelihood-statistic correctness tests | **merged** |
+| 1 | 4a | Backend resolution and deferred construction | **in review** |
+| 1 | 4b | Fractional-order dispatch and numerical accuracy | planned |
 | 1 | 4c | Symbolic fractional backend | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
@@ -393,21 +410,44 @@ Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
-- **Fractional orders cannot be constructed.** `MGFDerivative._build_derivative`
-  calls `mgfDerivative(..., t=None)`, but the fractional branch requires `t`.
-  Any non-integer `a` raises at construction — which includes `normal`,
-  `halfnormal` and `maxwell-boltzmann` whenever *n* is odd. *(PR 4)*
-- **Fractional orders are truncated in the array path.** `int(o)` at
-  `derivativeDispatch.py:671` silently rounds; `post_predictive` uses this
-  path. *(PR 4)*
+- **Fractional orders are truncated in the array path.** `int(o)` in
+  `mgfDerivative`'s array-order branch silently rounds — and truncates rather
+  than rounds, so 1.5 returns the order-1 answer. `post_predictive` uses this
+  path. The same block also `float()`s `t`, so an array order with `t=None`
+  raises instead of returning an expression, and flattens the result, losing
+  the order array's shape. *(PR 4b)*
+- **The dispatcher and the backends disagree on what an integer is.**
+  `resolve_backend` classifies within `int_tol`; all seven backend sites test
+  `order == int(order)`. In the gap the backend takes `n = floor(order)`, so
+  `γ ≈ 1e-13`, and the result is wrong by 26–31 nats *with the wrong sign* —
+  for a quantity that is provably positive. *(PR 4b)*
 - **The symbolic fractional backend omits the `1/Γ(γ)` prefactor** that all five
   numeric sites apply, so its result is `Γ(γ)` times too large — 77% at order
-  0.5. It also currently returns `None` for the Gamma prior because SymPy's
-  `laplace_transform` raises internally. *(PR 4)*
+  0.5. It returns `None` for every registry prior in any case: Gamma raises
+  inside SymPy's `laplace_transform`, Pareto trips a `mellin_result[0]`
+  subscript on an unevaluated `Mul`, and uniform and heaviside do not return.
+  *(PR 4c)*
 - **Near-integer orders lose accuracy.** Above the interpolation threshold
   (fractional part > 0.95) the dispatcher switches to a 4-point cubic spline in
   the order, which is *less* accurate than the plain quadrature just below the
-  threshold. See "Numerical policy" for the exact fix. *(PR 4)*
+  threshold. See "Numerical policy" for the exact fix. *(PR 4b)*
+- **Quadrature truncation does not adapt to the evaluation point.** The
+  `L`-doubling loop compares consecutive iterates against
+  `tol * max(1.0, |prev|)` with `tol = 1e-6` — an *absolute* test whenever the
+  integral is below 1 — and a consecutive-iterate change underestimates the
+  remaining tail when convergence is slow. `maxwell-boltzmann` on three
+  observations (`a = 4.5`, `b = 14`) comes out with relative error 6.9e-06.
+  `epsabs`, `epsrel` and `limit` change nothing; `initial_L = 40` alone brings
+  it to 2.4e-15. *(PR 6)*
+- **A posterior from a numeric backend cannot be updated sequentially.**
+  `to_prior_object` can only build the updated prior's MGF symbolically; its
+  numeric route returns a prior carrying `mgf_backend`/`pdf_backend` and no
+  `mgf_sym`/`cgf_sym`, which no derivative backend can consume. Since no
+  symbolic backend works for fractional orders, fractional posteriors cannot be
+  updated at all. `update` now refuses; it used to return `-inf` on `scipy` and
+  `mpmath`, because the tan-transform integrand's blanket
+  `except Exception: return 0.0` turned the missing MGF into a zero at every
+  quadrature node. *(PR 6)*
 - **`post_density` discards its hyperparameter substitution** — `log_prior` is
   formed before the `subs` call. *(PR 5, no runtime repro yet)*
 - **The symbolic-order path is dead.** `integerDeriv_symbolic` rejects any order

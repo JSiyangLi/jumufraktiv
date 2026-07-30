@@ -32,25 +32,9 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 # ==========================================================================
 # PR 4 — the fractional-order path
 # ==========================================================================
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 4: MGFDerivative._build_derivative calls mgfDerivative(t=None), "
-    "but the fractional branch requires t, so any non-integer order raises "
-    "at construction",
-)
-def test_fractional_order_posterior_can_be_constructed(gamma_prior):
-    """A non-integer derivative order must not break construction.
-
-    ``normal``, ``halfnormal`` and ``maxwell-boltzmann`` all produce a
-    fractional ``a`` whenever the sample size is odd, so this is an ordinary
-    use of the package, not an exotic one.
-    """
-    post = MGFDerivative(
-        gamma_prior, data=[0.5, 1.0, 1.5], likelihood="halfnormal", method="auto"
-    )
-
-    log_ev, _ = post.evidence()
-    assert np.isfinite(log_ev)
+# The construction defect (`_build_derivative` passing `t=None` to a backend that
+# requires it) is fixed. Its test now lives, unmarked and much expanded, in
+# test_deferred_construction.py.
 
 
 @pytest.mark.xfail(
@@ -126,6 +110,58 @@ def test_near_integer_order_is_accurate(gamma_prior, order):
 
     assert sign == 1
     assert log_abs == pytest.approx(gamma_mgf_derivative_log(order, -1.0), rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 6: the default truncation initial_L=10 stops short at large |t|. "
+    "The L-doubling loop compares consecutive iterates against "
+    "tol * max(1.0, |prev|) with tol=1e-6, which is an absolute test whenever "
+    "the integral is below 1, and consecutive-iterate change underestimates the "
+    "remaining tail when convergence is slow",
+)
+def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior):
+    """Accuracy must not depend on where `t` happens to land.
+
+    ``maxwell-boltzmann`` on three observations gives ``a = 4.5, b = 14``, an
+    ordinary use of the package, and the evidence comes out with relative error
+    6.9e-06. Measured: ``epsabs``, ``epsrel`` and ``limit`` change nothing at
+    all, while ``initial_L=40`` alone brings it to 2.4e-15 — so it is the
+    truncation, not the tolerance.
+    """
+    from conftest import gamma_mgf_derivative_log
+
+    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=-14.0, log=True)
+
+    assert sign == 1
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, -14.0), rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 6: MGFDerivative.to_prior_object can only build the updated "
+    "prior's MGF symbolically. Its numeric route returns a prior with no "
+    "mgf_sym/cgf_sym, which no derivative backend can consume, so a posterior "
+    "from any numeric backend cannot be updated. Since no symbolic backend "
+    "works for fractional orders, fractional posteriors cannot be updated at all",
+)
+def test_fractional_posterior_can_be_updated_sequentially(gamma_prior):
+    """Evidence factorises, so staged conditioning must match one-shot.
+
+    Reachable only since the deferred-construction fix: a fractional posterior
+    could not previously be built. `update` now raises rather than returning the
+    ``-inf`` that `scipy` and `mpmath` produced, but raising is not the goal.
+    """
+    staged = MGFDerivative(gamma_prior, data=[1.0, 2.0, 3.0], likelihood="halfnormal")
+    updated = staged.update([1.0], likelihood="halfnormal")
+
+    one_shot = MGFDerivative(
+        gamma_prior, data=[1.0, 2.0, 3.0, 1.0], likelihood="halfnormal"
+    )
+
+    assert staged.evidence()[0] + updated.evidence()[0] == pytest.approx(
+        one_shot.evidence()[0], rel=1e-8
+    )
 
 
 # ==========================================================================

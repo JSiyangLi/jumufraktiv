@@ -39,6 +39,7 @@ import numpy as np
 from jumufraktiv.derivativeDispatch import (
     _check_moment_exists_at_origin,
     mgfDerivative,
+    resolve_backend,
 )
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import t, theta, r, u, q
@@ -370,21 +371,84 @@ class MGFDerivative:
     # ========================================================
     def _build_derivative(self):
         """
-        Construct D_a(t)=M^(a)(t) without evaluating at t=-b.
+        Construct a representation of ``D^a M(t)`` that is not yet tied to a `t`.
+
+        Only the ``symbolic`` backend can produce such a representation: it
+        differentiates the prior's MGF and hands back a `sympy.Expr` in `t`,
+        which later methods substitute into as often as they like. Every
+        numeric backend quadratures at a *particular* `t` and so has nothing to
+        return until one is known.
+
+        For those, this method stores a callable instead — a thunk that runs
+        the same `mgfDerivative` call once an evaluation point arrives. The
+        arrangement is what `_evaluate_derivative`'s callable branch has always
+        expected; until now nothing produced a callable, so the branch was
+        unreachable and every numeric backend raised
+        ``ValueError: t must be provided`` during construction.
+
+        Notes
+        -----
+        Which case applies is asked of `resolve_backend`, so this method does
+        not need to know the backend matrix — that stays in the dispatch layer,
+        as the layer rule requires.
         """
-        self._deriv = mgfDerivative(
-            order=self.a,
-            prior=self.prior,
-            method=self.method,
-            t=None,
-            u=None,
-            simplify=self.simplify,
-            complete=True,
-            log=False,
-            **self._deriv_kwargs
+        _, resolved_method, _ = resolve_backend(
+            self.a,
+            self.method,
+            self._deriv_kwargs.get("integer_method", "symbolic"),
+            self._deriv_kwargs.get("int_tol", 1e-12),
         )
-        self._deriv_is_symbolic = isinstance(self._deriv, sp.Expr) # Do I have an unevaluated symbolic derivative function representation DM(t)? It tells you whether you can work with it symbolically.
-    
+
+        if resolved_method == "symbolic":
+            self._deriv = mgfDerivative(
+                order=self.a,
+                prior=self.prior,
+                method=self.method,
+                t=None,
+                u=None,
+                simplify=self.simplify,
+                complete=True,
+                log=False,
+                **self._deriv_kwargs
+            )
+        else:
+            self._deriv = self._deferred_derivative()
+
+        # Do I have an unevaluated symbolic derivative function representation
+        # DM(t)? It tells you whether you can work with it symbolically.
+        self._deriv_is_symbolic = isinstance(self._deriv, sp.Expr)
+
+    def _deferred_derivative(self):
+        """Return a thunk evaluating ``D^a M`` at a `t` supplied later.
+
+        The thunk closes over the backend options, so callers pass only the
+        evaluation point. Re-passing ``**self._deriv_kwargs`` at call time —
+        which `_evaluate_derivative` used to do — would raise ``TypeError: got
+        an unexpected keyword argument`` for any option the closure already
+        holds.
+
+        It is built with ``log=self.log`` rather than a fixed ``log=False``:
+        `_store_result` requires a ``(log_abs, sign)`` tuple whenever
+        ``self.log`` is set, and the log principle makes that choice the
+        caller's alone.
+        """
+        options = dict(self._deriv_kwargs)
+
+        def deferred(t_value, u=None, complete=True, log=None):
+            return mgfDerivative(
+                order=self.a,
+                prior=self.prior,
+                method=self.method,
+                t=t_value,
+                u=u,
+                simplify=self.simplify,
+                complete=complete,
+                log=self.log if log is None else log,
+                **options
+            )
+
+        return deferred
+
     def _evaluate_derivative(self, t_value):
         if isinstance(self._deriv, sp.Basic):
             val = self._deriv.subs(t, t_value)
@@ -400,9 +464,10 @@ class MGFDerivative:
                     return numeric_val
             return val
         else:
-            # Numeric function (callable)
-            return self._deriv(t_value, **self._deriv_kwargs)
-    
+            # Deferred numeric backend: the thunk already holds the options.
+            return self._deriv(t_value)
+
+
     def _compute(self):
         """
         Delegates ALL math to mgfDerivative,
@@ -2012,11 +2077,33 @@ class MGFDerivative:
         simplify = kwargs.pop("simplify", self.simplify)
         log = kwargs.pop("log", self.log)
 
-        # Enforce symbolic restriction
-        if method == 'symbolic' and not self._is_symbolic:
+        # ----------------------------------------------------
+        # Sequential updating requires a symbolic derivative
+        # ----------------------------------------------------
+        # `to_prior_object` builds the updated prior's MGF from this
+        # posterior's, and can only do so symbolically. Its numeric route
+        # returns a prior carrying `mgf_backend`/`pdf_backend` and no
+        # `mgf_sym`/`cgf_sym` -- which no derivative backend can consume:
+        # `bell` raises "Prior does not provide a symbolic CGF", `jax` raises
+        # inside its tracer, and `scipy`/`mpmath` return -inf, because the
+        # blanket `except Exception: return 0.0` in the tan-transform integrand
+        # turns the missing MGF into a zero at every quadrature node.
+        #
+        # The condition is `_deriv_is_symbolic`, the representation, not
+        # `_is_symbolic`, the evaluated result at t = -b. The result is numeric
+        # whenever the hyperparameters are, which is the ordinary case, so the
+        # previous test rejected `method='symbolic'` on exactly the posteriors
+        # that could update -- while `method='auto'`, resolving to the same
+        # backend, was let through.
+        if not self._deriv_is_symbolic:
             raise ValueError(
-                "Cannot use symbolic method for sequential update when the posterior derivative is numeric. "
-                "The posterior prior is numeric and cannot be used symbolically. Choose a numeric method (jax, bell, scipy, mpmath)."
+                "Sequential updating requires a symbolic derivative "
+                "representation: the updated prior's MGF is built from this "
+                f"posterior's, and method='{self.method}' produced a numeric "
+                "one. Construct the posterior with method='symbolic' (or "
+                "'auto', which resolves to it for integer orders). Fractional "
+                "orders have no symbolic backend that works today, so they "
+                "cannot be updated sequentially yet."
             )
 
         post_prior = self.to_prior_object()
