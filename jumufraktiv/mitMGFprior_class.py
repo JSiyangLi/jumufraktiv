@@ -327,7 +327,7 @@ class mitMGFprior:
         >>> # With symbolic simplification
         >>> prior = mitMGFprior.from_registry('pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True)
         """
-        from jumufraktiv.registry import failed_prior_modules, get_prior
+        from jumufraktiv.registry import failed_prior_modules
 
         params = params or {}
 

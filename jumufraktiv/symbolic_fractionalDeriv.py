@@ -64,8 +64,20 @@ def func_timeout(timeout_seconds, func, args=()):
     call keeps consuming CPU in the background even after this raises. That is
     a real limitation, but it matches what the previous dependency provided in
     practice, and it restores control to the caller, which is the point.
+
+    The executor is deliberately **not** used as a context manager. ``__exit__``
+    calls ``shutdown(wait=True)``, which joins the worker — so on a timeout the
+    wrapper would block until the runaway call finished anyway, defeating the
+    entire purpose. Measured before this was corrected: a 0.2s budget against a
+    4s call returned after 4.00s.
+
+    A consequence of ``wait=False`` worth knowing: ``ThreadPoolExecutor``
+    threads are non-daemon and joined by an ``atexit`` hook, so a still-running
+    transform can delay interpreter exit even though this function has already
+    returned.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         future = pool.submit(func, *args)
         try:
             return future.result(timeout=timeout_seconds)
@@ -73,9 +85,9 @@ def func_timeout(timeout_seconds, func, args=()):
             raise FunctionTimedOut(
                 f"call exceeded its {timeout_seconds}s budget"
             ) from exc
-        finally:
-            # Do not block interpreter shutdown waiting on a runaway transform.
-            pool.shutdown(wait=False)
+    finally:
+        # Never wait: returning promptly on timeout is the whole contract.
+        pool.shutdown(wait=False)
 
 
 def _is_unevaluated_transform(expr):

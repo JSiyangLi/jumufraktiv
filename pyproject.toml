@@ -197,8 +197,8 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # removed by PR 5 together with the underlying bugs.
 "jumufraktiv/MGFDerivative_class.py" = ["F811", "F821"]
 "jumufraktiv/numeric_fractionalDeriv_interpolation.py" = ["F811", "F821"]
-# Redundant re-imports of a name already bound at module level. Harmless today
-# (both bind the same object), so they are left alone to keep this PR from
-# touching library code; removed by PR 8 with the rest of the import cleanup.
+# A redundant re-import of a name already bound at module level. Harmless today
+# (both bind the same object); removed by PR 8 with the rest of the import
+# cleanup. The matching entry for mitMGFprior_class.py was retired in PR 3,
+# which removed that module's duplicate import as part of the registry fix.
 "jumufraktiv/MGFdictionary/gammaMGF.py" = ["F811"]
-"jumufraktiv/mitMGFprior_class.py" = ["F811"]
