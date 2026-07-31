@@ -214,6 +214,14 @@ def fractionalDeriv_grid(
             f"for order {order}."
         )
 
+    # A scalar in must give a scalar out. The dispatcher's other backends do
+    # this, and callers rely on it -- `atleast_1d` alone turned a float result
+    # into a one-element array, which made a list of scalar calls come back as
+    # shape (n, 1) instead of (n,) and compare unequal to the batched answer
+    # despite every value agreeing.
+    scalar_input = np.ndim(t_points) == 0 and (
+        u_points is None or np.ndim(u_points) == 0
+    )
     t_arr = np.atleast_1d(np.asarray(t_points, dtype=float))
     if u_points is None:
         u_arr = None
@@ -305,7 +313,17 @@ def fractionalDeriv_grid(
         axis=0,
     )
 
+    log_total = np.asarray(log_total).reshape(batch_shape)
+    sign_total = np.asarray(sign_total).reshape(batch_shape)
+    if scalar_input:
+        log_total = log_total.reshape(())
+        sign_total = sign_total.reshape(())
+
     if log:
+        if scalar_input:
+            return float(log_total), int(sign_total)
         return log_total, sign_total
+
     with np.errstate(over="ignore"):
-        return sign_total * np.exp(log_total)
+        value = sign_total * np.exp(log_total)
+    return float(value) if scalar_input else value
