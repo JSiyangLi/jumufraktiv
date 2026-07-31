@@ -47,140 +47,11 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 # originals lacked.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 4b: the numeric backends accumulate the quadrature in linear "
-    "space and clamp on overflow, so a large derivative order silently loses "
-    "the overflowing contributions instead of raising",
-)
-@pytest.mark.slow
-def test_large_order_does_not_silently_overflow(gamma_prior):
-    """A large order must be right or raise, not be quietly wrong.
-
-    Measured against the closed-form Gamma reference: order 150.5 is correct
-    to 6e-14 nats, but order 300.5 returns 694.234 where the exact value is
-    1006.311 -- wrong by 312 nats, a factor of about 1e135, with no warning.
-    The order is `a = sum(y)` for several likelihoods, so it grows with the
-    sample and this is reachable from ordinary data.
-    """
-    from conftest import gamma_mgf_derivative_log
-
-    log_abs, sign = mgfDerivative(300.5, gamma_prior, method="scipy", t=-1.0, log=True)
-
-    assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(300.5, -1.0), rel=1e-8)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=UnboundLocalError,
-    reason="PR 4b: numeric_fractionalDeriv_interpolation binds `result` only "
-    "inside its array branch, so the scalar path raises UnboundLocalError. "
-    "The module is to be retired rather than repaired",
-)
-@pytest.mark.slow
-def test_near_integer_order_works_without_log(gamma_prior):
-    """The `log` argument decides the return shape and nothing else.
-
-    That is the log principle, and here `log=False` does not merely change the
-    shape -- it raises `UnboundLocalError: cannot access local variable
-    'result'`. The same call with `log=True` returns a value.
-    """
-    value = mgfDerivative(1.99, gamma_prior, method="scipy", t=-1.0, log=False)
-
-    assert np.isfinite(float(value))
-
-
 # The symbolic fractional backend is repaired. It returns a closed form for
 # the Gamma prior, exact to 1e-16 with the 1/Gamma(gamma) prefactor applied,
 # and raises NotImplementedError naming the prior where SymPy declines --
 # rather than returning None, which used to surface as a TypeError far from
 # its cause. Its tests now live, unmarked, in test_symbolic_fractional.py.
-
-
-@pytest.mark.slow
-def test_order_below_the_interpolation_threshold_is_accurate(gamma_prior):
-    """Order 1.9 is below the interpolation trigger and takes the plain path.
-
-    The dispatcher switches to interpolation only when the fractional part
-    exceeds ``max(d_vec) = 0.95``, so this goes straight to quadrature and is
-    exact. It is the control for the test below.
-    """
-    from conftest import gamma_mgf_derivative_log
-
-    log_abs, sign = mgfDerivative(1.9, gamma_prior, method="scipy", t=-1.0, log=True)
-
-    assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(1.9, -1.0), rel=1e-10)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 4: above the interpolation threshold the dispatcher switches to "
-    "numeric_fractionalDeriv_interpolation, which fits a 4-point cubic spline in "
-    "the order and is markedly LESS accurate than the plain quadrature path just "
-    "below the threshold. The underlying difficulty is that gamma -> 0 makes the "
-    "result (1/Gamma(gamma)) x (a diverging integral); singularity subtraction "
-    "fixes that exactly and would let the interpolation module be retired",
-)
-@pytest.mark.parametrize("order", [1.99, 1.999])
-@pytest.mark.slow
-def test_near_integer_order_is_accurate(gamma_prior, order):
-    """Orders just below an integer must not lose accuracy."""
-    from conftest import gamma_mgf_derivative_log
-
-    log_abs, sign = mgfDerivative(order, gamma_prior, method="scipy", t=-1.0, log=True)
-
-    assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(order, -1.0), rel=1e-10)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 6: the L-doubling loop stops widening the integration range too "
-    "early at large |t|. It compares consecutive iterates against "
-    "tol * max(1.0, |prev|) with tol=1e-6, which is an absolute test whenever "
-    "the integral is below 1, and a consecutive-iterate change underestimates "
-    "the remaining tail when convergence is slow",
-)
-@pytest.mark.parametrize("t_value", [-14.0, -30.0])
-@pytest.mark.slow
-def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior, t_value):
-    """Accuracy must not depend on where `t` happens to land.
-
-    ``maxwell-boltzmann`` on three observations gives ``a = 4.5, b = 14``, an
-    ordinary use of the package, and the evidence comes out with relative error
-    2.9e-06.
-
-    **Both `t` values are here on purpose, because they do not have the same
-    fix.** Measured against the closed-form Gamma reference:
-
-    ==========  ============  ==========  ===========
-    setting       t = -14       t = -30
-    ==========  ============  ==========  ===========
-    tol=1e-6      2.9e-06       1.5e-06     (default)
-    tol=1e-9      1.0e-15       2.8e-10
-    tol=1e-12     1.0e-15       2.1e-10
-    ==========  ============  ==========  ===========
-
-    ``epsabs``, ``epsrel`` and ``limit`` change neither. Tightening ``tol``
-    repairs ``t = -14`` outright but leaves ``t = -30`` on a plateau at
-    2.1e-10, because it makes the loop widen for longer without making the
-    stopping rule correct. So a ``tol`` change would turn the first case green
-    and not the second — which is exactly why both are recorded. The real
-    repair is the fixed-grid kernel, which takes its range from ``gamma``
-    directly instead of discovering it by doubling. See CLAUDE.md,
-    "Numerical policy".
-    """
-    from conftest import gamma_mgf_derivative_log
-
-    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=t_value, log=True)
-
-    assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, t_value), rel=1e-10)
 
 
 @pytest.mark.xfail(
@@ -270,6 +141,19 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 # ==========================================================================
 # PR 6 — numerical robustness
 # ==========================================================================
+# The kernel defects are fixed and their records are gone: large-order overflow,
+# `log=False` raising on the near-integer path, near-integer inaccuracy, and
+# truncation that did not adapt to the evaluation point. All four were symptoms
+# of one design fault, and all four now assert positively, against the
+# closed-form Gamma reference, in test_fixed_grid_kernel.py.
+#
+# The domain guards, `post_quantile`'s bracketing and `logminus` were repaired
+# earlier; those tests live in test_numerical_guards.py.
+#
+# What remains for PR 6c: mpmath below dps 30, the alternating-CGF
+# cancellation, and the sequential-update record above.
+
+
 # ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================

@@ -130,8 +130,7 @@ Three layers, each with a single responsibility. Respect the boundaries.
                      │    ├─ symbolic_integerDeriv  │
                      │    ├─ numeric_integerDeriv_Bell / _JAX
                      │    ├─ symbolic_fractionalDeriv
-                     │    └─ numeric_fractionalDeriv_scipy / _mpmath
-                     │       / _interpolation       │
+                     │    └─ numeric_fractionalDeriv_grid / _mpmath │
                      └───────────────┬──────────────┘
                                      │  reads MGF/CGF/PDF
                      ┌───────────────▼──────────────┐
@@ -479,7 +478,7 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
 | 2 | 5 | Symbolic-path correctness | **in review** |
 | 2 | 6a | Domain guards; the three unusable posterior methods; `logminus` | **in review** |
-| 2 | 6b | The fixed-grid quadrature kernel | planned |
+| 2 | 6b | The fixed-grid quadrature kernel | **in review** |
 | 2 | 6c | Limits that must become loud, and sequential update | planned |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
 | 3 | 8 | Module layout, dead code, and the diagnostics policy | planned |
@@ -541,10 +540,12 @@ PRs touching the same files for different reasons. Where it lands:
 each pair touched the same files for related reasons and splitting them meant
 verifying the same code twice.**
 
-- *Tests that do not assert* was to be PR 6b. Every one of them is a test
-  written against a numerical defect that PR 6 repairs, so the repair and the
-  test that failed to catch it now land together — which is also the only way
-  to show that the strengthened test fails against the old code.
+- *Tests that do not assert* was to be a PR of its own. Every one of them is a
+  test written against a numerical defect that PR 6 repairs, so the repair and
+  the test that failed to catch it now land together — which is also the only
+  way to show that the strengthened test fails against the old code. (It was
+  briefly numbered "PR 6b"; that label now means the fixed-grid kernel, so the
+  old number is avoided here to prevent a collision.)
 - *The diagnostics policy* was to be PR 11. Its work is replacing `print` with
   `logging`, and 282 of the library's 326 `print` calls live inside the
   `__main__` demo blocks that PR 8 removes. Moving the blocks and deciding what
@@ -597,52 +598,6 @@ where noted as "no runtime repro".
   `−0.5753641449035616`). Both are unreachable today, since `gamma_factory`
   wires correct inline lambdas, so they go out with the dead-code sweep rather
   than being repaired. `logminus` itself is fixed and tested. *(PR 8)*
-- **Three near-integer records absorb an `ImportError` as their expected
-  failure.** None of them specifies `raises=`, so if the lazy import at the
-  interpolation branch breaks, they still count as xfail and the suite stays
-  green. `test_interpolation_backend_is_reachable` is the only test that goes
-  red — verified: `5 passed, 3 xfailed` against `1 failed` under a simulated
-  broken import. That test's own assertions are weak enough that inflating the
-  backend's answer by 1e6 leaves the whole suite green, so both halves need
-  repair together. *(PR 6)*
-- **Large orders silently overflow.** The numeric backends accumulate the
-  quadrature in linear space and clamp when it overflows, dropping the
-  overflowing contributions rather than raising. Order 150.5 is correct to
-  6e-14 nats; order 300.5 returns 694.234 against an exact 1006.311 — wrong by
-  312 nats, a factor of about 1e135, with no warning. `a = Σ y` for several
-  likelihoods, so the order grows with the sample. *(PR 6b)*
-- **`log=False` raises on the near-integer path.**
-  `numeric_fractionalDeriv_interpolation` binds `result` only inside its array
-  branch, so the scalar path raises `UnboundLocalError`. The `log` argument is
-  supposed to decide the return shape and nothing else. The module is to be
-  retired rather than repaired. *(PR 6b)*
-- **The dispatcher and the backends disagree on what an integer is.**
-  `resolve_backend` classifies within `int_tol`; all seven backend sites test
-  `order == int(order)`. In the gap the backend takes `n = floor(order)`, so
-  `γ ≈ 1e-13`, and the result is wrong by 26–31 nats *with the wrong sign* —
-  for a quantity that is provably positive. *(PR 6b)*
-- **Near-integer orders lose accuracy.** Above the interpolation threshold
-  (fractional part > 0.95) the dispatcher switches to a 4-point cubic spline in
-  the order, which is *less* accurate than the plain quadrature just below the
-  threshold. See "Numerical policy" for the exact fix. *(PR 6b)*
-- **Quadrature truncation does not adapt to the evaluation point.** The
-  `L`-doubling loop compares consecutive iterates against
-  `tol * max(1.0, |prev|)` with `tol = 1e-6` — an *absolute* test whenever the
-  integral is below 1 — and a consecutive-iterate change underestimates the
-  remaining tail when convergence is slow. `maxwell-boltzmann` on three
-  observations (`a = 4.5`, `b = 14`) comes out with **absolute error 3.1e-05
-  in the log** — quote the absolute figure, because two different relative
-  ones are correct and they are easy to confuse: 6.9e-06 against the log
-  evidence (−4.5308) and 2.9e-06 against the log derivative alone (−10.5561).
-  The two differ only in the denominator; `log_c = 6.0253` is exact, so the
-  error is entirely in the derivative and the absolute figure is the one that
-  does not depend on which quantity you divide by.
-
-  `epsabs`, `epsrel` and `limit` change nothing. Two settings do help, neither
-  sufficiently: `initial_L = 40` brings that case to 2.4e-15, and `tol = 1e-9`
-  to 1.0e-15 — but `a = 4.5, t = −30` plateaus at 2.1e-10 under any `tol`.
-  See "Numerical policy" for the measurements and for why the interim `tol`
-  change was deliberately not taken. *(PR 6)*
 - **A posterior from a numeric backend cannot be updated sequentially.**
   `to_prior_object` can only build the updated prior's MGF symbolically; its
   numeric route returns a prior carrying `mgf_backend`/`pdf_backend` and no
@@ -805,9 +760,9 @@ Dᵃ M(t) = M^{(n+1)}(t) + (1/Γ(γ)) ∫ e^{γu} [ M^{(n+1)}(t − e^u)
 The bracket is `O(z)` near zero, so the left tail decays like `e^{(γ+1)u}`
 *independently of γ*, and the leading term is already the exact `γ → 0` limit.
 Measured relative error at order 1.999: 0.96 before, 2e−16 after. **This
-supersedes `numeric_fractionalDeriv_interpolation.py`, which should be retired
-rather than repaired** — spline-in-the-order is uncontrolled, costs 4× the work,
-and takes its sign from an endpoint.
+superseded `numeric_fractionalDeriv_interpolation.py`, which is now deleted**
+— spline-in-the-order was uncontrolled, cost 4× the work, and took its sign
+from an endpoint.
 
 **Truncation must scale with γ.** The left tail decays like `e^{γu}`, so
 reaching tolerance needs `U ≳ log(1/tol)/γ` — about 55 at `a = 1.5` but 2763 at
