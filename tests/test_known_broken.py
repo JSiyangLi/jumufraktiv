@@ -137,6 +137,14 @@ def test_array_evaluation_points_agree_with_scalar_ones(prior_name):
     masking bug stops the loop converging, `L` keeps doubling, and eventually
     `exp` overflows -- so escalating the warning accidentally rescues the
     result rather than reporting the fault.
+
+    **On the tolerance.** ``rel=1e-8`` is the two paths' own accuracy, not a
+    slack figure: both integrate with ``epsabs = epsrel = 1e-8``, so they
+    cannot be expected to agree more closely than that, and with the defect
+    removed they agree to about 2.5e-09. Asking for 1e-10 would leave this
+    test failing after the repair, so the record would never fire. There is
+    no risk of the bar being too loose either way: the defect is a
+    disagreement of order 1e-1, seven orders of magnitude above it.
     """
     params = {
         "uniform": {"a": 0.5, "b": 2.0},
@@ -156,7 +164,7 @@ def test_array_evaluation_points_agree_with_scalar_ones(prior_name):
             for x in t_values
         ]
 
-    assert batch == pytest.approx(np.array(one_at_a_time), rel=1e-10)
+    assert batch == pytest.approx(np.array(one_at_a_time), rel=1e-8)
 
 
 @pytest.mark.xfail(

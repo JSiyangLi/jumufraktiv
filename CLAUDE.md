@@ -520,7 +520,14 @@ where noted as "no runtime repro".
   `tol * max(1.0, |prev|)` with `tol = 1e-6` — an *absolute* test whenever the
   integral is below 1 — and a consecutive-iterate change underestimates the
   remaining tail when convergence is slow. `maxwell-boltzmann` on three
-  observations (`a = 4.5`, `b = 14`) comes out with relative error 6.9e-06.
+  observations (`a = 4.5`, `b = 14`) comes out with **absolute error 3.1e-05
+  in the log** — quote the absolute figure, because two different relative
+  ones are correct and they are easy to confuse: 6.9e-06 against the log
+  evidence (−4.5308) and 2.9e-06 against the log derivative alone (−10.5561).
+  The two differ only in the denominator; `log_c = 6.0253` is exact, so the
+  error is entirely in the derivative and the absolute figure is the one that
+  does not depend on which quantity you divide by.
+
   `epsabs`, `epsrel` and `limit` change nothing. Two settings do help, neither
   sufficiently: `initial_L = 40` brings that case to 2.4e-15, and `tol = 1e-9`
   to 1.0e-15 — but `a = 4.5, t = −30` plateaus at 2.1e-10 under any `tol`.
