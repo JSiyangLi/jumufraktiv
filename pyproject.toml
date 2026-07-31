@@ -123,12 +123,19 @@ addopts = [
     "--strict-config",
     "-ra",
 ]
+markers = [
+    # A test earns this marker by costing more than about three seconds, which
+    # in this package always means real quadrature rather than anything
+    # avoidable. `pytest -m "not slow"` is the iteration loop and must stay
+    # under a minute; CI runs the full suite on one Python version and the
+    # fast path on the rest, so nothing is skipped everywhere.
+    #
+    # Marking is a scheduling decision, never a statement about importance:
+    # several of the slowest tests here are the most valuable in the suite.
+    "slow: takes seconds of quadrature; excluded from the quick pass",
+]
 filterwarnings = [
     "error",
-    # Raised by registry.initialize() when the optional torch extra is absent,
-    # which also silently drops the pareto and uniform priors. Remove this
-    # entry once PR 3 makes the paretoMGF import lazy.
-    "ignore:.*Failed to load MGFdictionary.*:UserWarning",
     # The package warns on legitimately slow paths; those are not test failures.
     "ignore:computing high-order posterior moments can be very slow:RuntimeWarning",
     "ignore:Symbolic fractional derivatives can be very slow.*:UserWarning",

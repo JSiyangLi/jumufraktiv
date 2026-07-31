@@ -68,6 +68,7 @@ def test_symbolic_fractional_backend_is_reachable(gamma_prior):
         mgfDerivative(1.5, gamma_prior, method="symbolic", t=None)
 
 
+@pytest.mark.slow
 def test_interpolation_backend_is_reachable(gamma_prior):
     """Near-integer orders trigger the interpolation backend; it must import.
 

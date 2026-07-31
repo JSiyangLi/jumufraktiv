@@ -98,6 +98,7 @@ def test_zeroth_raw_moment_of_a_fractional_posterior_is_one(gamma_prior):
     "space and clamp on overflow, so a large derivative order silently loses "
     "the overflowing contributions instead of raising",
 )
+@pytest.mark.slow
 def test_large_order_does_not_silently_overflow(gamma_prior):
     """A large order must be right or raise, not be quietly wrong.
 
@@ -121,6 +122,7 @@ def test_large_order_does_not_silently_overflow(gamma_prior):
     "inside its array branch, so the scalar path raises UnboundLocalError. "
     "The module is to be retired rather than repaired",
 )
+@pytest.mark.slow
 def test_near_integer_order_works_without_log(gamma_prior):
     """The `log` argument decides the return shape and nothing else.
 
@@ -152,6 +154,7 @@ def test_symbolic_fractional_matches_numeric(gamma_prior):
     assert np.log(value) == pytest.approx(gamma_mgf_derivative_log(0.5, -1.0), rel=1e-8)
 
 
+@pytest.mark.slow
 def test_order_below_the_interpolation_threshold_is_accurate(gamma_prior):
     """Order 1.9 is below the interpolation trigger and takes the plain path.
 
@@ -177,6 +180,7 @@ def test_order_below_the_interpolation_threshold_is_accurate(gamma_prior):
     "fixes that exactly and would let the interpolation module be retired",
 )
 @pytest.mark.parametrize("order", [1.99, 1.999])
+@pytest.mark.slow
 def test_near_integer_order_is_accurate(gamma_prior, order):
     """Orders just below an integer must not lose accuracy."""
     from conftest import gamma_mgf_derivative_log
@@ -196,6 +200,7 @@ def test_near_integer_order_is_accurate(gamma_prior, order):
     "the remaining tail when convergence is slow",
 )
 @pytest.mark.parametrize("t_value", [-14.0, -30.0])
+@pytest.mark.slow
 def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior, t_value):
     """Accuracy must not depend on where `t` happens to land.
 

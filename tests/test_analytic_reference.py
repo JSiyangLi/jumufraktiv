@@ -118,6 +118,7 @@ def test_post_predictive_matches_negative_binomial(poisson_posterior, y_new):
     assert float(np.ravel(got)[0]) == pytest.approx(expected, rel=1e-8)
 
 
+@pytest.mark.slow
 def test_predictive_masses_sum_to_one(poisson_posterior):
     """The predictive is a proper pmf over the non-negative integers."""
     y = np.arange(0, 200)

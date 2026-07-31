@@ -358,11 +358,25 @@ other priors from registering.
 ```bash
 pip install -e ".[dev]"          # development install
 pytest                           # full test suite
-pytest -m "not slow" -x -q       # quick pass
+pytest -m "not slow" -x -q       # quick pass, for the iteration loop
 ruff check .                     # lint
 ruff format --check tests/       # formatting (tests/ only, see below)
 sphinx-build -b html docs docs/_build/html   # documentation
 ```
+
+**The quick pass is what you run while working; the full suite is what you run
+before committing.** A test earns the `slow` marker by costing more than about
+three seconds, which in this package always means real quadrature. Marking is
+a scheduling decision and never a statement about importance — several of the
+slowest tests are the most valuable in the suite, which is why CI runs the
+full set on one Python version rather than dropping them.
+
+Two habits, learned the expensive way. Run long suites in the background
+rather than blocking on them, and do not run two at once: the quadrature is
+single-threaded but the box is small, so concurrent runs make each other
+slower and the timings meaningless. And prefer targeted node IDs while
+iterating on one thing — a full run after every edit is the single easiest way
+to waste an hour.
 
 ---
 

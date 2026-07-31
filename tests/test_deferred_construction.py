@@ -20,6 +20,7 @@ integer orders too: two thirds of the backend matrix, none of it reachable
 through the public class.
 """
 
+import functools
 import warnings
 
 import numpy as np
@@ -68,18 +69,32 @@ def _data_for(name):
     return COUNTS if name == "poisson" else DATA
 
 
+#: Constructed posteriors, keyed on the arguments that produced them.
+#:
+#: Construction runs the quadrature, so building the same posterior afresh in
+#: every test is the dominant cost of this file: profiling found roughly twenty
+#: separate `halfnormal` builds, and the two `mpmath` ones cost 21 s and 16 s
+#: each. Nothing here mutates a posterior -- `update` returns a new object and
+#: everything else is a query -- so they are safe to share.
+_POSTERIORS = {}
+
+
 def _build(name, **kwargs):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return MGFDerivative(
-            gamma_prior_spec(),
-            data=_data_for(name),
-            likelihood=name,
-            **KNOWN[name],
-            **kwargs,
-        )
+    key = (name, tuple(sorted(kwargs.items())))
+    if key not in _POSTERIORS:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _POSTERIORS[key] = MGFDerivative(
+                gamma_prior_spec(),
+                data=_data_for(name),
+                likelihood=name,
+                **KNOWN[name],
+                **kwargs,
+            )
+    return _POSTERIORS[key]
 
 
+@functools.cache
 def gamma_prior_spec():
     from jumufraktiv.mitMGFprior_class import mitMGFprior
 
@@ -204,11 +219,11 @@ class TestResolveBackend:
 # Construction: every likelihood, every backend
 # ==========================================================================
 class TestConstruction:
-    @pytest.mark.parametrize("name", sorted(KNOWN))
-    def test_every_likelihood_constructs(self, name):
-        post = _build(name)
-
-        assert np.isfinite(post.evidence()[0])
+    # `test_every_likelihood_constructs` used to sit here, asserting that the
+    # evidence is finite for each of the fourteen. `test_evidence_matches_the_
+    # closed_form` below asserts that it equals the exact value for the same
+    # fourteen, which strictly subsumes it, so it was removed rather than
+    # memoised: the cheapest test is the one that does not run.
 
     @pytest.mark.parametrize("name", FRACTIONAL)
     def test_the_fractional_orders_really_are_fractional(self, name):
@@ -244,7 +259,18 @@ class TestConstruction:
 
         assert post.evidence()[0] == pytest.approx(-6.0965964652, rel=1e-8)
 
-    @pytest.mark.parametrize("method", ["auto", "scipy", "mpmath", "bell", "jax"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "auto",
+            "scipy",
+            # mpmath at its default precision costs 19 s; jax and bell pay for
+            # the reinterpretation path. All three are covered by the full run.
+            pytest.param("mpmath", marks=pytest.mark.slow),
+            pytest.param("bell", marks=pytest.mark.slow),
+            pytest.param("jax", marks=pytest.mark.slow),
+        ],
+    )
     def test_every_fractional_backend_is_reachable_through_the_class(self, method):
         """`bell`/`jax` here exercise the reinterpretation path end to end."""
         post = _build("halfnormal", method=method)
@@ -322,7 +348,9 @@ class TestDeferral:
         ("method_name", "args"),
         [
             ("post_density", (1.0,)),
-            ("post_cdf", (1.0,)),
+            # post_cdf drives the incomplete-MGF path, which is the most
+            # expensive single call in this file at about 10 s.
+            pytest.param("post_cdf", (1.0,), marks=pytest.mark.slow),
             ("post_mgf", (0.1,)),
             ("post_raw_moment", (1,)),
             ("post_central_moment", (2,)),
@@ -396,6 +424,7 @@ class TestUpdateGuard:
 # ==========================================================================
 # Agreement across backends
 # ==========================================================================
+@pytest.mark.slow
 def test_backends_agree_on_a_fractional_order():
     """`scipy` and `mpmath` are independent implementations of the same integral."""
     prior = gamma_prior_spec()
