@@ -751,10 +751,17 @@ def mgfDerivative(
 
     The function supports **tuple‑vectorisation**: if `t` or `u` are array‑like,
     they are broadcast to a common shape and the derivative is evaluated for
-      all points simultaneously.
+    all points simultaneously.
 
-    If `order` is array‑like, each order is processed independently, and the
-    results are stacked along a new first axis.
+    If `order` is array‑like, each order is dispatched independently and the
+    results are returned in the shape of the broadcast request. An `order` of
+    shape ``(2, 3)`` against a scalar `t` returns arrays of shape ``(2, 3)``;
+    an `order` of shape ``(3,)`` against a `t` of shape ``(3,)`` pairs them
+    elementwise and returns shape ``(3,)``.
+
+    Elements are not coerced. A fractional order stays fractional, `t` may be
+    `None` — in which case an array of expressions is returned, per the
+    symbol‑numeric principle — and `u` is passed through unchanged.
 
     Parameters
     ----------
@@ -802,10 +809,14 @@ def mgfDerivative(
     -------
     sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
         - If `order` is symbolic or `t` is `None` or free symbols remain:
-          `sympy.Expr`.
+          `sympy.Expr`, or — for an array-like `order` — an object array of
+          `sympy.Expr` in the shape of the request.
         - If numeric evaluation:
             - `log=True`: `(log_abs, sign)` (scalars or arrays).
             - `log=False`: numeric value (scalar or array).
+
+        Array results carry the shape of the broadcast request, not a flattened
+        or stacked one.
 
     Notes
     -----
@@ -835,10 +846,16 @@ def mgfDerivative(
     >>> log_abs, sign = mgfDerivative(1.5, prior, method='mpmath',
     ...                               t=t_vals, u=u_vals, complete=False, dps=60)
 
-    >>> # Multiple orders at once (array-like order)
+    >>> # Multiple orders at once (array-like order). Fractional orders stay
+    >>> # fractional; 1.5 gets the order-1.5 derivative, not the order-1 one.
     >>> orders = np.array([1.0, 1.5, 2.0])
     >>> log_abs, sign = mgfDerivative(orders, prior, method='scipy', t=-1.0, log=True)
     # Returns arrays of shape (3,) for log_abs and sign
+
+    >>> # The shape of the request is the shape of the answer
+    >>> orders = np.array([[0.5, 1.5], [1.9, 2.5]])
+    >>> log_abs, sign = mgfDerivative(orders, prior, method='auto', t=-2.0, log=True)
+    # Returns arrays of shape (2, 2), not (4,)
     """
     # ---- Validate d_vec (independent of order) ----
     if len(d_vec) != 3:
