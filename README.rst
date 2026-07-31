@@ -48,7 +48,7 @@ The name of this package constitutes of two parts - "jumu", 矩母, means "momen
 "fraktiv", a newly-invented word by authors of this package, stands for "fractional derivatives".
 Together, "jumufraktiv" becomes "fractional derivatives of moment-generating (function)", the essential computation method of this package.
 Moreover, the word "jumufraktiv" sounds foreign in many languages, just like fractional derivatives and MGFs sound foreign in the world of Bayesian computation.
-In Chinese, although 矩母 is native, "fraktiv" is clearly a foreign word; in constrast, although "aktiv" is a native German word and "актив" is a Russian word, "jumu" and "Джуму" makes this word sound foreign in both languages; moreover, this word is clearly foreign in English.
+In Chinese, although 矩母 is native, "fraktiv" is clearly a foreign word; in constrast, although "aktiv" is a native German word and "актив" is a Russian word, "jumu" and "Джуму" make this word sounds foreign in both languages; moreover, this word is clearly foreign in English.
 
 Installation
 ============
