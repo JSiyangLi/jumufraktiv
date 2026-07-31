@@ -350,6 +350,15 @@ priors that way.
 New likelihoods must be added to `LIKELIHOOD_REGISTRY` in
 `MGFDerivative_class.py` **and** to the README's list.
 
+Input handling is *not* part of what a likelihood module writes. Both entry
+points must take their data — and every known parameter — through
+`like_stats/_common.py::_extract_1d`, which converts to a 1-D float array and
+rejects non-finite values, multi-column DataFrames and anything that is not
+one-dimensional. A module that re-implements any of that is a regression, not a
+style choice: fourteen byte-identical copies are precisely how four of them
+came to be missing the dimensionality check while ten had it, and
+`tests/test_dimensionality.py` asserts that no module defines its own.
+
 **Priors.** A prior module in `MGFdictionary/` registers itself with
 `@register_prior("name")` and returns `make_prior_spec(...)`. Discovery is
 automatic for any module whose filename contains `MGF`. Optional heavy backends
@@ -449,11 +458,11 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 4b | Batch evaluation points (converged-mask) | **merged** |
 | 1 | 4c | Array-valued derivative orders | **merged** |
 | 1 | 4d | Symbolic fractional backend | **merged** |
-| 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **in review** |
+| 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
 | 2 | 6b | Test assertions that do not assert | planned |
-| 3 | 7 | De-duplicate `like_stats` | planned |
+| 3 | 7 | De-duplicate `like_stats` | **in review** |
 | 3 | 8 | Module layout and internal boundaries | planned |
 | 4 | 9 | Vectorisation | planned |
 | 4 | 10 | Caching and dispatch | planned |
@@ -480,8 +489,8 @@ PRs touching the same files for different reasons. Where it lands:
 | Finding | Goes to |
 |---------|---------|
 | `sp.diff` recomputed 96,084 times per quick pass (187 s); a structural-key cache gives 1.66× | **PR 10**, caching and dispatch |
-| 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication |
-| ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** |
+| 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication — **done** |
+| ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** — **done**, 758 lines removed |
 | 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** for the move, **PR 11** for the diagnostics policy |
 | 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** |
 | `to_prior_object`'s numeric route and the two broad `except Exception` clauses that fabricate finite numbers | **PR 6** |
@@ -523,15 +532,6 @@ where noted as "no runtime repro".
   in sign, 177% wrong in magnitude — announced only by a `print`. It is not
   faster either (24.7 s at `dps=30` against 24.1 s at `dps=50`), and `dps` is
   reachable from the constructor through `DERIVATIVE_KWARGS`. *(PR 6)*
-- **`ready*` silently accepts 2-D input for 4 of the 14 likelihoods, halving
-  the derivative order.** `readyPoisson([[1,2],[3,4]], scale=1.0)` gives
-  `b = 2.0` where the flat data gives `4.0`; `readyGamma` gives `a = 4.0`
-  against `8.0` — and `a` is the *order of differentiation*. Ten modules guard
-  with `ndim != 1`; poisson, gamma, inverse gamma and dagum do not, and no
-  `bereit*` checks at all. `bereitPoisson` returns `a` of shape (2,2) with `b`
-  of shape (2,), which then feeds `post_predictive`. No test in the suite
-  exercises 2-D input, so the de-duplication could change this in either
-  direction with a green build — which is why the tests land first. *(PR 7)*
 - **`logminus` is untested, and two functions misuse it.** The two-branch
   defect is recorded under "Numerical policy" but nothing exercises it: at a
   gap of 1e-10 it returns `−23.02585084720009` against `−23.025850929990458`,
@@ -648,6 +648,14 @@ orders 0.5, 1.5, 1.9 and 2.5 and over point sets of two, three and five widely
 spread `t`. Removing that mask also made the path *faster* — the suite's batch
 tests run in 178 s against 475 s — because the mask was what prevented
 convergence, so `L` had been doubling far past the integrand's support.
+
+**Dimensionality is now checked in one place.** The `ndim != 1` guard lives
+inside the shared `like_stats/_common.py::_extract_1d`, which every entry point
+routes its data *and* its known parameters through. All twenty-eight `ready*`
+and `bereit*` functions reject 2-D input, where previously ten of twenty-eight
+did. That it is one guard rather than fourteen agreeing ones is the point:
+byte-identical copies are exactly how the four unguarded modules went
+unnoticed.
 
 ---
 

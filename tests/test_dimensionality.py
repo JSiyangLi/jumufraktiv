@@ -1,17 +1,16 @@
 """Two-dimensional input must be rejected, by every entry point.
 
-**These tests exist so that the de-duplication in this same PR cannot change
-this behaviour invisibly.** They are deliberately the first commit: the
-fourteen `like_stats` modules carry a byte-identical `_extract_1d`, and folding
-those into one shared helper necessarily makes their validation uniform. That
-is the point of the refactor — but "uniform" could mean uniformly accepting or
-uniformly rejecting, and with no test either outcome ships green.
+**These tests were written before the de-duplication in this same PR, so that
+it could not change this behaviour invisibly.** The fourteen `like_stats`
+modules carried a byte-identical `_extract_1d`, and folding those into one
+shared helper necessarily makes their validation uniform. That is the point of
+the refactor — but "uniform" could mean uniformly accepting or uniformly
+rejecting, and with no test either outcome ships green.
 
-What the entry points do today, measured:
+What the entry points did before the shared helper landed, measured:
 
-**`ready*`** aggregates over the sample, and ten of the fourteen reject 2-D
-input with `data must be 1-dimensional`. The other four do not, and silently
-compute the wrong statistic:
+**`ready*`** aggregates over the sample, and ten of the fourteen rejected 2-D
+input. The other four did not, and silently computed the wrong statistic:
 
 ===============  ==========================================================
 likelihood       effect of passing [[1,2],[3,4]] instead of [1,2,3,4]
@@ -23,27 +22,20 @@ poisson          ``b`` 4.0 -> 2.0, the evaluation point, halved
 ===============  ==========================================================
 
 Halving `a` is not a small error. It is the order of the derivative, so the
-package computes a different quantity entirely and reports it without comment.
+package computed a different quantity entirely and reported it without comment.
 
 **`bereit*`** returns per-observation statistics, and **none of the fourteen
-rejects 2-D input**. Worse, all fourteen return `a` and `b` with *mismatched
-shapes* — thirteen give `a` of shape (2,) beside `b` of shape (2, 2), and
-poisson gives the mirror image. `post_predictive` consumes exactly these pairs.
+rejected 2-D input**. Worse, all fourteen returned `a` and `b` with *mismatched
+shapes* — thirteen gave `a` of shape (2,) beside `b` of shape (2, 2), and
+poisson the mirror image. `post_predictive` consumes exactly these pairs.
 
-The correct behaviour is to reject, at every entry point: these are functions
-of a one-dimensional sample, and a 2-D array is a caller error rather than a
-shape to be interpreted. The tests below therefore assert rejection
-everywhere, and the cases that do not yet reject are marked as expected
-failures so the suite stays green until the shared helper lands.
+Both are now fixed by construction rather than by agreement: the check lives
+inside the one shared `_extract_1d`, which every entry point routes its data
+through, so there is no longer a set of fourteen guards that could drift apart.
 """
 
 import numpy as np
 import pytest
-
-# `pytest.raises` failing to see an exception raises Failed. The xfail markers
-# below name it explicitly so that an unrelated error cannot be absorbed as the
-# expected failure -- the trap that three near-integer records fell into.
-from _pytest.outcomes import Failed
 
 from jumufraktiv.MGFDerivative_class import LIKELIHOOD_REGISTRY
 
@@ -65,10 +57,6 @@ KNOWN = {
     "halfnormal": {},
 }
 
-#: The four whose `ready*` accepts 2-D today. Named individually rather than
-#: computed, so that a module gaining or losing its guard shows up as a diff.
-READY_ACCEPTS_2D = {"dagum", "gamma", "inverse gamma", "poisson"}
-
 FLAT = [1.0, 2.0, 3.0, 4.0]
 NESTED = [[1.0, 2.0], [3.0, 4.0]]
 COUNTS_FLAT = [1, 2, 3, 4]
@@ -81,30 +69,15 @@ def _data(name, nested):
     return NESTED if nested else FLAT
 
 
-def _param(name):
-    """Mark a likelihood xfail where the behaviour is not yet correct."""
-    if name in READY_ACCEPTS_2D:
-        return pytest.param(
-            name,
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=Failed,
-                reason=f"PR 7: ready{name} has no `ndim != 1` guard, so 2-D "
-                f"input silently halves a statistic instead of raising",
-            ),
-        )
-    return name
-
-
 # ==========================================================================
 # ready*: aggregated statistics
 # ==========================================================================
-@pytest.mark.parametrize("name", [_param(n) for n in sorted(KNOWN)])
+@pytest.mark.parametrize("name", sorted(KNOWN))
 def test_ready_rejects_two_dimensional_data(name):
     """A 2-D sample is a caller error, not a shape to reinterpret."""
     ready, _, _ = LIKELIHOOD_REGISTRY[name]
 
-    with pytest.raises(ValueError, match="1"):
+    with pytest.raises(ValueError, match="1-dimensional"):
         ready(_data(name, nested=True), **KNOWN[name])
 
 
@@ -121,56 +94,25 @@ def test_ready_accepts_the_flat_equivalent(name):
     assert all(np.isfinite(float(v)) for v in stats.values())
 
 
-@pytest.mark.parametrize("name", sorted(READY_ACCEPTS_2D))
-def test_the_halved_statistic_is_recorded(name):
-    """Pins *what* goes wrong, so the repair is visibly a repair.
-
-    This is not asserting that the current behaviour is right — it is
-    recording the size of the error so that the commit which fixes it has
-    something concrete to point at. It is removed together with the four
-    xfail markers above.
-    """
-    ready, _, _ = LIKELIHOOD_REGISTRY[name]
-
-    flat = ready(_data(name, nested=False), **KNOWN[name])
-    nested = ready(_data(name, nested=True), **KNOWN[name])
-
-    # Exactly one of the two statistics is halved, and which one differs by
-    # likelihood: poisson sums into `b`, the other three count into `a`.
-    if name == "poisson":
-        assert nested["b"] == pytest.approx(flat["b"] / 2)
-        assert nested["a"] == pytest.approx(flat["a"])
-    else:
-        assert nested["a"] == pytest.approx(flat["a"] / 2)
-        assert nested["b"] == pytest.approx(flat["b"])
-
-
 # ==========================================================================
 # bereit*: per-observation statistics
 # ==========================================================================
-@pytest.mark.xfail(
-    strict=True,
-    raises=Failed,
-    reason="PR 7: no bereit* function checks dimensionality at all",
-)
 @pytest.mark.parametrize("name", sorted(KNOWN))
 def test_bereit_rejects_two_dimensional_data(name):
-    """Not one of the fourteen rejects 2-D input."""
+    """Not one of the fourteen used to reject 2-D input; all fourteen now do."""
     _, _, bereit = LIKELIHOOD_REGISTRY[name]
 
-    with pytest.raises(ValueError, match="1"):
+    with pytest.raises(ValueError, match="1-dimensional"):
         bereit(_data(name, nested=True), **KNOWN[name])
 
 
 @pytest.mark.parametrize("name", sorted(KNOWN))
 def test_bereit_returns_consistent_shapes_on_flat_data(name):
-    """`a`, `b` and `log_c` must agree in shape. On flat data they do.
+    """`a`, `b` and `log_c` must agree in shape.
 
-    The companion failure is what makes the 2-D case dangerous rather than
-    merely wrong: on nested input all fourteen return `a` and `b` with
-    *different* shapes — thirteen give `a` of shape (2,) beside `b` of shape
-    (2, 2), and poisson the mirror image — and `post_predictive` consumes
-    exactly that pair.
+    The mismatch this guards against is what made the 2-D case dangerous
+    rather than merely wrong: `post_predictive` consumes the `a`/`b` pair, so
+    two different shapes reach a computation that assumes one.
     """
     _, _, bereit = LIKELIHOOD_REGISTRY[name]
 
@@ -181,21 +123,66 @@ def test_bereit_returns_consistent_shapes_on_flat_data(name):
     assert shapes["a"] == (4,)
 
 
-@pytest.mark.parametrize("name", sorted(KNOWN))
-def test_bereit_shapes_disagree_on_two_dimensional_data(name):
-    """Records the mismatch, so the repair has something concrete to remove.
+# ==========================================================================
+# The known parameters go through the same helper
+# ==========================================================================
+@pytest.mark.parametrize(
+    "name", sorted(n for n in KNOWN if KNOWN[n] and n not in {"dagum"})
+)
+def test_a_two_dimensional_known_parameter_is_rejected(name):
+    """`_extract_1d` guards the known parameters too, not only the data.
 
-    Removed together with the xfail above, in the commit that gives every
-    entry point the same guard.
+    Each module extracts its known parameter through the same helper, so the
+    dimensionality check applies there as well. The message differs -- most
+    modules catch the failure and re-raise their own "must be a numeric scalar
+    or 1-dimensional" -- so this asserts only that a `ValueError` is raised and
+    mentions dimensionality, not the exact wording.
+
+    Dagum is excluded because it takes two known parameters whose validation
+    is interleaved; it is covered by the data tests above.
+
+    The match is on "dimensional" alone rather than "1-dimensional" because the
+    modules' own re-raised messages spell it with a non-breaking hyphen, which
+    a plain hyphen would not match. That spelling is pre-existing lint debt
+    owned by the docstring sweep; it is not this test's to fix, but it is this
+    test's to avoid depending on.
     """
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
+    ready, _, _ = LIKELIHOOD_REGISTRY[name]
+    key = next(iter(KNOWN[name]))
+    bad = dict(KNOWN[name])
+    bad[key] = [[1.0, 2.0], [3.0, 4.0]]
 
-    stats = bereit(_data(name, nested=True), **KNOWN[name])
-    a_shape = np.shape(np.asarray(stats["a"]))
-    b_shape = np.shape(np.asarray(stats["b"]))
+    with pytest.raises(ValueError, match="dimensional"):
+        ready(_data(name, nested=False), **bad)
 
-    assert a_shape != b_shape, (
-        f"{name} now returns matching shapes {a_shape}; if this fails because "
-        f"the module started rejecting 2-D input, delete this test along with "
-        f"the xfail records above."
-    )
+
+# ==========================================================================
+# The de-duplication's own invariant
+# ==========================================================================
+def test_no_module_redefines_the_shared_helpers():
+    """The fourteen copies must not come back.
+
+    The helpers were byte-identical across all fourteen modules, which is how
+    their validation managed to diverge in the first place: ten callers guarded
+    dimensionality and four did not, and nothing made that visible. Keeping the
+    definitions in one place is what makes the guard uniform by construction,
+    so a module reintroducing its own copy is a regression rather than a style
+    question.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "jumufraktiv" / "like_stats"
+    offenders = []
+    for path in sorted(root.glob("*.py")):
+        if path.name == "_common.py":
+            continue
+        tree = ast.parse(path.read_text())
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name in (
+                "_extract_1d",
+                "_is_1d_dataframe",
+            ):
+                offenders.append(f"{path.name}:{node.name}")
+
+    assert offenders == [], f"helpers redefined locally: {offenders}"
