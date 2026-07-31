@@ -35,16 +35,24 @@ differentiated-MGF route, whose terms cancel through 25--26 digits before the
 answer appears. It is not true of the problem: the expectation above never forms
 those terms at all.
 
-What it needs, and what it does not do
---------------------------------------
-It needs a density. A prior supplied only as an MGF cannot use this route, and
-:func:`expectation_is_available` reports that so callers can decide rather than
-fail.
+When it is used
+---------------
+``method="auto"`` prefers this route for **numeric evaluation**, whenever the
+prior supplies a density -- which is always, since :class:`mitMGFprior` refuses
+to construct without one in both its symbolic and its backend mode. An explicit
+``method=`` is never diverted.
 
-It is **not** wired into ``method="auto"``. Choosing which route serves a given
-request would change numbers that currently look correct, and that is a
-decision for the package's owners rather than a consequence of adding a
-capability.
+The qualifier "numeric evaluation" is load-bearing. With ``t=None`` the caller
+is asking for a *representation*, and only a differentiating backend can build
+one before an evaluation point is known, so ``auto`` must not be diverted then.
+Routing it unconditionally silently removed the symbolic representation from
+every ``auto`` posterior -- ``post_density(theta)`` stopped returning an
+expression and ``int_tol`` stopped having any effect.
+
+:func:`expectation_is_available` reports whether a prior can use this route, so
+callers can decide rather than fail. It is what the sequential-update guard
+consults: the prior built from a numeric posterior carries a density and no
+MGF, so this route can consume it and the differentiating backends cannot.
 """
 
 import math
