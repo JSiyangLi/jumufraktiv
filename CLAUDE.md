@@ -206,12 +206,17 @@ re-deriving the rules.
 |--------------|---------------------------------|--------------------|-------------|
 | symbolic     | `symbolic`                      | `symbolic`         | **no** — see below |
 | integer      | `symbolic`, `bell`, `jax`       | `symbolic`         | yes         |
-| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | yes, except `symbolic` |
+| fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | yes         |
 
-The last column is not decoration. The symbolic-*order* row still raises
-`TypeError`, and the `symbolic` backend for fractional orders returns `None`
-for every registry prior; both are listed under "Known-broken" below with the
-PR that repairs them.
+The last column is not decoration: the symbolic-*order* row still raises
+`TypeError`, and is listed under "Known-broken" below with the PR that repairs
+it.
+
+The `symbolic` backend for a *fractional* order now works, but only where SymPy
+can do the integral. It returns a closed form for the Gamma prior and raises
+`NotImplementedError` naming the prior for `pareto`, `uniform` and `heaviside`.
+Declining is not a defect — the integral genuinely has no elementary closed
+form for those — and the numeric backends serve them exactly.
 
 Requesting `bell` or `jax` for a fractional order is not an error. Neither can
 take a fractional derivative, so the argument is reinterpreted as
