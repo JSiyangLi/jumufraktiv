@@ -441,8 +441,13 @@ def _batch_quad_vec_method(
         with np.errstate(over='ignore', invalid='ignore'):
             val = sign * np.exp(gamma_val * u_var + log_abs)
             val[log_abs == -np.inf] = 0.0
-        # Mask converged points: integrand = 0
-        val[converged] = 0.0
+        # Do NOT zero the integrand at points flagged as converged. `converged`
+        # is assigned after quad_vec returns, so on the next pass the zero
+        # overwrites the converged point's own value; the difference against
+        # its previous value is then large, the point is un-converged, and the
+        # loop oscillates while L doubles. It is also the reason L grows far
+        # past the integrand's support and eventually overflows `exp`. See
+        # tests/test_batch_evaluation.py.
         return val
 
     # ---- Adaptive L loop ----

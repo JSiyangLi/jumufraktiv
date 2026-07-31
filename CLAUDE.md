@@ -390,6 +390,7 @@ number cannot tell a refactor from a regression.
 | `test_dispatch_imports.py` | the dispatcher's lazily-imported backends |
 | `test_registry.py` | registry, prior container, custom-prior route, constructor validation |
 | `test_deferred_construction.py` | `resolve_backend`, the deferred representation, all 14 likelihoods on every backend |
+| `test_batch_evaluation.py` | array evaluation points vs. the closed form, and independence from the caller's warning filter |
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
@@ -443,28 +444,6 @@ Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
-- **Array evaluation points return wrong values, and the suite cannot see it.**
-  `_batch_quad_vec_method` zeroes the integrand at points that have already
-  converged (`val[converged] = 0.0`). Because `converged` is assigned *after*
-  `quad_vec` returns, that zero overwrites the point's stored value, the
-  difference against its previous value un-converges it, and the loop
-  oscillates while `L` doubles. Against both the scalar loop and mpmath at 40
-  digits, at order 1.5 and `t = [−1, −5]`: `uniform` returns
-  `[−1.1379, −5.2763]` for `[−1.0047, −5.0247]`, `pareto` `[−1.0962, −6.1360]`
-  for `[−0.9909, −5.9950]`, `heaviside` `[0.0790, −6.4521]` for
-  `[0.1212, −6.3260]` — 4 to 13% in the value. `gamma` agrees exactly, which
-  is why the closed-form reference used throughout the suite never caught it.
-
-  **The suite's own configuration hides it as well**, and that matters for
-  anyone writing a test here. `pyproject.toml` sets
-  `filterwarnings = ["error"]`, so NumPy's "overflow encountered in exp"
-  becomes an exception; the batch method aborts, falls back to the scalar loop
-  and returns the *correct* answer. The overflow is a downstream symptom of
-  the same masking bug — the loop never converges, so `L` balloons — which
-  means escalating the warning accidentally rescues the result instead of
-  reporting the fault. A test written the obvious way passes and proves
-  nothing; the record in `test_known_broken.py` restores the ordinary warning
-  state deliberately. *(PR 4b)*
 - **The order is coerced to an integer in the array path.** `int(o)` in
   `mgfDerivative`'s array-order branch. The defect is the coercion itself, not
   the choice of rounding rule: at order 2.5 both `int` and `round` give 2, and
@@ -575,6 +554,35 @@ model to within `1e-8`. Integer derivatives of the Gamma MGF match the
 analytic formula for orders 0–5, and the `symbolic` and `bell` backends agree.
 The defects above are in dispatch, plumbing and edge handling — not in the
 core mathematics.
+
+**Array evaluation points**, once the batch path stopped zeroing the integrand
+at converged points, agree with the closed form to `1e-12` or better across
+orders 0.5, 1.5, 1.9 and 2.5 and over point sets of two, three and five widely
+spread `t`. Removing that mask also made the path *faster* — the suite's batch
+tests run in 178 s against 475 s — because the mask was what prevented
+convergence, so `L` had been doubling far past the integrand's support.
+
+---
+
+### A testing hazard this repository has already hit twice
+
+Recorded here because both instances cost real time and the shape recurs:
+**a check that sits downstream of the property being tested can pass for
+reasons unrelated to it.**
+
+- `pyproject.toml` sets `filterwarnings = ["error"]`. NumPy's "overflow
+  encountered in exp" therefore becomes an exception *under pytest only*, which
+  made a numeric path abort and fall back to a slower but correct route. The
+  suite got the right answer; users, whose warnings are not escalated, got a
+  wrong one. Any test comparing library output must ask whether the harness has
+  changed the code path — `tests/test_batch_evaluation.py` now asserts directly
+  that results do not depend on the caller's warning filter.
+- A `ruff check --select` invocation appeared to show a rule passing when
+  `per-file-ignores` was silently suppressing it; `--isolated` showed the
+  violations were all still there.
+
+The general rule: assert the property itself, and confirm a new test fails
+against the unfixed code before trusting that it passes against the fixed one.
 
 ---
 

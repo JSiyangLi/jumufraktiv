@@ -14,15 +14,12 @@ The bodies assert the *correct* behaviour, not the broken behaviour, so when the
 fix lands the assertion is already the right one.
 """
 
-import warnings
-
 import numpy as np
 import pytest
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 # ==========================================================================
 # PR 3 — import and registry integrity
@@ -88,83 +85,11 @@ def test_zeroth_raw_moment_of_a_fractional_posterior_is_one(gamma_prior):
     assert moments[0] == pytest.approx(1.0, rel=1e-10)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 4b: _batch_quad_vec_method zeroes the integrand at points that "
-    "have already converged (`val[converged] = 0.0`). Because `converged` is "
-    "assigned after quad_vec returns, that zero overwrites the point's stored "
-    "value, the difference against its previous value then un-converges it, "
-    "and the loop oscillates while L doubles",
-)
-@pytest.mark.parametrize("prior_name", ["uniform", "pareto", "heaviside"])
-def test_array_evaluation_points_agree_with_scalar_ones(prior_name):
-    """Evaluating at several `t` at once must match evaluating one at a time.
-
-    The batch path is the default whenever `t` is an array, which covers
-    `post_predictive` and any density or CDF drawn over a grid. Measured at
-    order 1.5, `t = [-1, -5]`, against both the scalar loop and mpmath at 40
-    digits -- which agree with each other to eight decimals:
-
-    ===========  ==========================  ==========================
-    prior        batch                       correct
-    ===========  ==========================  ==========================
-    uniform      [-1.13787913, -5.27628737]  [-1.00472722, -5.02474464]
-    pareto       [-1.09622690, -6.13597991]  [-0.99090985, -5.99500176]
-    heaviside    [ 0.07901551, -6.45212254]  [ 0.12115759, -6.32604737]
-    ===========  ==========================  ==========================
-
-    That is 4 to 13 per cent in the value. `gamma` agrees exactly, which is
-    part of why the suite never caught it: the Gamma prior is the closed-form
-    reference used throughout.
-
-    **The other part is that this suite's own configuration hides the defect,
-    which is why the warning filter below is load-bearing and must not be
-    removed.** `pyproject.toml` sets ``filterwarnings = ["error"]``, so NumPy's
-    "overflow encountered in exp" becomes an exception. The batch method then
-    aborts, falls back to the scalar loop, and returns the *correct* answer.
-    Written the obvious way, this test passes and proves nothing. Measured on
-    the uniform prior:
-
-    ===================================  ==========================
-    warning state                        result
-    ===================================  ==========================
-    ignored (an ordinary user session)   [-1.13787913, -5.27628737]
-    escalated (this suite's default)     [-1.00472722, -5.02474464]
-    ===================================  ==========================
-
-    So the wrong answer is what a user gets and the right answer is an
-    artefact of the harness. The overflow is itself a downstream symptom: the
-    masking bug stops the loop converging, `L` keeps doubling, and eventually
-    `exp` overflows -- so escalating the warning accidentally rescues the
-    result rather than reporting the fault.
-
-    **On the tolerance.** ``rel=1e-8`` is the two paths' own accuracy, not a
-    slack figure: both integrate with ``epsabs = epsrel = 1e-8``, so they
-    cannot be expected to agree more closely than that, and with the defect
-    removed they agree to about 2.5e-09. Asking for 1e-10 would leave this
-    test failing after the repair, so the record would never fire. There is
-    no risk of the bar being too loose either way: the defect is a
-    disagreement of order 1e-1, seven orders of magnitude above it.
-    """
-    params = {
-        "uniform": {"a": 0.5, "b": 2.0},
-        "pareto": {"alpha": 2.5, "xi": 1.0},
-        "heaviside": {"k": 1.0},
-    }[prior_name]
-    prior = mitMGFprior.from_registry(prior_name, params=params)
-    t_values = np.array([-1.0, -5.0])
-
-    with warnings.catch_warnings():
-        # Reproduce an ordinary session, where overflow does not abort the
-        # batch method. Without this the fallback masks the defect entirely.
-        warnings.simplefilter("ignore")
-        batch, _ = mgfDerivative(1.5, prior, method="scipy", t=t_values, log=True)
-        one_at_a_time = [
-            mgfDerivative(1.5, prior, method="scipy", t=float(x), log=True)[0]
-            for x in t_values
-        ]
-
-    assert batch == pytest.approx(np.array(one_at_a_time), rel=1e-8)
+# The batch-path masking defect (`val[converged] = 0.0` corrupting points that
+# had already converged) is fixed. Its tests now live, unmarked and expanded,
+# in test_batch_evaluation.py -- including one asserting that the result does
+# not depend on the caller's warning filter, which is what this suite's own
+# `filterwarnings = ["error"]` had been hiding.
 
 
 @pytest.mark.xfail(
