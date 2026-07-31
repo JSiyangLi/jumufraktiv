@@ -709,6 +709,11 @@ is one fixed expression once its hyperparameters are substituted, but every
 quantity derived from it re-enters the dispatcher separately and every
 quadrature evaluates its integrand at many nodes.
 
+Removing it took the quick pass from 310 s to 162 s (**1.91×**) and the full
+suite from 508 s to 278 s (**1.83×**), measured against an unmodified tree
+checked out into a separate worktree. What is left is genuine quadrature, so
+further speed comes from PR 6's fixed-grid kernel, not from more `slow` markers.
+
 **The key is the expression object, not its `srepr`.** That is a deliberate
 choice with a correctness condition attached. The object key costs 0.36 µs
 against `srepr`'s 68.1 µs, and it is safe only because SymPy's equality is
