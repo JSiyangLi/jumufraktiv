@@ -130,14 +130,16 @@ markers = [
     # suite on one Python version and the quick pass on the rest, so no test is
     # skipped everywhere.
     #
-    # TARGET, NOT YET MET: the quick pass should be under a minute. It is
-    # currently about 220 s against 370 s for the full suite. Marking removed
-    # roughly 140 s; what remains is spread thinly across many individually
-    # cheap tests, so closing the gap needs structural work -- wider fixture
-    # memoisation, cheaper configurations where an expensive parameter is not
-    # the point of the test -- rather than marking more things slow. Marking
-    # more would only move the cost, and past some point it hollows the quick
-    # pass out until it stops catching anything.
+    # TARGET, NOT YET MET: the quick pass should be under a minute. Measured
+    # figures move as the suite grows, so treat them as of a stated commit
+    # rather than as standing facts -- at 3247719, roughly 307 s against 514 s
+    # for the full suite, both under load. Closing the gap needs structural
+    # work rather than marking more things slow: profiling attributes 187 s of
+    # the quick pass to SymPy recomputing the same derivative (96,084 calls to
+    # sp.diff), which a structural-key cache removes -- see PR 10 in
+    # CLAUDE.md's audit table. Marking more would only move the cost, and past
+    # some point it hollows the quick pass out until it stops catching
+    # anything.
     #
     # Marking is a scheduling decision, never a statement about importance:
     # several of the slowest tests here are the most valuable in the suite.

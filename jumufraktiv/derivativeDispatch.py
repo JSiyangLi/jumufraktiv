@@ -751,10 +751,17 @@ def mgfDerivative(
 
     The function supports **tuple‑vectorisation**: if `t` or `u` are array‑like,
     they are broadcast to a common shape and the derivative is evaluated for
-      all points simultaneously.
+    all points simultaneously.
 
-    If `order` is array‑like, each order is processed independently, and the
-    results are stacked along a new first axis.
+    If `order` is array‑like, each order is dispatched independently and the
+    results are returned in the shape of the broadcast request. An `order` of
+    shape ``(2, 3)`` against a scalar `t` returns arrays of shape ``(2, 3)``;
+    an `order` of shape ``(3,)`` against a `t` of shape ``(3,)`` pairs them
+    elementwise and returns shape ``(3,)``.
+
+    Elements are not coerced. A fractional order stays fractional, `t` may be
+    `None` — in which case an array of expressions is returned, per the
+    symbol‑numeric principle — and `u` is passed through unchanged.
 
     Parameters
     ----------
@@ -802,10 +809,14 @@ def mgfDerivative(
     -------
     sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
         - If `order` is symbolic or `t` is `None` or free symbols remain:
-          `sympy.Expr`.
+          `sympy.Expr`, or — for an array-like `order` — an object array of
+          `sympy.Expr` in the shape of the request.
         - If numeric evaluation:
             - `log=True`: `(log_abs, sign)` (scalars or arrays).
             - `log=False`: numeric value (scalar or array).
+
+        Array results carry the shape of the broadcast request, not a flattened
+        or stacked one.
 
     Notes
     -----
@@ -835,10 +846,16 @@ def mgfDerivative(
     >>> log_abs, sign = mgfDerivative(1.5, prior, method='mpmath',
     ...                               t=t_vals, u=u_vals, complete=False, dps=60)
 
-    >>> # Multiple orders at once (array-like order)
+    >>> # Multiple orders at once (array-like order). Fractional orders stay
+    >>> # fractional; 1.5 gets the order-1.5 derivative, not the order-1 one.
     >>> orders = np.array([1.0, 1.5, 2.0])
     >>> log_abs, sign = mgfDerivative(orders, prior, method='scipy', t=-1.0, log=True)
     # Returns arrays of shape (3,) for log_abs and sign
+
+    >>> # The shape of the request is the shape of the answer
+    >>> orders = np.array([[0.5, 1.5], [1.9, 2.5]])
+    >>> log_abs, sign = mgfDerivative(orders, prior, method='auto', t=-2.0, log=True)
+    # Returns arrays of shape (2, 2), not (4,)
     """
     # ---- Validate d_vec (independent of order) ----
     if len(d_vec) != 3:
@@ -848,48 +865,69 @@ def mgfDerivative(
 
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
+        # Each element is dispatched on its own, so this block's only job is to
+        # broadcast the request, forward each element unchanged, and reassemble
+        # the answers in the caller's shape. Every coercion it used to apply
+        # was a defect:
+        #
+        #   int(o)     turned a fractional order into a whole one, returning
+        #              the answer for a different derivative. Not a rounding
+        #              question -- at order 2.5 both int() and round() give 2
+        #              and the result is 15% wrong either way.
+        #   float(tt)  rejected t=None, so an array order could not produce a
+        #              symbolic result, violating the symbol-numeric principle.
+        #   float(uu)  did the same for the incomplete-MGF truncation point.
+        #
+        # `order_arr.shape` is the shape of the whole request once broadcast,
+        # so reassembling into it preserves the caller's shape instead of
+        # flattening it.
         order_arr = np.asarray(order)
-        # Broadcast all components of one derivative request
         if complete:
-            order_arr, t_arr = np.broadcast_arrays(order_arr, t)
-            u_arr = [None] * order_arr.size
+            if u is not None:
+                raise ValueError("u must be None when complete=True")
+            order_arr, t_arr = np.broadcast_arrays(order_arr, np.asarray(t, dtype=object))
+            u_flat = [None] * order_arr.size
         else:
-            order_arr, t_arr, u_arr = np.broadcast_arrays(order_arr, t, u)
-
-        results = []
-        for o, tt, uu in zip(order_arr.flat, t_arr.flat, np.asarray(u_arr).flat):
-            results.append(
-                mgfDerivative(
-                    order=int(o),
-                    prior=prior,
-                    method=method,
-                    t=float(tt),
-                    simplify=simplify,
-                    complete=complete,
-                    log=log,
-                    integer_method=integer_method,
-                    use_interpolation=use_interpolation,
-                    d_vec=d_vec,
-                    int_tol=int_tol,
-                    u=None if complete else float(uu),
-                    **kwargs,
-                )
+            if u is None:
+                raise ValueError("u must be provided when complete=False")
+            order_arr, t_arr, u_arr = np.broadcast_arrays(
+                order_arr, np.asarray(t, dtype=object), np.asarray(u, dtype=object)
             )
+            u_flat = list(u_arr.flat)
 
-        # Restructure results based on log flag
+        batch_shape = order_arr.shape
+
+        results = [
+            mgfDerivative(
+                order=o.item() if hasattr(o, "item") else o,
+                prior=prior,
+                method=method,
+                t=tt,
+                simplify=simplify,
+                complete=complete,
+                log=log,
+                integer_method=integer_method,
+                use_interpolation=use_interpolation,
+                d_vec=d_vec,
+                int_tol=int_tol,
+                u=uu,
+                **kwargs,
+            )
+            for o, tt, uu in zip(order_arr.flat, t_arr.flat, u_flat)
+        ]
+
+        # A symbolic element makes the whole result symbolic: the
+        # symbol-numeric principle keys the return type on whether unresolved
+        # symbols remain, not on how the request was spelled.
+        if any(isinstance(r, sp.Basic) for r in results):
+            return np.array(results, dtype=object).reshape(batch_shape)
+
         if log:
-            log_abs_vals = [r[0] for r in results]
-            sign_vals = [r[1] for r in results]
-            if np.isscalar(log_abs_vals[0]):
-                return np.array(log_abs_vals), np.array(sign_vals)
-            else:
-                # Stack along new axis (axis=0)
-                return np.stack(log_abs_vals, axis=0), np.stack(sign_vals, axis=0)
-        else:
-            if np.isscalar(results[0]):
-                return np.array(results)
-            else:
-                return np.stack(results, axis=0)
+            log_abs = np.array([r[0] for r in results]).reshape(batch_shape)
+            sign = np.array([r[1] for r in results]).reshape(batch_shape)
+            return log_abs, sign
+
+        return np.array(results).reshape(batch_shape)
 
     # ---- Continue with scalar order (original logic) ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
