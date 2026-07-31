@@ -59,7 +59,7 @@ To work from a checkout:
    cd jumufraktiv
    pip install -e ".[dev]"
 
-Optional extras: ``torch`` (PyTorch backend for the Pareto prior), ``docs``
+Optional extras: ``docs``
 (Sphinx), ``examples`` (notebook dependencies), ``dev`` (tests and linting).
 
 None of the extras are needed for the built-in priors: PyTorch is imported

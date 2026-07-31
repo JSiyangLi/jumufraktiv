@@ -369,6 +369,32 @@ class MGFDerivative:
     # ========================================================
     # CORE COMPUTATION, 3-layer design
     # ========================================================
+    def _likelihood_arguments(self, **overrides):
+        """The likelihood's known parameters, with any caller overrides applied.
+
+        The parameters a likelihood needs -- ``mean`` for normal, ``shape`` for
+        gamma, ``rho`` for weibull -- are supplied once at construction and
+        stored in ``_ready_kwargs``. Anything that later calls ``ready_func`` or
+        ``bereit_func`` needs them again, because those functions take them as
+        required positional arguments.
+
+        ``post_predictive`` used to forward only the *caller's* keyword
+        arguments, so ten of the fourteen likelihoods raised
+        ``TypeError: bereitNormal() missing 1 required positional argument:
+        'mean'`` for a parameter the object was already holding. The four that
+        worked are exactly the four with no known parameters, which is why the
+        suite never saw it: every predictive test uses Poisson, whose one
+        parameter has a default.
+
+        Overrides are honoured rather than ignored, so a caller can still
+        evaluate the predictive under a different known parameter than the one
+        the posterior was built with -- passing ``rho`` for a new observation
+        from a different Weibull shape, say.
+        """
+        merged = dict(self._ready_kwargs)
+        merged.update(overrides)
+        return merged
+
     def _build_derivative(self):
         """
         Construct a representation of ``D^a M(t)`` that is not yet tied to a `t`.
@@ -970,7 +996,7 @@ class MGFDerivative:
 
         try:
             # Wrap scalar in a list for ready_func (expects array‑like)
-            stats_new = self.ready_func([x], **kwargs)
+            stats_new = self.ready_func([x], **self._likelihood_arguments(**kwargs))
             a_new = stats_new['a']
             b_new = stats_new['b']
             log_c_new = stats_new['log_c']
@@ -1126,7 +1152,9 @@ class MGFDerivative:
                     return float(results[0]) if scalar_input else np.array(results)
             else:
                 # Joint density: aggregate stats and call helper once
-                stats = self.ready_func(new_data_arr, **kwargs)  # returns summed stats
+                stats = self.ready_func(
+                    new_data_arr, **self._likelihood_arguments(**kwargs)
+                )  # returns summed stats
                 return self._post_predictive_symbolic_scalar(new_data_arr, log=log, **kwargs)
 
         # ---- Numeric path (non‑symbolic posterior, vectorised) ----
@@ -1134,12 +1162,16 @@ class MGFDerivative:
         scalar_input = len(new_data_arr) == 1
 
         if individual:
-            stats = self.bereit_func(new_data_arr, **kwargs)
+            stats = self.bereit_func(
+                new_data_arr, **self._likelihood_arguments(**kwargs)
+            )
             a_vals = np.asarray(stats['a']).ravel()
             b_vals = np.asarray(stats['b']).ravel()
             log_c_vals = np.asarray(stats['log_c']).ravel()
         else:
-            stats = self.ready_func(new_data_arr, **kwargs)
+            stats = self.ready_func(
+                new_data_arr, **self._likelihood_arguments(**kwargs)
+            )
             a_vals = np.array([stats['a']])
             b_vals = np.array([stats['b']])
             log_c_vals = np.array([stats['log_c']])
