@@ -478,7 +478,9 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 4d | Symbolic fractional backend | **merged** |
 | 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
 | 2 | 5 | Symbolic-path correctness | **in review** |
-| 2 | 6 | Numerical robustness, and the tests that do not assert | planned |
+| 2 | 6a | Domain guards; the three unusable posterior methods; `logminus` | **in review** |
+| 2 | 6b | The fixed-grid quadrature kernel | planned |
+| 2 | 6c | Limits that must become loud, and sequential update | planned |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
 | 3 | 8 | Module layout, dead code, and the diagnostics policy | planned |
 | 4 | 9 | Vectorisation | planned |
@@ -486,6 +488,26 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 5 | 12 | Public API surface (less what 12a already took) | planned |
 | 6 | 13 | Documentation infrastructure | planned |
 | 6 | 14 | Docstring sweep | planned |
+
+**PR 6 is split into 6a, 6b and 6c by blast radius, not by defect type**, on
+the owner's decision. The question that governs verification cost is "does this
+change numbers that currently look right?", and the three answer it differently.
+
+- **6a** repairs domain guards, the bracketing of `post_quantile`, and
+  `logminus`. None of it touches the quadrature kernel, so no number that was
+  already correct moves, and it verifies cheaply. It also makes three
+  advertised public methods callable, which they were not for any prior.
+- **6b** replaces the quadrature kernel: a fixed grid on the `z = e^u`
+  substitution, a range derived from `γ` rather than discovered by doubling,
+  the exact near-integer correction, and log-space accumulation. Six recorded
+  defects are symptoms of one design fault, so they are repaired together —
+  splitting further would mean shipping a half-replaced kernel. This is the
+  only one of the three that moves existing numbers, which is why it goes
+  second: any surprise is then attributable.
+- **6c** covers what cannot be computed away and must instead become loud —
+  mpmath's `dps` floor and the alternating-CGF cancellation — plus sequential
+  updating for numeric backends, which is a missing capability rather than a
+  numerical defect but has no better home.
 
 **PR 12a is in wave 1 rather than wave 5 because it is a reachability repair,
 not an interface decision.** The rest of PR 12 settles questions of taste —
@@ -569,15 +591,12 @@ where noted as "no runtime repro".
   in sign, 177% wrong in magnitude — announced only by a `print`. It is not
   faster either (24.7 s at `dps=30` against 24.1 s at `dps=50`), and `dps` is
   reachable from the constructor through `DERIVATIVE_KWARGS`. *(PR 6)*
-- **`logminus` is untested, and two functions misuse it.** The two-branch
-  defect is recorded under "Numerical policy" but nothing exercises it: at a
-  gap of 1e-10 it returns `−23.02585084720009` against `−23.025850929990458`,
-  and `-inf` at 1e-17. Separately, `gammaMGF.py` uses it as "log minus" — a
+- **Two functions in `gammaMGF.py` misuse `logminus`** as "log minus" — a
   difference of logs — rather than "log of a difference", making `gamma_cgf`
   and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
   `−0.5753641449035616`). Both are unreachable today, since `gamma_factory`
-  wires correct inline lambdas, so they should go out with the dead-code sweep
-  rather than be repaired. *(PR 6 for `logminus`, PR 8 for the two functions)*
+  wires correct inline lambdas, so they go out with the dead-code sweep rather
+  than being repaired. `logminus` itself is fixed and tested. *(PR 8)*
 - **Three near-integer records absorb an `ImportError` as their expected
   failure.** None of them specifies `raises=`, so if the lazy import at the
   interpolation branch breaks, they still count as xfail and the suite stays
@@ -591,27 +610,21 @@ where noted as "no runtime repro".
   overflowing contributions rather than raising. Order 150.5 is correct to
   6e-14 nats; order 300.5 returns 694.234 against an exact 1006.311 — wrong by
   312 nats, a factor of about 1e135, with no warning. `a = Σ y` for several
-  likelihoods, so the order grows with the sample. *(PR 4b)*
+  likelihoods, so the order grows with the sample. *(PR 6b)*
 - **`log=False` raises on the near-integer path.**
   `numeric_fractionalDeriv_interpolation` binds `result` only inside its array
   branch, so the scalar path raises `UnboundLocalError`. The `log` argument is
   supposed to decide the return shape and nothing else. The module is to be
-  retired rather than repaired. *(PR 4b)*
+  retired rather than repaired. *(PR 6b)*
 - **The dispatcher and the backends disagree on what an integer is.**
   `resolve_backend` classifies within `int_tol`; all seven backend sites test
   `order == int(order)`. In the gap the backend takes `n = floor(order)`, so
   `γ ≈ 1e-13`, and the result is wrong by 26–31 nats *with the wrong sign* —
-  for a quantity that is provably positive. *(PR 4b)*
-- **The symbolic fractional backend omits the `1/Γ(γ)` prefactor** that all five
-  numeric sites apply, so its result is `Γ(γ)` times too large — 77% at order
-  0.5. It returns `None` for every registry prior in any case: Gamma raises
-  inside SymPy's `laplace_transform`, Pareto trips a `mellin_result[0]`
-  subscript on an unevaluated `Mul`, and uniform and heaviside do not return.
-  *(PR 4c)*
+  for a quantity that is provably positive. *(PR 6b)*
 - **Near-integer orders lose accuracy.** Above the interpolation threshold
   (fractional part > 0.95) the dispatcher switches to a 4-point cubic spline in
   the order, which is *less* accurate than the plain quadrature just below the
-  threshold. See "Numerical policy" for the exact fix. *(PR 4b)*
+  threshold. See "Numerical policy" for the exact fix. *(PR 6b)*
 - **Quadrature truncation does not adapt to the evaluation point.** The
   `L`-doubling loop compares consecutive iterates against
   `tol * max(1.0, |prev|)` with `tol = 1e-6` — an *absolute* test whenever the
@@ -639,13 +652,20 @@ where noted as "no runtime repro".
   `mpmath`, because the tan-transform integrand's blanket
   `except Exception: return 0.0` turned the missing MGF into a zero at every
   quadrature node. *(PR 6)*
-- **`post_quantile`, `post_interval` and `post_sample` fail for every prior.**
-  `post_quantile` brackets from a lower bound of `1e-6`, where the
-  incomplete-MGF derivative underflows and its computed sign flips negative,
-  tripping the guard in `post_cdf`. The other two call it. *(PR 6)*
-- **`post_cdf` has no domain validation on `u`.** `theta` is constrained
-  positive, but `u = -1e-9` recurses to `RecursionError` and `u = -0.5` returns
-  a probability greater than one. *(PR 6)*
+- **The incomplete-MGF derivative is wrong, not merely small, below
+  `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
+  canonical test problem, its log comes out as `−65.17` at `u = 1e-6` where the
+  true value is `−110.41` — a 45-nat error — with the computed sign flipped
+  negative. It is already wrong by 17.8 nats at `u = 1e-4` and becomes
+  trustworthy only around `u = 1e-2`.
+
+  The audit previously described this as underflow. It is not: the value is
+  badly wrong well before anything underflows, which is cancellation in the
+  incomplete gamma. `post_quantile` no longer trips over it, because its
+  bracket now starts from the posterior's own scale `(a+1)/b` rather than from
+  `1e-6`, but the inaccuracy itself is untouched and belongs to the kernel
+  work. It bounds how far into the lower tail any CDF-based method can be
+  trusted. *(PR 6b)*
 - **`post_raw_moment` and `post_central_moment` disagree on return shape.** With
   the same `log=True`, one returns a bare scalar and the other `(log_abs,
   sign)` — a direct violation of the log principle. *(PR 12)*

@@ -802,18 +802,34 @@ class MGFDerivative:
             if scalar_input:
                 theta_arr = np.array([theta_val])
 
+        theta_arr = np.asarray(theta_arr, dtype=float)
+
+        # ---- Domain guard ----------------------------------------------
+        # `theta` is strictly positive, so the density is exactly 0 outside
+        # the support. Answering that is better than computing `log(theta)`
+        # for a non-positive `theta` and producing NaN, which is what happened:
+        # `post_quantile` evaluates this as the derivative for its Newton step
+        # and can propose a non-positive point, and the resulting
+        # "invalid value encountered in log" is escalated to an exception by
+        # the test suite's `filterwarnings = ["error"]` while ordinary users
+        # see only a warning and a NaN. That difference between harness and
+        # user is precisely the hazard CLAUDE.md records.
+        in_support = theta_arr > 0.0
+        theta_safe = np.where(in_support, theta_arr, 1.0)
+
         # Get log prior density (vectorized)
         if self.prior.logpdf_func is not None:
-            log_prior = self.prior.logpdf_func(theta_arr)
+            log_prior = self.prior.logpdf_func(theta_safe)
         elif self.prior.pdf_func is not None:
-            prior_pdf = self.prior.pdf_func(theta_arr)
+            prior_pdf = self.prior.pdf_func(theta_safe)
             if np.any(prior_pdf <= 0):
                 raise ValueError("Prior PDF must be positive for all theta values.")
             log_prior = np.log(prior_pdf)
         else:
             raise ValueError("No numeric PDF function available for this prior.")
 
-        log_num = log_prior + self.a * np.log(theta_arr) - self.b * theta_arr
+        log_num = log_prior + self.a * np.log(theta_safe) - self.b * theta_safe
+        log_num = np.where(in_support, log_num, -np.inf)
         log_denom = self.log_abs if self.log else np.log(self.value)
         log_post = log_num - log_denom
 
@@ -958,10 +974,32 @@ class MGFDerivative:
 
         # Store original shape
         orig_shape = np.shape(u_val)
-        u_arr = np.asarray(u_val)
+        u_arr = np.asarray(u_val, dtype=float)
         scalar_input = u_arr.ndim == 0
         if scalar_input:
-            u_arr = np.array([u_val])
+            u_arr = np.array([float(u_val)])
+
+        # ---- Domain guard ----------------------------------------------
+        # `theta` is strictly positive, so F(u) = P(Theta <= u) is exactly 0
+        # for u <= 0. That is a legitimate question with a known answer, not a
+        # caller error, so it is answered rather than refused.
+        #
+        # It has to be answered *before* evaluation, not corrected afterwards.
+        # Passing a non-positive u into the incomplete-MGF derivative below
+        # either recursed until `RecursionError` (u = -1e-9) or returned a
+        # log-CDF above zero -- a probability of 2.43 at u = -0.5 -- because
+        # nothing downstream knows where the support starts.
+        in_support = u_arr > 0.0
+        if not np.any(in_support):
+            log_ratio = np.full(u_arr.shape, -np.inf).reshape(orig_shape)
+            if scalar_input:
+                return float(log_ratio.item()) if log else 0.0
+            return log_ratio if log else np.zeros(orig_shape)
+
+        # Evaluate at a safe stand-in wherever u is out of support, then
+        # overwrite. Substituting keeps one batched call rather than splitting
+        # the array, which the tuple-vectorisation principle asks for.
+        u_eval = np.where(in_support, u_arr, np.max(u_arr[in_support]))
 
         # Numerator: derivative of incomplete MGF at t = -b for all u values
         # mgfDerivative now supports tuple‑vectorisation: it will broadcast t=-self.b with u_arr.
@@ -973,7 +1011,7 @@ class MGFDerivative:
             simplify=self.simplify,
             complete=False,
             log=True,
-            u=u_arr,
+            u=u_eval,
             **self._deriv_kwargs
         )
 
@@ -986,6 +1024,12 @@ class MGFDerivative:
         # Combine
         log_ratio = log_abs_num - log_denom
         sign_ratio = sign_num * (self._sign if self._sign is not None else 1.0)
+
+        # Replace the stand-in results with the exact answer below the support.
+        # This happens before the sign check so that check sees only points
+        # that were genuinely evaluated.
+        log_ratio = np.where(in_support, log_ratio, -np.inf)
+        sign_ratio = np.where(in_support, sign_ratio, 1.0)
 
         # Reshape to original shape
         log_ratio = log_ratio.reshape(orig_shape)
@@ -1813,8 +1857,27 @@ class MGFDerivative:
             return self.post_density(x, log=False)
 
         if lower is None or upper is None:
-            lower_init = np.full_like(p_arr, 1e-6)
-            upper_init = np.full_like(p_arr, 1.0 / 1e-6)
+            # Start from the posterior's own scale, not from a fixed 1e-6.
+            #
+            # The old bracket ran 1e-6 to 1e6, and the lower end is not merely
+            # wasteful -- it is outside the region where the incomplete-MGF
+            # derivative is accurate. Measured against the exact Gamma(8, 6)
+            # posterior of the canonical test problem, the numerator's log at
+            # u = 1e-6 comes out as -65.17 where the true value is -110.41: a
+            # 45-nat error, with the computed sign flipped negative, which then
+            # trips the non-negativity guard in `post_cdf`. It is already wrong
+            # by 17.8 nats at u = 1e-4, and only becomes trustworthy around
+            # u = 1e-2. So every call failed before the root finder started.
+            #
+            # The likelihood's own statistics give a scale for free: the
+            # posterior is proportional to `theta**a * exp(-b*theta)` times the
+            # prior, whose density peaks at `a/b` and has mean `(a+1)/b`. That
+            # is the right order of magnitude for the quantiles of interest and
+            # sits well inside the accurate region, so the expansion below
+            # reaches the root without ever probing where the CDF is unusable.
+            scale = (self.a + 1.0) / self.b if self.b > 0 else 1.0
+            lower_init = np.full_like(p_arr, scale * 0.5, dtype=float)
+            upper_init = np.full_like(p_arr, scale * 2.0, dtype=float)
             lower, upper = self._expand_bracket(p_arr, f, lower_init, upper_init)
 
         if x0 is None:
@@ -1832,6 +1895,37 @@ class MGFDerivative:
             rel_tol=rel_tol,
             **kwargs
         )
+
+        # ---- Verify the root, and fall back to bisection if it is not one --
+        #
+        # `solve_root`'s "auto" mode tries methods in order and accepts the
+        # first that does not raise -- but a non-finite or out-of-bracket
+        # result is not an exception, so a diverged Newton step counts as
+        # success. That is how `post_quantile(0.025)` came back as 7.7e+300
+        # while `post_quantile` on the same probability inside an array came
+        # back correct: different methods in the ordering won.
+        #
+        # A bracket is already in hand and the CDF is monotone, so bisection
+        # cannot fail here. Verifying and falling back costs one cheap check on
+        # the common path and removes the failure mode entirely.
+        roots = np.asarray(roots, dtype=float)
+        acceptable = np.isfinite(roots) & (roots >= lower) & (roots <= upper)
+        if not np.all(acceptable):
+            roots = np.asarray(
+                solve_root(
+                    f=f,
+                    df=None,
+                    x0=None,
+                    lower=lower,
+                    upper=upper,
+                    root_method="bisection-np",
+                    maxiter=maxiter,
+                    tol=tol,
+                    rel_tol=rel_tol,
+                    **kwargs
+                ),
+                dtype=float,
+            )
 
         return float(roots[0]) if scalar_input else roots
 

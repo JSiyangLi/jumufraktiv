@@ -49,6 +49,7 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="PR 4b: the numeric backends accumulate the quadrature in linear "
     "space and clamp on overflow, so a large derivative order silently loses "
     "the overflowing contributions instead of raising",
@@ -138,6 +139,7 @@ def test_near_integer_order_is_accurate(gamma_prior, order):
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="PR 6: the L-doubling loop stops widening the integration range too "
     "early at large |t|. It compares consecutive iterates against "
     "tol * max(1.0, |prev|) with tol=1e-6, which is an absolute test whenever "
@@ -183,6 +185,7 @@ def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior, t_
 
 @pytest.mark.xfail(
     strict=True,
+    raises=ValueError,
     reason="PR 6: MGFDerivative.to_prior_object can only build the updated "
     "prior's MGF symbolically. Its numeric route returns a prior with no "
     "mgf_sym/cgf_sym, which no derivative backend can consume, so a posterior "
@@ -267,55 +270,12 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 # ==========================================================================
 # PR 6 — numerical robustness
 # ==========================================================================
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 6: post_quantile brackets from a lower bound of 1e-6, where the "
-    "incomplete-MGF derivative underflows and its computed sign flips negative, "
-    "tripping the guard in post_cdf. This makes post_quantile, post_interval "
-    "and post_sample unusable for every prior",
-)
-@pytest.mark.parametrize("p", [0.025, 0.5, 0.975])
-def test_post_quantile_inverts_the_cdf(poisson_posterior, p):
-    """The quantile function must invert the CDF."""
-    q = poisson_posterior.post_quantile(p)
-
-    assert poisson_posterior.post_cdf(q, log=False) == pytest.approx(p, abs=1e-6)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 6: post_sample depends on post_quantile, which cannot bracket",
-)
-def test_post_sample_returns_requested_size(poisson_posterior):
-    draws = poisson_posterior.post_sample(16)
-
-    assert np.shape(draws) == (16,)
-    assert np.all(draws > 0)
-
-
-def test_post_cdf_is_zero_at_the_origin(poisson_posterior):
-    """At u = 0 the CDF correctly vanishes. This one already works."""
-    assert poisson_posterior.post_cdf(0.0, log=False) == pytest.approx(0.0, abs=1e-12)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 6: post_cdf has no domain validation on u. Below zero it either "
-    "recurses until RecursionError (u = -1e-9) or returns a log-CDF above zero, "
-    "i.e. a probability greater than one (u = -0.5), for a parameter that is "
-    "constrained positive",
-)
-@pytest.mark.parametrize("u", [-0.5, -1e-9])
-def test_post_cdf_is_zero_below_the_support(poisson_posterior, u):
-    """theta is strictly positive, so the CDF must vanish below zero."""
-    assert poisson_posterior.post_cdf(u, log=False) == pytest.approx(0.0, abs=1e-12)
-
-
 # ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="PR 12: the log principle says the log argument alone decides the "
     "return shape, but post_raw_moment returns a bare scalar while "
     "post_central_moment returns (log_abs, sign) for the same log=True",
@@ -329,6 +289,7 @@ def test_moment_methods_share_a_return_convention(poisson_posterior):
 
 @pytest.mark.xfail(
     strict=True,
+    raises=TypeError,
     reason="PR 12: post_sample calls the unseeded legacy np.random.rand and "
     "takes no rng argument, so results are not reproducible",
 )
