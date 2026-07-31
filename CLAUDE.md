@@ -580,6 +580,28 @@ where noted as "no runtime repro".
   cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy" is the
   diagnostic.
 
+  **But the conclusion drawn from this — that the case cannot be computed and
+  must merely be flagged — is wrong, and that is newly measured.** "No evaluator
+  at any precision recovers it" is true of the *differentiated-MGF route* only.
+  The defining identity `Dᵃ M(t) = E[θᵃ e^{tθ}]` gives a completely different
+  computation whose integrand is **positive**, so it cannot cancel at all.
+  Evaluating that expectation by ordinary `scipy.integrate.quad` in plain
+  float64, against the same Uniform(0.5, 2) prior at `t = −1`, measured against
+  an mpmath oracle at 80 digits:
+
+  | order | differentiated MGF | direct quadrature |
+  |-------|--------------------|-------------------|
+  | 12    | 2.0e-10            | 2.2e-16           |
+  | 20    | 1.8e-02            | 2.3e-16           |
+  | 30    | 4.5e+08 (wrong sign) | 8.7e-18         |
+  | 100   | —                  | 1.3e-15           |
+
+  So the fix is a route, not a warning: for a prior with a usable density,
+  compute the expectation directly instead of differentiating the MGF. That is
+  an architectural addition rather than a repair, it needs a decision about when
+  to prefer it, and it does not obviously extend to priors given only as an MGF
+  — so it is recorded here for the owner rather than assumed.
+
   *Moved from PR 5 to **PR 6**.* It was filed under symbolic-path correctness
   because the reproduction goes through `method="symbolic"`, but nothing about
   the symbolic path is wrong: `sp.diff` returns the correct derivative and the
