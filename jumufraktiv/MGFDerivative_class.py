@@ -2257,15 +2257,25 @@ class MGFDerivative:
         # route has to be able to consume the constructed prior -- so the guard
         # now tests that, instead of testing for a symbolic representation that
         # was only ever a proxy for it.
-        can_update = self._deriv_is_symbolic or expectation_is_available(
-            self.to_prior_object()
-        )
-        if not can_update:
+        # Every DIFFERENTIATING backend needs the prior's symbolic MGF or CGF,
+        # and the prior built from a numeric posterior has only a density. So
+        # an explicit `method=` naming one of them still cannot update -- that
+        # is a limit of those backends, not of updating, and it is reported
+        # here rather than surfacing as "Prior does not provide a symbolic MGF"
+        # from inside a quadrature or as a TracerArrayConversionError from JAX.
+        #
+        # `auto` and `expectation` both work, because the direct-expectation
+        # route reads the density and never touches the MGF.
+        requested = str(kwargs.get("method", method)).lower()
+        differentiating = {"symbolic", "bell", "jax", "scipy", "mpmath"}
+        if not self._deriv_is_symbolic and requested in differentiating:
             raise ValueError(
-                "Sequential updating needs the updated prior to be consumable "
-                "by some derivative backend. This posterior produces neither a "
-                "symbolic MGF nor a density, so neither the differentiating "
-                "backends nor the direct-expectation route can use it."
+                f"method='{requested}' differentiates the prior's symbolic MGF "
+                "or CGF, and the prior built from a numeric posterior has only "
+                "a density. Use method='auto' or method='expectation', which "
+                "compute the derivative as an expectation and need only the "
+                "density, or build the original posterior with "
+                "method='symbolic'."
             )
 
         post_prior = self.to_prior_object()

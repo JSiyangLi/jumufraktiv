@@ -696,35 +696,26 @@ def resolve_backend(
 
     # ---- Resolve 'auto' ----
     #
-    # `auto` prefers the expectation route wherever the prior supplies a
-    # density, which every constructible prior does -- `mitMGFprior` refuses to
-    # build without one, in both its symbolic and its backend mode.
+    # `auto` keeps choosing a DIFFERENTIATING backend here, because this
+    # function decides the derivative's *representation* as well as how it is
+    # evaluated. Only the symbolic backend can build a representation before an
+    # evaluation point is known, and `MGFDerivative` branches on that to offer
+    # `post_density(theta)`, `post_mgf`, `post_cdf(u)` and sequential updating
+    # symbolically.
     #
-    # This is a measured decision, not a preference. Across 240 cases (four
-    # priors, ten orders from 0.5 to 30, six evaluation points from -0.5 to
-    # -50), scored against mpmath at 60 digits with each density written out
-    # independently:
+    # An earlier version of this sent `auto` straight to the expectation route.
+    # That fixed the cancellation but silently removed the symbolic
+    # representation from every `auto` posterior -- `_deriv_is_symbolic` became
+    # permanently False, `int_tol` stopped affecting anything, and asking for a
+    # density as an expression stopped working. The sweep that justified the
+    # switch measured numbers, not capabilities, so it could not have caught
+    # that; the suite did.
     #
-    #                          differentiating   expectation
-    #   unacceptable (>1e-8)   5 of 240          0 of 240
-    #   wrong sign             2                 0
-    #   worst case             2.46e+00          1.17e-11
-    #   median                 6.3e-17           1.0e-16
-    #   90th percentile        1.2e-14           4.9e-15
-    #
-    # All five failures are the Uniform prior at orders 12-30 with `t` near
-    # zero, where its alternating CGF cancels through 25-26 digits. The
-    # expectation route cannot cancel at all, because its integrand is
-    # positive. It is also 5-8x faster.
-    #
-    # The route is chosen by `resolve_backend` rather than inside the
-    # backends, so `mgfDerivative(..., method='scipy')` still means what it
-    # always meant and nothing silently reinterprets an explicit request.
+    # The expectation route is preferred at the point of NUMERIC EVALUATION
+    # instead, in `mgfDerivative` below, where `t` is known. That gets the
+    # accuracy without giving up the representation.
     if method == "auto":
-        if prior is not None and expectation_is_available(prior):
-            method = "expectation"
-        else:
-            method = "scipy" if order_type == "fractional" else "symbolic"
+        method = "scipy" if order_type == "fractional" else "symbolic"
 
     # ---- Validate against the row ----
     if order_type == "symbolic":
@@ -965,12 +956,42 @@ def mgfDerivative(
 
     _check_moment_exists_at_origin(order, prior, t)
 
+    requested_method = method.lower() if isinstance(method, str) else method
     order_type, method, integer_method = resolve_backend(
         order, method, integer_method, int_tol, prior=prior
     )
 
     # Dispatch
-    if method == "expectation":
+    #
+    # The expectation route is preferred for NUMERIC evaluation whenever the
+    # prior supplies a density, which every constructible prior does. The
+    # condition is `t is not None`: with no evaluation point the caller is
+    # asking for a representation, and only a differentiating backend can
+    # produce one, so `auto` must not be diverted then.
+    #
+    # Measured over 240 cases -- four priors, ten orders from 0.5 to 30, six
+    # evaluation points from -0.5 to -50, scored against mpmath at 60 digits
+    # with each density written out independently:
+    #
+    #                          differentiating   expectation
+    #   unacceptable (>1e-8)   5 of 240          0 of 240
+    #   wrong sign             2                 0
+    #   worst case             2.46e+00          1.17e-11
+    #   median                 6.3e-17           1.0e-16
+    #
+    # All five failures are the Uniform prior at orders 12-30 with `t` near
+    # zero, where its alternating CGF cancels through 25-26 digits; the
+    # expectation route cannot cancel because its integrand is positive. It is
+    # also 5-8x faster.
+    #
+    # An explicit `method=` is never diverted -- only `auto` is.
+    prefer_expectation = (
+        requested_method == "auto"
+        and t is not None
+        and prior is not None
+        and expectation_is_available(prior)
+    )
+    if method == "expectation" or prefer_expectation:
         from jumufraktiv.numeric_expectation import expectationDeriv
 
         return expectationDeriv(
