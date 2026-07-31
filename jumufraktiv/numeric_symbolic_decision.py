@@ -15,6 +15,8 @@ from sympy.integrals.transforms import mellin_transform
 import scipy.integrate as integrate
 import numpy as np
 
+from jumufraktiv.symbolic_cache import cached_diff
+
 def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.0, return_decision=False):
     """
     Suggest symbolic vs numeric for integer derivatives.
@@ -39,7 +41,7 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
     print(f"🔬 Testing symbolic derivative of order {test_order} (target order: {order})...")
     start = time.time()
     try:
-        deriv = sp.diff(expr, symbol, test_order)
+        deriv = cached_diff(expr, symbol, test_order)
         elapsed = time.time() - start
         complexity = sp.count_ops(deriv)
         print(f"   ✅ Test succeeded in {elapsed:.3f}s, complexity={complexity}")

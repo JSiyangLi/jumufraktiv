@@ -20,6 +20,7 @@ Supports both complete and incomplete MGFs via the `complete` flag.
 import sympy as sp
 from sympy.integrals.transforms import laplace_transform, mellin_transform
 from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.symbols import t  # only t is needed
 
 import concurrent.futures
@@ -184,7 +185,7 @@ def fractionalDeriv_symbolic(
     t_neg = sp.Symbol("_t_neg", negative=True)
     z = sp.Symbol("_z", positive=True)
 
-    f_n = sp.diff(expr.subs(t_sym, t_neg), t_neg, n + 1)
+    f_n = cached_diff(expr.subs(t_sym, t_neg), t_neg, n + 1)
     integrand = z ** (gamma_order - 1) * f_n.subs(t_neg, t_neg - z)
 
     def _integral_attempt():
