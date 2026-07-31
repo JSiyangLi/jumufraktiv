@@ -126,9 +126,18 @@ addopts = [
 markers = [
     # A test earns this marker by costing more than about three seconds, which
     # in this package always means real quadrature rather than anything
-    # avoidable. `pytest -m "not slow"` is the iteration loop and must stay
-    # under a minute; CI runs the full suite on one Python version and the
-    # fast path on the rest, so nothing is skipped everywhere.
+    # avoidable. `pytest -m "not slow"` is the iteration loop; CI runs the full
+    # suite on one Python version and the quick pass on the rest, so no test is
+    # skipped everywhere.
+    #
+    # TARGET, NOT YET MET: the quick pass should be under a minute. It is
+    # currently about 220 s against 370 s for the full suite. Marking removed
+    # roughly 140 s; what remains is spread thinly across many individually
+    # cheap tests, so closing the gap needs structural work -- wider fixture
+    # memoisation, cheaper configurations where an expensive parameter is not
+    # the point of the test -- rather than marking more things slow. Marking
+    # more would only move the cost, and past some point it hollows the quick
+    # pass out until it stops catching anything.
     #
     # Marking is a scheduling decision, never a statement about importance:
     # several of the slowest tests here are the most valuable in the suite.
