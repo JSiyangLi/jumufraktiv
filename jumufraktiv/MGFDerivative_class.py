@@ -619,15 +619,28 @@ class MGFDerivative:
         """
 
         if self._is_symbolic:
-            return self.c_func() * self._result_expr
+            # `sp.exp(self.log_c)`, not `self.c_func()`.
+            #
+            # `c_func()` returns the likelihood's normalising constant as a
+            # general formula -- for Poisson,
+            # `Product(s[i]**y[i]/factorial(y[i]), (i, 1, n))` -- written over
+            # indexed symbols that are never bound to this object's data. The
+            # symbolic evidence therefore came back carrying free `n`, `s` and
+            # `y` and an unevaluated `Product`, which no substitution available
+            # to the caller could resolve.
+            #
+            # `log_c` is the same constant already evaluated on the actual data
+            # by the likelihood's `ready` function, so this returns an
+            # expression whose only free symbols are the prior's
+            # hyperparameters -- which the caller can substitute. It also makes
+            # the symbolic and numeric branches agree on where the constant
+            # comes from, which they did not before.
+            return sp.exp(self.log_c) * self._result_expr
 
-        else:
-            if self.log:
-                total_log_abs = self.log_c + self.log_abs
-                return total_log_abs, self._sign
+        if self.log:
+            return self.log_c + self.log_abs, self._sign
 
-            else:
-                return np.exp(self.log_c) * self.value
+        return np.exp(self.log_c) * self.value
 
     # ========================================================
     # POSTERIOR DENSITY
@@ -705,16 +718,24 @@ class MGFDerivative:
                     raise TypeError("pdf_sym must be a SymPy expression.")
 
                 log_prior = sp.log(pdf_sym)
-                if self.params is not None:
-                    subs_dict = {}
-                    for sym in pdf_sym.free_symbols:
-                        if sym.name in self.params:
-                            subs_dict[sym] = self.params[sym.name]
-                    if subs_dict:
-                        pdf_sym = pdf_sym.subs(subs_dict)
-
                 log_num = log_prior + self.a * sp.log(theta_sym) - self.b * theta_sym
                 log_post = log_num - sp.log(denom_expr)
+
+                # Substitute the known hyperparameters into the ASSEMBLED
+                # expression. Two things were wrong before. The substitution was
+                # applied to `pdf_sym` after `log_prior` had already been formed
+                # from it, so it was computed and discarded; and even correctly
+                # ordered it would have reached only the prior's density, while
+                # the normalising constant `denom_expr` -- the derivative of the
+                # prior MGF -- carries the same hyperparameters. Substituting
+                # once, here, covers both. This mirrors `post_cdf`, which always
+                # substituted into its assembled expression.
+                if self.params is not None:
+                    subs_dict = {sym: self.params[sym.name]
+                                 for sym in log_post.free_symbols
+                                 if sym.name in self.params}
+                    if subs_dict:
+                        log_post = log_post.subs(subs_dict)
 
                 # Handle numeric theta_val (scalar or array)
                 if theta_val is not None and not isinstance(theta_val, sp.Symbol):
@@ -872,58 +893,64 @@ class MGFDerivative:
             raise RuntimeError("Prior does not support incomplete MGF (iMGF).")
 
         # ---- Symbolic path ----
+        #
+        # This block used to be wrapped in `except Exception` and re-raised as
+        # RuntimeError("Symbolic posterior CDF computation failed: ..."). That
+        # wrapper is gone. It added nothing a caller could act on, and it was
+        # actively harmful here: the block referenced two names, `t_sym` and
+        # `u_sym`, that this module has never defined -- it imports `t` and `u`
+        # -- so every call raised NameError and the wrapper reported it as a
+        # failed computation rather than as the typo it was. A genuine failure
+        # inside SymPy now reaches the caller with its own message and its own
+        # traceback.
         if self._is_symbolic:
-            try:
-                # Build symbolic derivative of incomplete MGF once
-                num_expr = mgfDerivative(
-                    order=self.a,
-                    prior=self.prior,
-                    method="symbolic",
-                    t=None,
-                    simplify=self.simplify,
-                    complete=False,
-                    log=False,
-                    **self._deriv_kwargs
-                )
-                # Evaluate at t = -b (fixed)
-                num_expr = num_expr.subs(t_sym, -self.b)
-                denom_expr = self._deriv.subs(t_sym, -self.b)
-                log_cdf_expr = sp.log(num_expr) - sp.log(denom_expr)
+            # Build symbolic derivative of incomplete MGF once
+            num_expr = mgfDerivative(
+                order=self.a,
+                prior=self.prior,
+                method="symbolic",
+                t=None,
+                simplify=self.simplify,
+                complete=False,
+                log=False,
+                **self._deriv_kwargs
+            )
+            # Evaluate at t = -b (fixed)
+            num_expr = num_expr.subs(t, -self.b)
+            denom_expr = self._deriv.subs(t, -self.b)
+            log_cdf_expr = sp.log(num_expr) - sp.log(denom_expr)
 
-                # Substitute known hyperparameters
-                if self.params is not None:
-                    subs_dict = {sym: self.params[sym.name]
-                                for sym in log_cdf_expr.free_symbols
-                                if sym.name in self.params}
-                    if subs_dict:
-                        log_cdf_expr = log_cdf_expr.subs(subs_dict)
+            # Substitute known hyperparameters
+            if self.params is not None:
+                subs_dict = {sym: self.params[sym.name]
+                            for sym in log_cdf_expr.free_symbols
+                            if sym.name in self.params}
+                if subs_dict:
+                    log_cdf_expr = log_cdf_expr.subs(subs_dict)
 
-                # Determine if u_val is symbolic or numeric
-                if isinstance(u_val, sp.Symbol):
-                    return log_cdf_expr if log else sp.exp(log_cdf_expr)
-                elif u_val is None:
-                    return log_cdf_expr if log else sp.exp(log_cdf_expr)
-                else:
-                    # Numeric u: vectorize evaluation
-                    orig_shape = np.shape(u_val)
-                    u_flat = np.asarray(u_val).ravel()
-                    def eval_u(uu):
-                        expr_i = log_cdf_expr.subs(u_sym, uu).evalf()
-                        if expr_i.free_symbols:
-                            raise ValueError(
-                                "Symbolic expression still has free symbols after substituting u. "
-                                "Cannot evaluate numerically."
-                            )
-                        return float(expr_i)
-                    vec_eval = np.vectorize(eval_u)
-                    results = vec_eval(u_flat).reshape(orig_shape)
-                    if log:
-                        return results.item() if np.ndim(results) == 0 else results
-                    else:
-                        return np.exp(results.item()) if np.ndim(results) == 0 else np.exp(results)
+            # Determine if u_val is symbolic or numeric
+            if isinstance(u_val, sp.Symbol) or u_val is None:
+                return log_cdf_expr if log else sp.exp(log_cdf_expr)
 
-            except Exception as e:
-                raise RuntimeError(f"Symbolic posterior CDF computation failed: {e}") from e
+            # Numeric u: vectorise evaluation
+            orig_shape = np.shape(u_val)
+            u_flat = np.asarray(u_val).ravel()
+
+            def eval_u(uu):
+                expr_i = log_cdf_expr.subs(u, uu).evalf()
+                if expr_i.free_symbols:
+                    raise ValueError(
+                        "Symbolic expression still has free symbols after "
+                        f"substituting u: {sorted(map(str, expr_i.free_symbols))}. "
+                        "Supply the remaining hyperparameters through the prior's "
+                        "`params` so the expression can be evaluated numerically."
+                    )
+                return float(expr_i)
+
+            results = np.vectorize(eval_u)(u_flat).reshape(orig_shape)
+            if not log:
+                results = np.exp(results)
+            return results.item() if np.ndim(results) == 0 else results
 
         # ---- Numeric path (vectorised with tuple‑vectorisation) ----
         if u_val is None:

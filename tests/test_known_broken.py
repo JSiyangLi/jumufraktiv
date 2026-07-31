@@ -14,6 +14,8 @@ The bodies assert the *correct* behaviour, not the broken behaviour, so when the
 fix lands the assertion is already the right one.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 import sympy as sp
@@ -209,19 +211,57 @@ def test_fractional_posterior_can_be_updated_sequentially(gamma_prior):
 # ==========================================================================
 # PR 5 — symbolic-path correctness
 # ==========================================================================
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 5: integerDeriv_symbolic rejects any order that is not a Python "
-    "int, so the symbolic-order row of the backend matrix cannot be reached — "
-    "the dispatcher warns that it will return an analytic continuation and "
-    "then raises TypeError instead",
-)
-def test_symbolic_order_returns_expression(gamma_prior):
-    """A symbolic order must yield an unevaluated expression, per the matrix."""
-    n = sp.Symbol("n", positive=True, integer=True)
-    result = mgfDerivative(n, gamma_prior, t=None)
+def test_an_integer_valued_sympy_order_is_accepted(gamma_prior):
+    """`sp.Integer(2)` must behave exactly like `2`.
 
-    assert isinstance(result, sp.Expr)
+    This half was a real defect. The guard was `isinstance(order, int)`, which
+    rejects `sympy.Integer` -- an integer by every meaning except Python's type
+    check, and one SymPy arithmetic produces routinely. `resolve_backend`
+    classifies it as a symbolic order, so it reached the same dead end as a
+    free symbol and raised `TypeError`.
+    """
+    from_python_int = mgfDerivative(2, gamma_prior, method="symbolic", t=None)
+    from_sympy_int = mgfDerivative(
+        sp.Integer(2), gamma_prior, method="symbolic", t=None
+    )
+
+    assert sp.simplify(from_python_int - from_sympy_int) == 0
+
+
+def test_a_genuinely_symbolic_order_is_refused_clearly(gamma_prior):
+    """An order carrying free symbols is refused, and says why.
+
+    This is **not** a defect record. It documents a decision: `sympy.diff`
+    needs a concrete number of times to differentiate and cannot return a
+    formula in `n`. Closed forms in the order exist for particular priors --
+    the Gamma MGF gives a Pochhammer symbol -- but there is no general route,
+    and the package has no use for one, since `a(y)` comes from the data and is
+    always numeric.
+
+    What was wrong was the *reporting*. The dispatcher warned that the result
+    would be "the analytic continuation to non-integer orders", then raised
+    `TypeError` blaming SymPy's support for symbolic differentiation -- which
+    is not what is missing. The warning fired before the failure, so the last
+    thing a caller saw was a claim about a result they never received.
+    """
+    n = sp.Symbol("n", positive=True, integer=True)
+
+    with pytest.raises(NotImplementedError, match="symbolic number of times"):
+        mgfDerivative(n, gamma_prior, method="symbolic", t=None)
+
+
+def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
+    """No warning may precede the refusal.
+
+    Asserted separately because `pytest.raises` alone would pass while the
+    misleading warning was still being issued.
+    """
+    n = sp.Symbol("n", positive=True, integer=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(NotImplementedError):
+            mgfDerivative(n, gamma_prior, method="symbolic", t=None)
 
 
 # ==========================================================================
