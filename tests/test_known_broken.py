@@ -114,27 +114,46 @@ def test_near_integer_order_is_accurate(gamma_prior, order):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="PR 6: the default truncation initial_L=10 stops short at large |t|. "
-    "The L-doubling loop compares consecutive iterates against "
+    reason="PR 6: the L-doubling loop stops widening the integration range too "
+    "early at large |t|. It compares consecutive iterates against "
     "tol * max(1.0, |prev|) with tol=1e-6, which is an absolute test whenever "
-    "the integral is below 1, and consecutive-iterate change underestimates the "
-    "remaining tail when convergence is slow",
+    "the integral is below 1, and a consecutive-iterate change underestimates "
+    "the remaining tail when convergence is slow",
 )
-def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior):
+@pytest.mark.parametrize("t_value", [-14.0, -30.0])
+def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior, t_value):
     """Accuracy must not depend on where `t` happens to land.
 
     ``maxwell-boltzmann`` on three observations gives ``a = 4.5, b = 14``, an
     ordinary use of the package, and the evidence comes out with relative error
-    6.9e-06. Measured: ``epsabs``, ``epsrel`` and ``limit`` change nothing at
-    all, while ``initial_L=40`` alone brings it to 2.4e-15 — so it is the
-    truncation, not the tolerance.
+    2.9e-06.
+
+    **Both `t` values are here on purpose, because they do not have the same
+    fix.** Measured against the closed-form Gamma reference:
+
+    ==========  ============  ==========  ===========
+    setting       t = -14       t = -30
+    ==========  ============  ==========  ===========
+    tol=1e-6      2.9e-06       1.5e-06     (default)
+    tol=1e-9      1.0e-15       2.8e-10
+    tol=1e-12     1.0e-15       2.1e-10
+    ==========  ============  ==========  ===========
+
+    ``epsabs``, ``epsrel`` and ``limit`` change neither. Tightening ``tol``
+    repairs ``t = -14`` outright but leaves ``t = -30`` on a plateau at
+    2.1e-10, because it makes the loop widen for longer without making the
+    stopping rule correct. So a ``tol`` change would turn the first case green
+    and not the second — which is exactly why both are recorded. The real
+    repair is the fixed-grid kernel, which takes its range from ``gamma``
+    directly instead of discovering it by doubling. See CLAUDE.md,
+    "Numerical policy".
     """
     from conftest import gamma_mgf_derivative_log
 
-    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=-14.0, log=True)
+    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=t_value, log=True)
 
     assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, -14.0), rel=1e-10)
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, t_value), rel=1e-10)
 
 
 @pytest.mark.xfail(

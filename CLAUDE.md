@@ -470,8 +470,11 @@ where noted as "no runtime repro".
   integral is below 1 — and a consecutive-iterate change underestimates the
   remaining tail when convergence is slow. `maxwell-boltzmann` on three
   observations (`a = 4.5`, `b = 14`) comes out with relative error 6.9e-06.
-  `epsabs`, `epsrel` and `limit` change nothing; `initial_L = 40` alone brings
-  it to 2.4e-15. *(PR 6)*
+  `epsabs`, `epsrel` and `limit` change nothing. Two settings do help, neither
+  sufficiently: `initial_L = 40` brings that case to 2.4e-15, and `tol = 1e-9`
+  to 1.0e-15 — but `a = 4.5, t = −30` plateaus at 2.1e-10 under any `tol`.
+  See "Numerical policy" for the measurements and for why the interim `tol`
+  change was deliberately not taken. *(PR 6)*
 - **A posterior from a numeric backend cannot be updated sequentially.**
   `to_prior_object` can only build the updated prior's MGF symbolically; its
   numeric route returns a prior carrying `mgf_backend`/`pdf_backend` and no
@@ -554,6 +557,37 @@ reaching tolerance needs `U ≳ log(1/tol)/γ` — about 55 at `a = 1.5` but 276
 `a = 1.99`. The current `initial_L = 10` with a doubling test cannot get there,
 and `math.exp(u)` overflows above `u = 709` regardless, so `max_L = 1e4` is
 unreachable.
+
+**The `tol` default is the binding constraint before the range is, and a
+tighter one is a partial fix — deliberately deferred, not overlooked.** `tol`
+governs when the `L`-doubling loop stops *widening*, so despite its name it
+controls the truncation range rather than the quadrature precision. Measured
+against the closed-form Gamma reference, relative error at each setting:
+
+| order | `t` | `tol=1e-6` (default) | `tol=1e-9` | `tol=1e-12` |
+|-------|-----|----------------------|------------|-------------|
+| 4.5   | −14 | **2.9e−06**          | 1.0e−15    | 1.0e−15     |
+| 2.5   | −5  | 3.6e−10              | 1.7e−15    | 1.7e−15     |
+| 1.5   | −50 | 1.2e−06              | 5.5e−11    | 9.3e−15     |
+| 4.5   | −30 | 1.5e−06              | 2.8e−10    | **2.1e−10** |
+| 1.5   | −1  | 4.6e−16              | unchanged  | unchanged   |
+| 0.5   | −1  | 7.9e−16              | unchanged  | unchanged   |
+
+So tightening `tol` alone repairs the `a = 4.5, t = −14` case outright and
+improves two others by four to six orders of magnitude, at roughly 2–3× the
+runtime on the calls that need it and no cost elsewhere. **It is not
+sufficient**: `a = 4.5, t = −30` plateaus at 2.1e−10 however tight `tol` goes,
+because the stopping rule compares consecutive iterates and that underestimates
+the remaining tail when convergence is slow. Tightening `tol` makes the loop
+widen for longer; it does not make the rule correct.
+
+The decision (owner's call, taken deliberately) is **not** to ship the `tol`
+change as an interim fix, but to let the fixed-grid kernel supersede it —
+that kernel chooses its range from `γ` directly rather than discovering it by
+doubling, so it removes the stopping rule instead of tuning it. Both cases are
+carried as `xfail(strict=True)` records, parametrised over `t = −14` and
+`t = −30`, so the kernel work cannot claim the easy one and quietly leave the
+other.
 
 **`logminus` is wrong for small gaps.** It implements only the `log1p` branch.
 The standard two-branch form (Mächler 2012, the `Rmpfr` `log1mexp` vignette)
