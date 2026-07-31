@@ -181,12 +181,12 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
     "E713",   # not-in-test                            -> PR 8
     "E731",   # lambda-assignment                      -> PR 8
     "F401",   # unused-import                          -> PR 8
-    "F541",   # f-string-missing-placeholders          -> PR 11 (diagnostics)
+    "F541",   # f-string-missing-placeholders          -> PR 8  (diagnostics)
     "F841",   # unused-variable                        -> PR 5  (correctness)
     "I001",   # unsorted-imports                       -> PR 8
     "B007",   # unused-loop-control-variable           -> PR 9  (vectorisation)
-    "B028",   # no-explicit-stacklevel                 -> PR 11
-    "B904",   # raise-without-from-inside-except       -> PR 11 (error handling)
+    "B028",   # no-explicit-stacklevel                 -> PR 8
+    "B904",   # raise-without-from-inside-except       -> PR 8  (error handling)
     "B905",   # zip-without-explicit-strict            -> PR 9
     "SIM102", # collapsible-if                         -> PR 8
     "SIM108", # if-else-block-instead-of-if-exp        -> PR 8

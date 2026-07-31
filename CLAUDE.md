@@ -205,13 +205,30 @@ re-deriving the rules.
 
 | Order type   | Valid `method`                  | `auto` resolves to | Works today |
 |--------------|---------------------------------|--------------------|-------------|
-| symbolic     | `symbolic`                      | `symbolic`         | **no** — see below |
+| symbolic     | —                               | —                  | **not supported**, by design — see below |
 | integer      | `symbolic`, `bell`, `jax`       | `symbolic`         | yes         |
 | fractional   | `scipy`, `mpmath`, `symbolic`   | `scipy`            | yes         |
 
-The last column is not decoration: the symbolic-*order* row still raises
-`TypeError`, and is listed under "Known-broken" below with the PR that repairs
-it.
+**An order carrying free symbols is refused, and that is a decision rather than
+a defect.** `sp.diff(expr, t, n)` needs a concrete number of times to
+differentiate; it cannot return a formula in `n`. Closed forms in the order do
+exist for particular priors — the Gamma MGF differentiates to a Pochhammer
+symbol — but there is no general route, and the package has no use for one:
+`a(y)` comes from the data through `ready*`, so it is always numeric. A
+symbolic order can only arise from calling `mgfDerivative` directly with a
+`Symbol`, which is not a supported workflow.
+
+This row was previously listed as broken and scheduled for repair. It now
+raises `NotImplementedError` naming the free symbols and saying what to do
+instead, and the dispatcher no longer warns that it will return "the analytic
+continuation to non-integer orders" — a promise it never kept, issued *before*
+the failure so that the last thing a caller saw was a claim about a result they
+never received.
+
+**Integer-valued orders that are not Python `int`s do work**, and this is the
+part that was a real defect: `sp.Integer(2)` is classified as symbolic by
+`resolve_backend` and used to hit the same dead end, even though SymPy
+arithmetic produces `sp.Integer` routinely.
 
 The `symbolic` backend for a *fractional* order now works, but only where SymPy
 can do the integral. It returns a closed form for the Gamma prior and raises
@@ -460,14 +477,12 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 4c | Array-valued derivative orders | **merged** |
 | 1 | 4d | Symbolic fractional backend | **merged** |
 | 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
-| 2 | 5 | Symbolic-path correctness | planned |
-| 2 | 6 | Numerical robustness | planned |
-| 2 | 6b | Test assertions that do not assert | planned |
-| 3 | 7 | De-duplicate `like_stats` | **in review** |
-| 3 | 8 | Module layout and internal boundaries | planned |
+| 2 | 5 | Symbolic-path correctness | **in review** |
+| 2 | 6 | Numerical robustness, and the tests that do not assert | planned |
+| 3 | 7 | De-duplicate `like_stats` | **merged** |
+| 3 | 8 | Module layout, dead code, and the diagnostics policy | planned |
 | 4 | 9 | Vectorisation | planned |
-| 4 | 10 | Caching and dispatch | **in review** |
-| 5 | 11 | Diagnostics policy | planned |
+| 4 | 10 | Caching and dispatch | **merged** |
 | 5 | 12 | Public API surface (less what 12a already took) | planned |
 | 6 | 13 | Documentation infrastructure | planned |
 | 6 | 14 | Docstring sweep | planned |
@@ -492,18 +507,32 @@ PRs touching the same files for different reasons. Where it lands:
 | `sp.diff` recomputed ~96,000 times per quick pass; a cache removes it | **PR 10** — **done**; re-measured at 97,308 calls for 40 distinct keys, 155 s |
 | 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication — **done** |
 | ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** — **done**, 758 lines removed |
-| 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** for the move, **PR 11** for the diagnostics policy |
+| 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8**, which now carries the diagnostics policy too |
 | 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** |
 | `to_prior_object`'s numeric route and the two broad `except Exception` clauses that fabricate finite numbers | **PR 6** |
 | `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12**, public API surface |
-| Tests that pass against the defect they were written for | **PR 6b** (new) |
+| Tests that pass against the defect they were written for | **PR 6** |
 | `pytest -n 4 --dist loadfile` (2.22×) as a documented opt-in | **PR 13**, with the other developer commands |
 | `CHANGELOG.md` has had no entry since PR 4a, leaving 4b, 4c, 4d and 12a unrecorded | **PR 13**, as a catch-up pass |
 
-Only one genuinely new entry was needed. **PR 6b** exists because "a test that
-does not test anything" is not a numerical defect, a symbolic defect or a
-documentation defect, and burying it inside PR 6 would hide the one finding
-that most undermines confidence in the rest of the suite.
+**Two PRs were folded into their neighbours, on the owner's decision, because
+each pair touched the same files for related reasons and splitting them meant
+verifying the same code twice.**
+
+- *Tests that do not assert* was to be PR 6b. Every one of them is a test
+  written against a numerical defect that PR 6 repairs, so the repair and the
+  test that failed to catch it now land together — which is also the only way
+  to show that the strengthened test fails against the old code.
+- *The diagnostics policy* was to be PR 11. Its work is replacing `print` with
+  `logging`, and 282 of the library's 326 `print` calls live inside the
+  `__main__` demo blocks that PR 8 removes. Moving the blocks and deciding what
+  the survivors should do is one edit to each file, not two.
+
+The counter-argument, recorded because it was real: "a test that does not test
+anything" is a distinct kind of defect from a numerical one, and burying it
+risks hiding the finding that most undermines confidence in the rest of the
+suite. The mitigation is that PR 6 must call it out explicitly rather than
+folding it into a list of numerical fixes.
 
 ### Known-broken, scheduled for repair
 
@@ -526,7 +555,14 @@ where noted as "no runtime repro".
   `jax` are never run against a non-gamma prior anywhere**, and the Gamma
   MGF's derivatives have one-signed terms, so they cannot cancel. The
   cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy" is the
-  diagnostic. *(PR 5)*
+  diagnostic.
+
+  *Moved from PR 5 to **PR 6**.* It was filed under symbolic-path correctness
+  because the reproduction goes through `method="symbolic"`, but nothing about
+  the symbolic path is wrong: `sp.diff` returns the correct derivative and the
+  loss happens when float coefficients cancel during evaluation. It is a
+  conditioning problem, and it belongs with the other conditioning work rather
+  than with the three name-and-substitution defects PR 5 repaired. *(PR 6)*
 - **mpmath below `dps ≈ 30` returns a confident wrong answer.** The
   range-doubling loop never converges, runs to `max_L`, and returns
   `log_abs = +1.119329613307` against a closed-form `−1.453832084236` — wrong
@@ -549,7 +585,7 @@ where noted as "no runtime repro".
   red — verified: `5 passed, 3 xfailed` against `1 failed` under a simulated
   broken import. That test's own assertions are weak enough that inflating the
   backend's answer by 1e6 leaves the whole suite green, so both halves need
-  repair together. *(PR 6b)*
+  repair together. *(PR 6)*
 - **Large orders silently overflow.** The numeric backends accumulate the
   quadrature in linear space and clamp when it overflows, dropping the
   overflowing contributions rather than raising. Order 150.5 is correct to
@@ -603,16 +639,6 @@ where noted as "no runtime repro".
   `mpmath`, because the tan-transform integrand's blanket
   `except Exception: return 0.0` turned the missing MGF into a zero at every
   quadrature node. *(PR 6)*
-- **`post_density` discards its hyperparameter substitution** — `log_prior` is
-  formed before the `subs` call. *(PR 5, no runtime repro yet)*
-- **The symbolic-order path is dead.** `integerDeriv_symbolic` rejects any order
-  that is not a Python `int`, so `mgfDerivative` warns that it will return an
-  analytic continuation and then raises `TypeError` — even for `sp.Integer(2)`.
-  The symbolic row of the backend matrix is unreachable. *(PR 5)*
-- **`post_cdf`'s symbolic branch references undefined names.** It uses `t_sym`
-  and `u_sym`, but the module imports `t` and `u`. The resulting `NameError` is
-  swallowed by a broad `except` and re-raised as a confusing `RuntimeError`.
-  Found by `ruff` `F821`, which is why that rule stays blocking. *(PR 5)*
 - **`post_quantile`, `post_interval` and `post_sample` fail for every prior.**
   `post_quantile` brackets from a lower bound of `1e-6`, where the
   incomplete-MGF derivative underflows and its computed sign flips negative,

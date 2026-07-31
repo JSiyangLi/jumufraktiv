@@ -941,13 +941,20 @@ def mgfDerivative(
 
     # Dispatch
     if order_type == "symbolic":
-        warnings.warn(
-            "Derivative order contains symbolic variables. "
-            "Using integerDeriv_symbolic() as a formal symbolic derivative. "
-            "The resulting expression is often the analytic continuation "
-            "to non-integer orders, but this is not guaranteed.",
-            UserWarning,
-        )
+        # No warning here any more. It used to promise that the result "is
+        # often the analytic continuation to non-integer orders", which was
+        # never true: `sympy.diff` needs a concrete number of times to
+        # differentiate, so an order carrying free symbols has always ended in
+        # an exception rather than in an expression. Warning about the quality
+        # of a result that does not exist told the caller nothing, and it fired
+        # *before* the failure, so the last thing they saw was a claim about an
+        # analytic continuation they never received.
+        #
+        # `integerDeriv_symbolic` now raises NotImplementedError naming the
+        # free symbols and saying what to do instead. An order that is
+        # integer-valued but not a Python `int` -- `sympy.Integer(2)`, which
+        # SymPy arithmetic produces routinely -- is classified as symbolic
+        # here and now succeeds, where before it hit the same dead end.
         return mgfDerivative_integer(
             order=order,
             prior=prior,
