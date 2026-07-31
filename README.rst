@@ -40,9 +40,15 @@ derivative of the prior MGF :math:`M`, of order :math:`a(y)`, evaluated at
 
 So the two components play different roles: :math:`a(y)` sets the order of
 differentiation and :math:`b(y)` the point of evaluation. When :math:`a(y)` is
-not an integer the derivative is fractional — hence the name. Everything else
+not an integer the derivative is fractional — the Liouville--Caputo definition of fractional derivatives are used extensively in this package. Everything else
 (density, CDF, quantiles, moments, predictive, sequential updating) follows from
 the same object.
+
+The name of this package constitutes of two parts - "jumu", 矩母, means "moment-generating" in Chinese;
+"fraktiv", a newly-invented word by authors of this package, stands for "fractional derivatives".
+Together, "jumufraktiv" becomes "fractional derivatives of moment-generating (function)", the essential computation method of this package.
+Moreover, the word "jumufraktiv" sounds foreign in many languages, just like fractional derivatives and MGFs sound foreign in the world of Bayesian computation.
+In Chinese, although 矩母 is native, "fraktiv" is clearly a foreign word; in constrast, although "aktiv" is a native German word and "актив" is a Russian word, "jumu" and "Джуму" makes this word sound foreign in both languages; moreover, this word is clearly foreign in English.
 
 Installation
 ============
