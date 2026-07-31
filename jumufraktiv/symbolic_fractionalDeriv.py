@@ -155,75 +155,89 @@ def fractionalDeriv_symbolic(
         raise RuntimeError("No symbol 't' found in the MGF expression.")
 
     alpha = order
-    n = sp.floor(alpha)
-    gamma = (n + 1) - alpha
+    n = int(sp.floor(alpha))
+    gamma_order = (n + 1) - alpha
 
-    # ---- Step 2: integer derivative of order n+1 ----
-    f_n = sp.diff(expr, t_sym, int(n) + 1)
+    # ------------------------------------------------------------------
+    # Evaluate the defining integral directly.
+    #
+    # Substituting x = t - z in the Liouville-Caputo integral with lower
+    # terminal -infinity turns it into
+    #
+    #     D^a M(t) = (1/Gamma(g)) * int_0^oo z^{g-1} M^{(n+1)}(t - z) dz
+    #
+    # which SymPy can attempt as one integral. This replaces a Laplace leg and
+    # a Mellin fallback that between them returned nothing usable for any prior
+    # in the registry: Gamma raised inside `laplace_transform`, Pareto tripped a
+    # subscript on an unevaluated `Mul`, and uniform and heaviside did not
+    # return at all.
+    #
+    # `t` must be declared negative for the integral to converge -- it is the
+    # evaluation point -b(y), which is never positive -- and the canonical
+    # symbol carries no such assumption, so a local one is substituted in and
+    # the result mapped back at the end.
+    #
+    # `meijerg=True` is load-bearing rather than an optimisation. Without it
+    # SymPy tries every method in turn and can run indefinitely; with it the
+    # Meijer-G route either succeeds quickly or declines quickly.
+    # ------------------------------------------------------------------
+    t_neg = sp.Symbol("_t_neg", negative=True)
+    z = sp.Symbol("_z", positive=True)
 
-    # ---- Step 3: Laplace method with timeout ----
-    def _laplace_attempt():
-        u = sp.Symbol('u', positive=True, real=True)
-        w = sp.Symbol('w', positive=True, real=True)
-        s = sp.Symbol('s')
+    f_n = sp.diff(expr.subs(t_sym, t_neg), t_neg, n + 1)
+    integrand = z ** (gamma_order - 1) * f_n.subs(t_neg, t_neg - z)
 
-        integrand1 = f_n.subs(t_sym, t_sym - sp.exp(u))
-        F1 = laplace_transform(integrand1, u, s, noconds=True)
-        I1 = F1.subs(s, -gamma)
+    def _integral_attempt():
+        return sp.integrate(integrand, (z, 0, sp.oo), meijerg=True, conds="none")
 
-        integrand2 = f_n.subs(t_sym, t_sym - sp.exp(-w))
-        F2 = laplace_transform(integrand2, w, s, noconds=True)
-        I2 = F2.subs(s, gamma)
+    prior_name = getattr(prior, "name", "this prior")
 
-        return I1 + I2
+    # The timeout stays, but not for the reason an earlier analysis gave.
+    #
+    # That analysis concluded every registry prior returns within a fraction of
+    # a second, so this machinery could be deleted. The four registry priors do
+    # indeed all return from the integral quickly -- measured 0.02-0.29 s. But
+    # a prior is user-supplied, and `sp.integrate` has no bound in general, so
+    # an unguarded call is a hang waiting for a prior nobody tried.
+    #
+    # A related measurement is worth recording, because it is what the ordering
+    # below is for: `sp.simplify` on an *unevaluated* integral does not return
+    # (uniform at order 1.5, killed at 120 s), while `sp.integrate` on the same
+    # input takes 0.29 s. So the unevaluated case is rejected BEFORE any
+    # simplification is attempted, and the timeout covers the simplify step too
+    # rather than only the integral.
+    def _guarded(fn):
+        try:
+            return func_timeout(timeout_seconds, fn, args=())
+        except FunctionTimedOut:
+            raise NotImplementedError(
+                f"Symbolic fractional differentiation of prior '{prior_name}' "
+                f"at order {order} did not complete within {timeout_seconds} s. "
+                f"Use method='scipy' or method='mpmath' instead."
+            ) from None
 
-    laplace_success = False
-    frac_expr = None
+    raw = _guarded(_integral_attempt)
 
-    try:
-        frac_expr = func_timeout(timeout_seconds, _laplace_attempt, args=())
-        # Check for unevaluated transform
-        if _is_unevaluated_transform(frac_expr):
-            raise RuntimeError("Laplace returned unevaluated")
-        laplace_success = True
-    except FunctionTimedOut:
-        print(f"⚠️ Laplace transform timed out after {timeout_seconds} seconds.")
-    except Exception as e:
-        print(f"⚠️ Laplace method failed: {e}")
+    # The 1/Gamma(gamma) prefactor. Every numeric backend applies it; this
+    # module did not, so its result was Gamma(gamma) times too large -- 77% at
+    # order 0.5. That was invisible because nothing ever returned an expression.
+    frac_expr = raw / sp.gamma(gamma_order)
 
-    # If Laplace succeeded, return result (with optional simplification)
-    if laplace_success:
-        if simplify:
-            frac_expr = sp.simplify(frac_expr)
-        return frac_expr
+    if frac_expr.has(sp.Integral) or _is_unevaluated_transform(frac_expr):
+        raise NotImplementedError(
+            f"SymPy could not evaluate the fractional derivative of prior "
+            f"'{prior_name}' at order {order} in closed form. "
+            f"Use method='scipy' or method='mpmath' instead."
+        )
 
-    # ---- Step 4: Mellin transform with timeout ----
-    print("   Falling back to Mellin transform...")
-    try:
-        def _mellin_attempt():
-            z = sp.Symbol('z', positive=True)
-            g = f_n.subs(t_sym, t_sym - z)
-            s_m = sp.Symbol('s')
-            return mellin_transform(g, z, s_m)
+    # Map back to the canonical symbol, so the caller receives an expression in
+    # `jumufraktiv.symbols.t` rather than in this function's local placeholder.
+    frac_expr = frac_expr.subs(t_neg, t_sym)
 
-        mellin_result = func_timeout(timeout_seconds, _mellin_attempt, args=())
-        F_s = mellin_result[0]
-        frac_expr = F_s.subs(sp.Symbol('s'), gamma)
+    if simplify:
+        frac_expr = _guarded(lambda: sp.simplify(frac_expr))
 
-        if _is_unevaluated_transform(frac_expr):
-            print("❌ Mellin transform returned unevaluated.")
-            return None
-
-        if simplify:
-            frac_expr = sp.simplify(frac_expr)
-        return frac_expr
-
-    except FunctionTimedOut:
-        print(f"❌ Mellin transform timed out after {timeout_seconds} seconds.")
-        return None
-    except Exception as e2:
-        print(f"❌ Mellin transform failed: {e2}")
-        return None
+    return frac_expr
 
 
 # ===== Example usage =====

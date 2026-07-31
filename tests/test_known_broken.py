@@ -89,23 +89,11 @@ def test_near_integer_order_works_without_log(gamma_prior):
     assert np.isfinite(float(value))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 4: symbolic_fractionalDeriv never applies the 1/Gamma(gamma) "
-    "prefactor that all five numeric sites apply, so when it does return an "
-    "expression it is Gamma(gamma) times too large — 77% at order 0.5. It also "
-    "currently returns None for the Gamma prior because SymPy's laplace_transform "
-    "raises internally",
-)
-def test_symbolic_fractional_matches_numeric(gamma_prior):
-    """The symbolic and numeric fractional backends must agree."""
-    from conftest import gamma_mgf_derivative_log
-
-    expr = mgfDerivative(0.5, gamma_prior, method="symbolic", t=None)
-
-    assert expr is not None, "symbolic fractional backend returned None"
-    value = float(expr.subs(sp.Symbol("t", real=True), -1.0).evalf())
-    assert np.log(value) == pytest.approx(gamma_mgf_derivative_log(0.5, -1.0), rel=1e-8)
+# The symbolic fractional backend is repaired. It returns a closed form for
+# the Gamma prior, exact to 1e-16 with the 1/Gamma(gamma) prefactor applied,
+# and raises NotImplementedError naming the prior where SymPy declines --
+# rather than returning None, which used to surface as a TypeError far from
+# its cause. Its tests now live, unmarked, in test_symbolic_fractional.py.
 
 
 @pytest.mark.slow
