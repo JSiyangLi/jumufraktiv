@@ -65,11 +65,11 @@ To work from a checkout:
    cd jumufraktiv
    pip install -e ".[dev]"
 
-Optional extras: ``torch`` (PyTorch backend for the Pareto prior), ``docs``
-(Sphinx), ``examples`` (notebook dependencies), ``dev`` (tests and linting).
+Optional extras: ``docs`` (Sphinx), ``examples`` (notebook dependencies),
+``dev`` (tests and linting).
 
-None of the extras are needed for the built-in priors: PyTorch is imported
-lazily, so a missing extra costs only the Pareto Torch backend itself.
+None of the extras are needed for the built-in priors, which run on the
+core dependencies alone.
 
 Quick start
 ===========

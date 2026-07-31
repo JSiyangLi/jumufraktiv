@@ -208,63 +208,6 @@ def pareto_mgf_jax(t_val, alpha_val, xi_val):
 
 
 # ============================================================
-# Torch version (optional)
-# ============================================================
-
-def pareto_mgf_torch(t, alpha, xi):
-    """
-    Torch‑compatible MGF for the Pareto distribution.
-
-    Parameters
-    ----------
-    t : torch.Tensor
-        Evaluation point(s) (must be <= 0).
-    alpha : float
-        Shape parameter.
-    xi : float
-        Scale parameter.
-
-    Returns
-    -------
-    torch.Tensor
-        M(t).
-
-    Raises
-    ------
-    ImportError
-        If PyTorch is not installed. Install the optional extra with
-        ``pip install "jumufraktiv[torch]"``.
-
-    Notes
-    -----
-    PyTorch is imported here rather than at module scope. This function is not
-    referenced by the registry factory below — nothing in the package calls it —
-    so an eager import made an optional backend a hard requirement for
-    registering the ``pareto`` and ``uniform`` priors at all.
-    """
-    try:
-        import torch
-        from torch.special import gammaincc as torch_gammaincc
-    except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise ImportError(
-            "pareto_mgf_torch requires PyTorch. Install it with "
-            'pip install "jumufraktiv[torch]".'
-        ) from exc
-
-    alpha_t = torch.tensor(alpha, dtype=t.dtype, device=t.device)
-    xi_t = torch.tensor(xi, dtype=t.dtype, device=t.device)
-    z = -xi_t * t
-    a = -alpha_t
-
-    log_gamma_a = torch.lgamma(a)
-    log_q = torch.log(torch_gammaincc(a, z))
-    log_inc = log_gamma_a + log_q
-    log_mgf = torch.log(alpha_t) + alpha_t * torch.log(z) + log_inc
-
-    return torch.where(t == 0.0, 0.0, log_mgf).exp()
-
-
-# ============================================================
 # SciPy PDF / logPDF
 # ============================================================
 

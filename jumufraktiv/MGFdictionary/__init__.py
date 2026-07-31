@@ -9,7 +9,10 @@ Discovery is **isolated per module**. Each module is imported inside its own
 backend is missing, or because it has a genuine bug — cannot stop the modules
 after it from registering. Before this isolation existed, a single eager
 ``import torch`` in ``paretoMGF`` aborted the whole loop and silently removed
-both ``pareto`` and ``uniform`` from the registry.
+both ``pareto`` and ``uniform`` from the registry. That import has since been
+deleted along with the function it served, so the example is history rather
+than something a reader can go and look at; the isolation stays because the
+next optional backend will pose the same risk.
 
 The broad ``except`` here is deliberate and is not the "swallow a real failure"
 anti-pattern that :file:`CLAUDE.md` prohibits. A prior module is effectively a
