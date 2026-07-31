@@ -143,6 +143,7 @@ Three layers, each with a single responsibility. Respect the boundaries.
   root_finding.py — vectorised bisection / Newton (NumPy + JAX)
   symbols.py    — canonical SymPy symbols: t, theta, r, u, q
   logsum.py     — log-space arithmetic helpers
+  symbolic_cache.py — memo for repeated sp.diff (see "Caching" below)
 ```
 
 **Layer rules**
@@ -465,7 +466,7 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 3 | 7 | De-duplicate `like_stats` | **in review** |
 | 3 | 8 | Module layout and internal boundaries | planned |
 | 4 | 9 | Vectorisation | planned |
-| 4 | 10 | Caching and dispatch | planned |
+| 4 | 10 | Caching and dispatch | **in review** |
 | 5 | 11 | Diagnostics policy | planned |
 | 5 | 12 | Public API surface (less what 12a already took) | planned |
 | 6 | 13 | Documentation infrastructure | planned |
@@ -488,7 +489,7 @@ PRs touching the same files for different reasons. Where it lands:
 
 | Finding | Goes to |
 |---------|---------|
-| `sp.diff` recomputed 96,084 times per quick pass (187 s); a structural-key cache gives 1.66× | **PR 10**, caching and dispatch |
+| `sp.diff` recomputed ~96,000 times per quick pass; a cache removes it | **PR 10** — **done**; re-measured at 97,308 calls for 40 distinct keys, 155 s |
 | 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication — **done** |
 | ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** — **done**, 758 lines removed |
 | 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** for the move, **PR 11** for the diagnostics policy |
@@ -691,6 +692,42 @@ against the unfixed code before trusting that it passes against the fixed one.
 The third instance adds a corollary — **choose fixture values that are not
 defaults**, since a parameter tested only at its default value is a parameter
 whose plumbing is untested.
+
+---
+
+## Caching
+
+Symbolic differentiation is memoised in `symbolic_cache.py`, and every library
+call site goes through `cached_diff` rather than `sp.diff` directly. Adding a
+bare `sp.diff` to library code puts the call back on the uncached path.
+
+The reason is measured, not assumed. One quick pass made **97,308 calls to
+`sp.diff` for 40 distinct `(expression, symbol, order)` triples** — about
+2,400-fold redundancy, 155 s of runtime — and 95,573 of those came from a single
+line in `symbolic_integerDeriv.py`. The redundancy is structural: a prior's MGF
+is one fixed expression once its hyperparameters are substituted, but every
+quantity derived from it re-enters the dispatcher separately and every
+quadrature evaluates its integrand at many nodes.
+
+Removing it took the quick pass from 310 s to 162 s (**1.91×**) and the full
+suite from 508 s to 278 s (**1.83×**), measured against an unmodified tree
+checked out into a separate worktree. What is left is genuine quadrature, so
+further speed comes from PR 6's fixed-grid kernel, not from more `slow` markers.
+
+**The key is the expression object, not its `srepr`.** That is a deliberate
+choice with a correctness condition attached. The object key costs 0.36 µs
+against `srepr`'s 68.1 µs, and it is safe only because SymPy's equality is
+precision-aware: `Float(9.0, 53) == Float(9.0, 24)` is `False`, so the two hash
+alike but do not compare equal and stay separate entries. If that ever changes,
+a derivative computed at one precision would be returned for another.
+`tests/test_symbolic_cache.py` asserts the property directly, so the build fails
+rather than the conflation happening silently — at which point the key must go
+back to `srepr`.
+
+No invalidation is needed or wanted. A SymPy expression is immutable and its
+derivative is a pure function of it, so a cached value cannot go stale;
+`clear_derivative_cache()` exists for tests and for releasing memory, never for
+correctness.
 
 ---
 

@@ -121,14 +121,19 @@ markers = [
     #
     # TARGET, NOT YET MET: the quick pass should be under a minute. Measured
     # figures move as the suite grows, so treat them as of a stated commit
-    # rather than as standing facts -- at 3247719, roughly 307 s against 514 s
-    # for the full suite, both under load. Closing the gap needs structural
-    # work rather than marking more things slow: profiling attributes 187 s of
-    # the quick pass to SymPy recomputing the same derivative (96,084 calls to
-    # sp.diff), which a structural-key cache removes -- see PR 10 in
-    # CLAUDE.md's audit table. Marking more would only move the cost, and past
-    # some point it hollows the quick pass out until it stops catching
-    # anything.
+    # rather than as standing facts -- at f51c7d2, 162 s for the quick pass
+    # against 278 s for the full suite, on an idle box.
+    #
+    # The largest avoidable cost is gone: SymPy was recomputing the same
+    # derivative 97,308 times per quick pass for 40 distinct (expression,
+    # symbol, order) triples, which jumufraktiv/symbolic_cache.py now memoises.
+    # That took the quick pass from 310 s to 162 s and the full suite from 508 s
+    # to 278 s, both measured against an unmodified tree in a separate worktree.
+    #
+    # What remains is real quadrature, so closing the rest of the gap needs the
+    # fixed-grid kernel of PR 6 rather than more `slow` markers. Marking more
+    # would only move the cost, and past some point it hollows the quick pass
+    # out until it stops catching anything.
     #
     # Marking is a scheduling decision, never a statement about importance:
     # several of the slowest tests here are the most valuable in the suite.

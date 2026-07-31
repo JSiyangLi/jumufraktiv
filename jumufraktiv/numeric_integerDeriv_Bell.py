@@ -21,6 +21,7 @@ import jax.numpy as jnp
 
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.logsum import logminus
+from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
 from jumufraktiv.symbols import t as t_sym, u as u_sym
 
@@ -484,7 +485,7 @@ def integerDeriv_numeric_bell(
                     f"Symbolic computation exceeded {symbolic_timeout:.1f} seconds."
                 )
 
-            deriv_expr = sp.diff(cgf_expr_num, t_sym, k)
+            deriv_expr = cached_diff(cgf_expr_num, t_sym, k)
 
             vals_k = np.zeros(n_points)
             for idx in range(n_points):

@@ -22,6 +22,7 @@ The module uses the canonical symbol `t` from `jumufraktiv.symbols`.
 
 import sympy as sp
 from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.symbols import t  # only t is needed for differentiation
 
 
@@ -75,7 +76,7 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     if t not in expr.free_symbols:
         raise RuntimeError("Symbol 't' not found in the chosen expression.")
 
-    derivative = sp.diff(expr, t, order)
+    derivative = cached_diff(expr, t, order)
 
     if simplify:
         derivative = sp.simplify(derivative)
