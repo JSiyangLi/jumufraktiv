@@ -443,12 +443,50 @@ Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
+- **Array evaluation points return wrong values, and the suite cannot see it.**
+  `_batch_quad_vec_method` zeroes the integrand at points that have already
+  converged (`val[converged] = 0.0`). Because `converged` is assigned *after*
+  `quad_vec` returns, that zero overwrites the point's stored value, the
+  difference against its previous value un-converges it, and the loop
+  oscillates while `L` doubles. Against both the scalar loop and mpmath at 40
+  digits, at order 1.5 and `t = [−1, −5]`: `uniform` returns
+  `[−1.1379, −5.2763]` for `[−1.0047, −5.0247]`, `pareto` `[−1.0962, −6.1360]`
+  for `[−0.9909, −5.9950]`, `heaviside` `[0.0790, −6.4521]` for
+  `[0.1212, −6.3260]` — 4 to 13% in the value. `gamma` agrees exactly, which
+  is why the closed-form reference used throughout the suite never caught it.
+
+  **The suite's own configuration hides it as well**, and that matters for
+  anyone writing a test here. `pyproject.toml` sets
+  `filterwarnings = ["error"]`, so NumPy's "overflow encountered in exp"
+  becomes an exception; the batch method aborts, falls back to the scalar loop
+  and returns the *correct* answer. The overflow is a downstream symptom of
+  the same masking bug — the loop never converges, so `L` balloons — which
+  means escalating the warning accidentally rescues the result instead of
+  reporting the fault. A test written the obvious way passes and proves
+  nothing; the record in `test_known_broken.py` restores the ordinary warning
+  state deliberately. *(PR 4b)*
 - **Fractional orders are truncated in the array path.** `int(o)` in
   `mgfDerivative`'s array-order branch silently rounds — and truncates rather
   than rounds, so 1.5 returns the order-1 answer. `post_predictive` uses this
   path. The same block also `float()`s `t`, so an array order with `t=None`
   raises instead of returning an expression, and flattens the result, losing
-  the order array's shape. *(PR 4b)*
+  the order array's shape. Seen through the public API: a halfnormal posterior
+  (`a = 1.5`) asked for raw moments `[0, 1, 2]` in one call returns
+  `[1.903, 0.571, 0.228]`, where the same three one at a time give the correct
+  `[1.0, 0.35, 0.1575]`. The first entry is the 0th raw moment, which is
+  exactly 1 for any distribution, so that one needs no reference at all.
+  *(PR 4b)*
+- **Large orders silently overflow.** The numeric backends accumulate the
+  quadrature in linear space and clamp when it overflows, dropping the
+  overflowing contributions rather than raising. Order 150.5 is correct to
+  6e-14 nats; order 300.5 returns 694.234 against an exact 1006.311 — wrong by
+  312 nats, a factor of about 1e135, with no warning. `a = Σ y` for several
+  likelihoods, so the order grows with the sample. *(PR 4b)*
+- **`log=False` raises on the near-integer path.**
+  `numeric_fractionalDeriv_interpolation` binds `result` only inside its array
+  branch, so the scalar path raises `UnboundLocalError`. The `log` argument is
+  supposed to decide the return shape and nothing else. The module is to be
+  retired rather than repaired. *(PR 4b)*
 - **The dispatcher and the backends disagree on what an integer is.**
   `resolve_backend` classifies within `int_tol`; all seven backend sites test
   `order == int(order)`. In the gap the backend takes `n = floor(order)`, so
