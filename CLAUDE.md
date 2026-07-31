@@ -465,11 +465,24 @@ where noted as "no runtime repro".
   reporting the fault. A test written the obvious way passes and proves
   nothing; the record in `test_known_broken.py` restores the ordinary warning
   state deliberately. *(PR 4b)*
-- **Fractional orders are truncated in the array path.** `int(o)` in
-  `mgfDerivative`'s array-order branch silently rounds — and truncates rather
-  than rounds, so 1.5 returns the order-1 answer. `post_predictive` uses this
-  path. The same block also `float()`s `t`, so an array order with `t=None`
-  raises instead of returning an expression, and flattens the result, losing
+- **The order is coerced to an integer in the array path.** `int(o)` in
+  `mgfDerivative`'s array-order branch. The defect is the coercion itself, not
+  the choice of rounding rule: at order 2.5 both `int` and `round` give 2, and
+  the answer is 15% wrong either way. Truncation-versus-rounding is only a
+  sub-case, biting near an integer, where `int(1.9) = 1` but `round(1.9) = 2`.
+  Measured against the closed form at `t = −2`: order 0.5 is 68% wrong,
+  1.5 is 35%, 1.9 is 61%, 2.5 is 15%.
+
+  Which method suffers depends on the **parity** of the sample size, so a test
+  fixture that picks `n` carelessly asserts nothing. For a Normal likelihood
+  the aggregate is `a = n/2` and the per-observation value is `a = 1/2`, so
+  `post_predictive` is wrong for **even** `n` (75% at `n = 2`, exact at
+  `n = 3`) while `post_raw_moment` and `post_central_moment` are wrong for
+  **odd** `n` (17% at `n = 3`, exact at `n = 4`). Every sample size is wrong
+  in one of the two.
+
+  The same block also `float()`s `t`, so an array order with `t=None` raises
+  instead of returning an expression, and flattens the result, losing
   the order array's shape. Seen through the public API: a halfnormal posterior
   (`a = 1.5`) asked for raw moments `[0, 1, 2]` in one call returns
   `[1.903, 0.571, 0.228]`, where the same three one at a time give the correct
