@@ -586,21 +586,19 @@ where noted as "no runtime repro".
   loss happens when float coefficients cancel during evaluation. It is a
   conditioning problem, and it belongs with the other conditioning work rather
   than with the three name-and-substitution defects PR 5 repaired. *(PR 6)*
-- **`dps` above about 15 buys the mpmath backend nothing**, because the
-  integrand it evaluates is float64. `mgfDerivative_integer` returns
-  `(log_abs, sign)` as NumPy floats, so the mpmath backend integrates a
-  float-precision function at arbitrary precision: the quadrature is exact to
-  `dps` digits, but of a function known only to 16. Measured after the range
-  fix, relative error against the closed form does not improve monotonically
-  with `dps` — 2.6e-10 at 15, 2.6e-12 at 20, 2.8e-10 at 30, 1.7e-10 at 50,
-  2.6e-13 at 80 — it bounces around a floor set by the integrand rather than
-  by the quadrature.
+- **`dps` above about 20 cannot improve the mpmath backend's *return value*,
+  because it returns `(log_abs, sign)` as Python floats.** The internals are now
+  arbitrary-precision throughout — the integrand is the prior's symbolic
+  derivative evaluated with `evalf(dps)`, and the quadrature result is no longer
+  cast to float before the log is taken — so the computation carries whatever
+  precision is asked of it. Measured relative error against an mpmath oracle at
+  60 digits: 7.1e-16 at `dps=15`, then 4.0e-17 from `dps=20` upward, which is
+  float64 rounding of an otherwise exact answer.
 
-  This is newly recorded, and it is a design limitation rather than a bug: the
-  backend's advertised reason to exist is precision it cannot currently
-  deliver. Repairing it means giving the integer-derivative layer an mpmath
-  path, which is a larger change than this PR. *(unassigned — needs an owner
-  decision on whether the mpmath backend is worth that)*
+  So the limit is the return convention, not the mathematics, and lifting it is
+  the deferred "replace `(log_abs, sign)` with a small result type" decision
+  rather than a numerical repair. Recorded here so the two are not confused.
+  *(deferred — see "Deferred decisions")*
 - **Two functions in `gammaMGF.py` misuse `logminus`** as "log minus" — a
   difference of logs — rather than "log of a difference", making `gamma_cgf`
   and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
