@@ -115,26 +115,46 @@ def test_all_three_routes_to_one_answer_agree(prior_name):
     The tolerance is the accuracy the paths' own settings support -- all of
     them integrate with ``epsabs = epsrel = 1e-8``. The defect guarded against
     was a disagreement of order 1e-1, seven orders of magnitude larger.
+
+    **The sign is compared as well as the magnitude**, because the two together
+    are the return value: these backends report a result as
+    ``(log_abs, sign)``, so checking only ``log_abs`` would let a route flip
+    the sign of the derivative and still pass. That is not a hypothetical
+    failure mode in this package -- the integer-classification defect recorded
+    in `test_known_broken.py` produces a result with the wrong sign for a
+    quantity that is provably positive.
     """
     prior = _prior(prior_name)
     t_values = np.array([-1.0, -5.0])
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        relaxed, _ = mgfDerivative(1.5, prior, method="scipy", t=t_values, log=True)
-        one_at_a_time = np.array(
-            [
-                mgfDerivative(1.5, prior, method="scipy", t=float(x), log=True)[0]
-                for x in t_values
-            ]
+        relaxed, relaxed_sign = mgfDerivative(
+            1.5, prior, method="scipy", t=t_values, log=True
         )
+        point_by_point = [
+            mgfDerivative(1.5, prior, method="scipy", t=float(x), log=True)
+            for x in t_values
+        ]
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        strict, _ = mgfDerivative(1.5, prior, method="scipy", t=t_values, log=True)
+        strict, strict_sign = mgfDerivative(
+            1.5, prior, method="scipy", t=t_values, log=True
+        )
+
+    scalar_log = np.array([r[0] for r in point_by_point])
+    scalar_sign = np.array([r[1] for r in point_by_point])
 
     assert relaxed == pytest.approx(strict, rel=1e-8), "depends on the warning filter"
-    assert relaxed == pytest.approx(one_at_a_time, rel=1e-8), "batch != point-by-point"
+    assert np.array_equal(relaxed_sign, strict_sign), "sign depends on warning filter"
+
+    assert relaxed == pytest.approx(scalar_log, rel=1e-8), "batch != point-by-point"
+    assert np.array_equal(relaxed_sign, scalar_sign), "sign differs between routes"
+
+    # D^a M(t) = E[theta^a e^{t theta}] > 0 for theta > 0, so every sign here
+    # is positive and any negative one is a defect rather than a disagreement.
+    assert np.all(relaxed_sign == 1)
 
 
 # ==========================================================================
