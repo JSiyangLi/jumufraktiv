@@ -42,6 +42,7 @@ from jumufraktiv.derivativeDispatch import (
     resolve_backend,
 )
 from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.numeric_expectation import expectation_is_available
 from jumufraktiv.symbols import t, theta, r, u, q
 from jumufraktiv.root_finding import solve_root
 
@@ -2136,33 +2137,37 @@ class MGFDerivative:
         """
 
         if self._deriv_is_symbolic:
-            try:
+            # No blanket `except Exception` here any more. It caught every
+            # failure, printed "Symbolic construction failed:" with a traceback,
+            # and fell through to the numeric route -- so a genuine bug in the
+            # symbolic path surfaced as a silently different kind of prior,
+            # announced only on stdout. A failure here now propagates.
+            mgf_sym_expr = self.post_mgf(r, log=False)
+            mgf_sym_expr = mgf_sym_expr.subs(r, t)  # posterior MGF of r becomes the prior MGF of t
+            pdf_sym_expr = self.post_density(theta, log=False)  # use canonical theta
 
-                # Get symbolic expressions from post_mgf and post_density
-                mgf_sym_expr = self.post_mgf(r, log=False)
-                mgf_sym_expr = mgf_sym_expr.subs(r, t) # posterior MGF of r becomes the prior MGF of t
-                pdf_sym_expr = self.post_density(theta, log=False)   # use canonical theta
-
-                # Ensure they are SymPy expressions
-                if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):
-                    return mitMGFprior(
-                        name="posterior_prior_symbolic",
-                        mgf_sym=mgf_sym_expr,
-                        pdf_sym=pdf_sym_expr,
-                        params=self.params
-                    ).as_mitMGFprior()
-            except Exception as e:
-                print("Symbolic construction failed:")
-                import traceback
-                traceback.print_exc()
-                pass
+            if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):
+                return mitMGFprior(
+                    name="posterior_prior_symbolic",
+                    mgf_sym=mgf_sym_expr,
+                    pdf_sym=pdf_sym_expr,
+                    params=self.params
+                ).as_mitMGFprior()
 
         # ---- Backend (numeric) route ----
+        #
+        # `log=False`, not `log=self.log`. These are the prior's *density* and
+        # *MGF*; a container expecting p(theta) was being handed log p(theta)
+        # whenever the posterior stored its constant in log scale, which is the
+        # default. The result was a prior whose "density" went negative --
+        # measured at theta = 1.0 it returned -3.14 where the density is 0.0432
+        # -- and nothing downstream could detect that, because a log density is
+        # a perfectly well-formed float.
         def mgf_backend(t_val, xp=np, **params):
-            return self.post_mgf(t_val, log=self.log)
+            return self.post_mgf(t_val, log=False)
 
         def pdf_backend(theta_val, xp=np, **params):
-            return self.post_density(theta_val, log=self.log)
+            return self.post_density(theta_val, log=False)
 
         return mitMGFprior(
             name="posterior_prior",
@@ -2233,32 +2238,34 @@ class MGFDerivative:
         log = kwargs.pop("log", self.log)
 
         # ----------------------------------------------------
-        # Sequential updating requires a symbolic derivative
+        # Sequential updating, and why it now works numerically
         # ----------------------------------------------------
-        # `to_prior_object` builds the updated prior's MGF from this
-        # posterior's, and can only do so symbolically. Its numeric route
-        # returns a prior carrying `mgf_backend`/`pdf_backend` and no
-        # `mgf_sym`/`cgf_sym` -- which no derivative backend can consume:
-        # `bell` raises "Prior does not provide a symbolic CGF", `jax` raises
-        # inside its tracer, and `scipy`/`mpmath` return -inf, because the
-        # blanket `except Exception: return 0.0` in the tan-transform integrand
-        # turns the missing MGF into a zero at every quadrature node.
+        # This used to refuse every numeric posterior. `to_prior_object` builds
+        # the updated prior from this one, and its numeric route returns a prior
+        # carrying `pdf_backend`/`mgf_backend` and no `mgf_sym`/`cgf_sym` --
+        # which no *differentiating* backend can consume: `bell` raises "Prior
+        # does not provide a symbolic CGF", `jax` raises inside its tracer, and
+        # the quadrature backends returned -inf because a blanket
+        # `except Exception: return 0.0` turned the missing MGF into a zero at
+        # every node. Since no symbolic backend serves fractional orders, that
+        # ruled out sequential updating for fractional posteriors entirely.
         #
-        # The condition is `_deriv_is_symbolic`, the representation, not
-        # `_is_symbolic`, the evaluated result at t = -b. The result is numeric
-        # whenever the hyperparameters are, which is the ordinary case, so the
-        # previous test rejected `method='symbolic'` on exactly the posteriors
-        # that could update -- while `method='auto'`, resolving to the same
-        # backend, was let through.
-        if not self._deriv_is_symbolic:
+        # The direct-expectation route removes the obstacle rather than working
+        # around it. It computes `E[theta^a e^{t theta}]` from the prior's
+        # DENSITY and never touches its MGF, so the numeric prior above is
+        # exactly what it needs. What remains is a real requirement -- some
+        # route has to be able to consume the constructed prior -- so the guard
+        # now tests that, instead of testing for a symbolic representation that
+        # was only ever a proxy for it.
+        can_update = self._deriv_is_symbolic or expectation_is_available(
+            self.to_prior_object()
+        )
+        if not can_update:
             raise ValueError(
-                "Sequential updating requires a symbolic derivative "
-                "representation: the updated prior's MGF is built from this "
-                f"posterior's, and method='{self.method}' produced a numeric "
-                "one. Construct the posterior with method='symbolic' (or "
-                "'auto', which resolves to it for integer orders). Fractional "
-                "orders have no symbolic backend that works today, so they "
-                "cannot be updated sequentially yet."
+                "Sequential updating needs the updated prior to be consumable "
+                "by some derivative backend. This posterior produces neither a "
+                "symbolic MGF nor a density, so neither the differentiating "
+                "backends nor the direct-expectation route can use it."
             )
 
         post_prior = self.to_prior_object()
