@@ -12,6 +12,41 @@ without a deprecation period.
 
 ### Fixed
 
+- **Two thirds of the backend matrix could not be reached through
+  `MGFDerivative`.** `_build_derivative` called `mgfDerivative(..., t=None)`
+  unconditionally, but only the `symbolic` backend can build a representation
+  before an evaluation point is known — it differentiates the prior's MGF and
+  returns an expression in `t`. Every numeric backend quadratures at a
+  particular `t` and raised `ValueError: t must be provided` at construction.
+
+  That took out `bell` and `jax` for integer orders, and every backend for
+  fractional orders — so six of the fourteen likelihoods could not be used at
+  all: `normal`, `halfnormal` and `levy` (`a = n/2`), `maxwell-boltzmann`
+  (`a = 1.5n`), and `gamma` and `inverse gamma` (`a = Σ shape_i`, fractional
+  for any non-integer shape). The audit's own notes named only three of them.
+
+  Numeric backends now defer: the class holds a thunk that runs the dispatcher
+  once an evaluation point arrives. All nine (order type, backend) combinations
+  now agree to 1e-8, and the whole inference API — density, CDF, MGF, moments,
+  predictive — works on a fractional posterior.
+
+- **`update` rejected the posteriors that could update, and accepted ones that
+  could not.** Its guard tested `_is_symbolic`, whether the *result* at
+  `t = -b` is an expression, which is `False` whenever the hyperparameters are
+  numeric — the ordinary case. So `method='symbolic'` was refused while
+  `method='auto'`, which resolves to the same backend, went through and
+  returned the right answer. The test is now `_deriv_is_symbolic`, the
+  representation, which is what `to_prior_object` actually requires.
+
+  Its advice was wrong too: it suggested "choose a numeric method (jax, bell,
+  scipy, mpmath)", and all four fail. `bell` raises "Prior does not provide a
+  symbolic CGF", `jax` raises inside its tracer, and `scipy` and `mpmath`
+  returned `-inf` — the tan-transform integrand's blanket
+  `except Exception: return 0.0` turns a missing MGF into a zero at every
+  quadrature node. That silent case became reachable only once fractional
+  posteriors could be constructed; it is now refused with an accurate message
+  and recorded as `xfail(strict=True)` against the PR that adds the capability.
+
 - Corrected the density in `like_stats/Weibull.py`'s module docstring. It read
   `f(y; λ, ρ) = ρ λ^ρ y^{ρ-1} exp(-λ y^ρ)`, which is not a density — it
   integrates to `λ^{ρ-1}`, giving 2.0 at (ρ=2, λ=2) and 4.0 at (ρ=3, λ=2). It
@@ -90,6 +125,17 @@ without a deprecation period.
   independent reason. Replaced with a small `concurrent.futures` equivalent.
 
 ### Changed
+
+- `derivativeDispatch.resolve_backend` is now the single encoding of the
+  backend matrix — order classification, `auto` resolution, per-row validation
+  and the `bell`/`jax` reinterpretation. It was inline inside `mgfDerivative`,
+  so nothing else could ask which backend would serve a request without
+  re-deriving the rules, and the array-order branch bypassed it entirely.
+  Requesting `bell` or `jax` for a fractional order now warns rather than
+  printing, and says how to silence it.
+- `tests/test_deferred_construction.py`, covering backend resolution, the
+  deferred representation, and construction of all fourteen likelihoods against
+  the closed-form Gamma reference on every backend.
 
 - Registry errors are now actionable. A prior that is absent because its module
   failed to import says so, naming the module and the exception, rather than

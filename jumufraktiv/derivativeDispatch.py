@@ -596,6 +596,133 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
         )
 
 
+def resolve_backend(
+    order,
+    method: str = "auto",
+    integer_method: str = "symbolic",
+    int_tol: float = 1e-12,
+):
+    """Classify a derivative order and settle which backend will serve it.
+
+    This is the single place where the backend matrix in ``CLAUDE.md`` is
+    encoded. :func:`mgfDerivative` calls it to dispatch, and callers that need
+    to know *how* a request will be served — before serving it — call it for
+    that answer rather than re-deriving the rules.
+
+    Parameters
+    ----------
+    order : float, int or sympy.Basic
+        Derivative order. Must be scalar; array-like orders are resolved
+        element by element.
+    method : str, optional
+        Requested backend, or ``'auto'`` to choose one.
+    integer_method : str, optional
+        Backend used for the integer derivatives taken *inside* a fractional
+        computation. Ignored for integer and symbolic orders.
+    int_tol : float, optional
+        An order counts as an integer when it lies within ``int_tol`` of one.
+
+    Returns
+    -------
+    order_type : {'symbolic', 'integer', 'fractional'}
+        Which row of the backend matrix applies.
+    method : str
+        The resolved backend, with ``'auto'`` settled and any reinterpretation
+        applied.
+    integer_method : str
+        The resolved inner integer backend.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` or ``integer_method`` is not valid for ``order_type``.
+
+    Notes
+    -----
+    Requesting ``'bell'`` or ``'jax'`` for a fractional order is not an error:
+    neither can take a fractional derivative, so the argument is reinterpreted
+    as ``integer_method`` and the fractional backend falls back to ``'scipy'``.
+    A warning records that the argument was not used as written.
+
+    Examples
+    --------
+    >>> resolve_backend(2, 'auto')
+    ('integer', 'symbolic', 'symbolic')
+    >>> resolve_backend(1.5, 'auto')
+    ('fractional', 'scipy', 'symbolic')
+    >>> resolve_backend(1.5, 'bell')     # reinterpreted, with a warning
+    ('fractional', 'scipy', 'bell')
+
+    Backend names are matched case-insensitively and returned canonicalised,
+    so callers may compare the result directly:
+
+    >>> resolve_backend(2, 'SYMBOLIC')
+    ('integer', 'symbolic', 'symbolic')
+    """
+    # Canonicalise before anything else. The backends have always matched
+    # method names case-insensitively, so 'SYMBOLIC' is a legal spelling; a
+    # caller comparing the *returned* name against a lowercase literal would
+    # otherwise silently take the wrong branch.
+    method = method.lower()
+    integer_method = integer_method.lower()
+
+    # ---- Determine order type ----
+    if isinstance(order, sp.Basic):
+        order_type = "symbolic"
+    elif abs(order - round(order)) < int_tol:
+        order_type = "integer"
+    else:
+        order_type = "fractional"
+
+    # ---- Resolve 'auto' ----
+    if method == "auto":
+        method = "scipy" if order_type == "fractional" else "symbolic"
+
+    # ---- Validate against the row ----
+    if order_type == "symbolic":
+        if method != "symbolic":
+            raise ValueError(
+                f"Invalid method '{method}' for symbolic order. "
+                "Only 'symbolic' is allowed."
+            )
+
+    elif order_type == "integer":
+        valid_int_methods = {"symbolic", "bell", "jax"}
+        if method not in valid_int_methods:
+            raise ValueError(
+                f"Invalid method '{method}' for integer order. "
+                f"Choose from {valid_int_methods}."
+            )
+
+    else:
+        valid_frac_methods = {"scipy", "mpmath", "symbolic"}
+        if method in {"jax", "bell"}:
+            warnings.warn(
+                f"Method '{method}' cannot take a fractional derivative. "
+                f"Interpreting it as integer_method='{method}' and using the "
+                f"default fractional method 'scipy'. Pass integer_method="
+                f"'{method}' explicitly to silence this warning.",
+                UserWarning,
+                stacklevel=2,
+            )
+            integer_method = method
+            method = "scipy"
+        elif method not in valid_frac_methods:
+            raise ValueError(
+                f"Invalid method '{method}' for fractional order. "
+                f"Choose from {valid_frac_methods}."
+            )
+
+        valid_int_methods = {"symbolic", "jax", "bell"}
+        if integer_method not in valid_int_methods:
+            raise ValueError(
+                f"Invalid integer_method '{integer_method}'. "
+                f"Choose from {valid_int_methods}."
+            )
+
+    return order_type, method, integer_method
+
+
 def mgfDerivative(
     order: float | np.ndarray | list | sp.Basic,
     prior,
@@ -770,28 +897,12 @@ def mgfDerivative(
 
     _check_moment_exists_at_origin(order, prior, t)
 
-    # Determine order type
-    if isinstance(order, sp.Basic):
-        order_type = "symbolic"
-    else:
-        if abs(order - round(order)) < int_tol:
-            order_type = "integer"
-        else:
-            order_type = "fractional"
-
-    # Resolve 'auto' method
-    if method.lower() == 'auto':
-        if order_type == "symbolic":
-            method = 'symbolic'
-        elif order_type == "integer":
-            method = 'symbolic'
-        else:
-            method = 'scipy'
+    order_type, method, integer_method = resolve_backend(
+        order, method, integer_method, int_tol
+    )
 
     # Dispatch
     if order_type == "symbolic":
-        if method.lower() not in {'auto', 'symbolic'}:
-            raise ValueError(f"Invalid method '{method}' for symbolic order. Only 'symbolic' is allowed.")
         warnings.warn(
             "Derivative order contains symbolic variables. "
             "Using integerDeriv_symbolic() as a formal symbolic derivative. "
@@ -814,9 +925,6 @@ def mgfDerivative(
 
     elif order_type == "integer":
         int_order = int(round(order))
-        valid_int_methods = {'symbolic', 'bell', 'jax'}
-        if method.lower() not in valid_int_methods:
-            raise ValueError(f"Invalid method '{method}' for integer order. Choose from {valid_int_methods}.")
         return mgfDerivative_integer(
             order=int_order,
             prior=prior,
@@ -831,20 +939,8 @@ def mgfDerivative(
         )
 
     else:
-        # Fractional order
-        valid_frac_methods = {'scipy', 'mpmath', 'symbolic'}
-        if method.lower() in {'jax', 'bell'}:
-            print(f"Note: For fractional order, 'method' should be one of {valid_frac_methods}. "
-                  f"Interpreting 'method' as 'integer_method' and using default fractional method 'scipy'.")
-            integer_method = method
-            method = 'scipy'
-        elif method.lower() not in valid_frac_methods:
-            raise ValueError(f"Invalid method '{method}' for fractional order. Choose from {valid_frac_methods}.")
-
-        # Validate integer_method
-        valid_int_methods = {'symbolic', 'jax', 'bell'}
-        if integer_method.lower() not in valid_int_methods:
-            raise ValueError(f"Invalid integer_method '{integer_method}'. Choose from {valid_int_methods}.")
+        # Fractional order. The backend and integer_method were settled, and
+        # any 'bell'/'jax' reinterpretation applied, by resolve_backend above.
 
         # Check interpolation
         n = int(np.ceil(order))
