@@ -380,33 +380,42 @@ class TestDeferral:
             # marker mean anything. Measured: file 65.7 s -> 44.4 s, and no
             # extra cost in the full run, since the sibling already pays.
             pytest.param("mpmath", marks=pytest.mark.slow),
-            # `bell` and `jax` stay in the quick pass deliberately: they are
-            # the only tests there that drive update-refusal through the
-            # integer-backend-reinterpretation route at a fractional order.
-            # They cost 3.0 s and 5.8 s.
-            "bell",
-            "jax",
+            # `bell` and `jax` are NOT here: they differentiate the prior's
+            # symbolic CGF and cannot consume a prior built from a numeric
+            # posterior at all. That is a limit of those two backends rather
+            # than of updating, and TestUpdateGuard asserts it separately.
         ],
     )
-    def test_sequential_update_refuses_rather_than_returning_minus_infinity(
-        self, method
-    ):
-        """A deferred posterior cannot yet be updated, and must say so.
+    def test_a_deferred_posterior_can_now_be_updated(self, method):
+        """This asserted the opposite until the expectation route existed.
 
-        `to_prior_object` builds the updated prior's MGF from this posterior's
-        and can only do so symbolically; its numeric route returns a prior with
-        no `mgf_sym`, which no backend can consume. `bell` and `jax` raised;
-        `scipy` and `mpmath` returned `-inf`, because the tan-transform
-        integrand's blanket `except Exception: return 0.0` turned the missing
-        MGF into a zero at every quadrature node and `log(0)` did the rest.
+        `to_prior_object`'s numeric route returns a prior with a density and no
+        `mgf_sym`, which no *differentiating* backend can consume -- `bell` and
+        `jax` raised, `scipy` and `mpmath` returned `-inf`. The old test pinned
+        that refusal as correct, which it was only for as long as every route
+        needed an MGF.
 
-        Making this reachable is what exposed the silent case: before the
-        deferral fix, a fractional posterior could not be constructed at all.
+        The direct-expectation route needs the density instead, so the prior
+        that route builds is exactly what it consumes. `halfnormal` on three
+        observations gives `a = 1.5`, a fractional posterior, which had no
+        working update path by any method.
+
+        The property asserted is that evidence factorises, which needs no
+        reference value: staged conditioning must equal one-shot.
         """
         post = _build("halfnormal", method=method)
+        # `auto` is what routes to the expectation backend; an explicit
+        # differentiating method still cannot consume the prior, which
+        # TestUpdateGuard asserts separately.
+        updated = post.update([1.0], likelihood="halfnormal", method="auto")
 
-        with pytest.raises(ValueError, match="requires a symbolic derivative"):
-            post.update([1.0], likelihood="halfnormal")
+        one_shot = MGFDerivative(
+            gamma_prior_spec(), data=[1.0, 2.0, 3.0, 1.0], likelihood="halfnormal"
+        )
+
+        assert post.evidence()[0] + updated.evidence()[0] == pytest.approx(
+            one_shot.evidence()[0], rel=1e-8
+        )
 
 
 # ==========================================================================
@@ -434,12 +443,40 @@ class TestUpdateGuard:
             one_shot.evidence()[0], rel=1e-8
         )
 
-    @pytest.mark.parametrize("method", ["bell", "jax"])
-    def test_update_refuses_for_numeric_integer_backends(self, method):
-        post = _build("poisson", method=method)
+    @pytest.mark.parametrize(
+        "method,likelihood",
+        [
+            # `scipy` and `mpmath` are only valid for a fractional order, and
+            # `bell`/`jax` only for an integer one, so each is paired with a
+            # likelihood that produces the right kind: halfnormal gives
+            # a = n/2 = 1.5, poisson gives a = sum(y) = 6.
+            ("scipy", "halfnormal"),
+            pytest.param("mpmath", "halfnormal", marks=pytest.mark.slow),
+            ("bell", "poisson"),
+            ("jax", "poisson"),
+        ],
+    )
+    def test_an_explicit_differentiating_method_cannot_update_but_says_why(
+        self, method, likelihood
+    ):
+        """A real limit of those backends, not a missing feature.
 
-        with pytest.raises(ValueError, match="requires a symbolic derivative"):
-            post.update([4], likelihood="poisson", scale=1.0)
+        Every differentiating backend needs the prior's symbolic MGF or CGF,
+        and the prior built from a numeric posterior carries only a density.
+        The direct-expectation route needs just the density, which is why
+        `auto` and an explicit `expectation` both work and these do not.
+
+        What changed is the reporting. This used to surface as "Prior does not
+        provide a symbolic CGF" from deep in the Bell backend, or as a
+        `TracerArrayConversionError` from inside JAX, neither of which mentions
+        updating. It is now refused up front, naming the backend and saying
+        which method does work.
+        """
+        extra = {"scale": 1.0} if likelihood == "poisson" else {}
+        post = _build(likelihood, method=method)
+
+        with pytest.raises(ValueError, match="differentiates the prior's symbolic"):
+            post.update([1.0], likelihood=likelihood, **extra)
 
 
 # ==========================================================================

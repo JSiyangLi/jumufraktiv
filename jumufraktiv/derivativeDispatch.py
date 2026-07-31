@@ -54,6 +54,7 @@ from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
 from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
 from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 
+from jumufraktiv.numeric_expectation import expectation_is_available
 from jumufraktiv.symbols import t as t_sym, u as u_sym   # <-- import canonical u
 
 def mgfDerivative_integer(
@@ -619,6 +620,7 @@ def resolve_backend(
     method: str = "auto",
     integer_method: str = "symbolic",
     int_tol: float = 1e-12,
+    prior=None,
 ):
     """Classify a derivative order and settle which backend will serve it.
 
@@ -693,6 +695,25 @@ def resolve_backend(
         order_type = "fractional"
 
     # ---- Resolve 'auto' ----
+    #
+    # `auto` keeps choosing a DIFFERENTIATING backend here, because this
+    # function decides the derivative's *representation* as well as how it is
+    # evaluated. Only the symbolic backend can build a representation before an
+    # evaluation point is known, and `MGFDerivative` branches on that to offer
+    # `post_density(theta)`, `post_mgf`, `post_cdf(u)` and sequential updating
+    # symbolically.
+    #
+    # An earlier version of this sent `auto` straight to the expectation route.
+    # That fixed the cancellation but silently removed the symbolic
+    # representation from every `auto` posterior -- `_deriv_is_symbolic` became
+    # permanently False, `int_tol` stopped affecting anything, and asking for a
+    # density as an expression stopped working. The sweep that justified the
+    # switch measured numbers, not capabilities, so it could not have caught
+    # that; the suite did.
+    #
+    # The expectation route is preferred at the point of NUMERIC EVALUATION
+    # instead, in `mgfDerivative` below, where `t` is known. That gets the
+    # accuracy without giving up the representation.
     if method == "auto":
         method = "scipy" if order_type == "fractional" else "symbolic"
 
@@ -705,7 +726,7 @@ def resolve_backend(
             )
 
     elif order_type == "integer":
-        valid_int_methods = {"symbolic", "bell", "jax"}
+        valid_int_methods = {"symbolic", "bell", "jax", "expectation"}
         if method not in valid_int_methods:
             raise ValueError(
                 f"Invalid method '{method}' for integer order. "
@@ -713,7 +734,7 @@ def resolve_backend(
             )
 
     else:
-        valid_frac_methods = {"scipy", "mpmath", "symbolic"}
+        valid_frac_methods = {"scipy", "mpmath", "symbolic", "expectation"}
         if method in {"jax", "bell"}:
             warnings.warn(
                 f"Method '{method}' cannot take a fractional derivative. "
@@ -935,11 +956,53 @@ def mgfDerivative(
 
     _check_moment_exists_at_origin(order, prior, t)
 
+    requested_method = method.lower() if isinstance(method, str) else method
     order_type, method, integer_method = resolve_backend(
-        order, method, integer_method, int_tol
+        order, method, integer_method, int_tol, prior=prior
     )
 
     # Dispatch
+    #
+    # The expectation route is preferred for NUMERIC evaluation whenever the
+    # prior supplies a density, which every constructible prior does. The
+    # condition is `t is not None`: with no evaluation point the caller is
+    # asking for a representation, and only a differentiating backend can
+    # produce one, so `auto` must not be diverted then.
+    #
+    # Measured over 240 cases -- four priors, ten orders from 0.5 to 30, six
+    # evaluation points from -0.5 to -50, scored against mpmath at 60 digits
+    # with each density written out independently:
+    #
+    #                          differentiating   expectation
+    #   unacceptable (>1e-8)   5 of 240          0 of 240
+    #   wrong sign             2                 0
+    #   worst case             2.46e+00          1.17e-11
+    #   median                 6.3e-17           1.0e-16
+    #
+    # All five failures are the Uniform prior at orders 12-30 with `t` near
+    # zero, where its alternating CGF cancels through 25-26 digits; the
+    # expectation route cannot cancel because its integrand is positive. It is
+    # also 5-8x faster.
+    #
+    # An explicit `method=` is never diverted -- only `auto` is.
+    prefer_expectation = (
+        requested_method == "auto"
+        and t is not None
+        and prior is not None
+        and expectation_is_available(prior)
+    )
+    if method == "expectation" or prefer_expectation:
+        from jumufraktiv.numeric_expectation import expectationDeriv
+
+        return expectationDeriv(
+            order=float(order),
+            prior=prior,
+            t=t,
+            u=u,
+            complete=complete,
+            log=log,
+        )
+
     if order_type == "symbolic":
         # No warning here any more. It used to promise that the result "is
         # often the analytic continuation to non-integer orders", which was

@@ -15,10 +15,14 @@ where n = floor(α), γ = n+1-α.
 All arithmetic is performed with the precision specified by mp.dps.
 """
 import math
+import warnings
 import numpy as np
 from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
+import sympy as sp
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.symbolic_cache import cached_diff
+from jumufraktiv.symbols import t as _t_sym, u as _u_sym
 
 
 def fractionalDeriv_numeric_mpmath_tan(
@@ -206,6 +210,82 @@ def fractionalDeriv_numeric_mpmath_tan(
             return val_vals
 
 
+
+
+def _mp_integer_derivative(prior, n_plus_1, complete):
+    """Return a callable giving ``M^{(n+1)}`` at **arbitrary** precision.
+
+    This is what makes ``dps`` mean something. The obvious implementation --
+    calling ``mgfDerivative_integer`` per quadrature node -- returns
+    ``(log_abs, sign)`` as NumPy ``float64`` and takes ``t`` as a Python float,
+    so the mpmath backend was integrating a float-precision function at
+    arbitrary precision: the quadrature exact to ``dps`` digits, of a function
+    known only to 16. Measured, accuracy stopped improving with ``dps`` at
+    around 1e-10 and bounced rather than converging.
+
+    SymPy evaluates to any precision natively, so the derivative expression is
+    built once and evaluated per node with ``evalf(dps)``. Substituting the
+    prior's hyperparameters up front keeps that per-node work to one
+    substitution and one evaluation.
+
+    Returns ``None`` when no symbolic MGF is available, so the caller can fall
+    back rather than fail -- the Bell and JAX backends are float by
+    construction and cannot be lifted this way.
+    """
+    attr = "mgf_sym" if complete else "imgf_sym"
+    if getattr(prior, attr, None) is None:
+        return None
+
+    expr = cached_diff(getattr(prior, attr), _t_sym, n_plus_1)
+
+    params = getattr(prior, "params", None) or {}
+    substitutions = {
+        sym: params[sym.name] for sym in expr.free_symbols if sym.name in params
+    }
+    if substitutions:
+        expr = expr.subs(substitutions)
+
+    def evaluate(t_value, u_value, dps):
+        point = {_t_sym: sp.Float(t_value, dps)}
+        if u_value is not None:
+            point[_u_sym] = sp.Float(u_value, dps)
+        value = expr.subs(point).evalf(dps)
+        if value.free_symbols:
+            raise ValueError(
+                "The prior's symbolic MGF still has free symbols after "
+                f"substituting its parameters: {sorted(map(str, value.free_symbols))}."
+            )
+        return mpf(str(value))
+
+    return evaluate
+
+
+def _right_endpoint(integrand, gamma_val, tol, start=8.0, cap=709.0):
+    """Find where the transformed integrand has decayed, by probing it.
+
+    The left endpoint follows from the ``e^{gamma u}`` decay and can be written
+    down. The right cannot: the integrand there is governed by how fast
+    ``M^{(n+1)}(t - z)`` falls off, which is a property of the prior -- only
+    polynomial in ``z`` for the priors here -- and is not exposed. So it is
+    measured rather than assumed, by extending until the value at the endpoint
+    is below ``tol`` relative to the largest value seen.
+
+    This is a test of the *integrand's* decay. The rule it replaces compared
+    consecutive estimates of the *integral*, which underestimates the remaining
+    tail exactly when convergence is slow -- the failure this whole change is
+    about.
+    """
+    u_max = start
+    while u_max < cap:
+        probes = [u_max * frac for frac in (0.25, 0.5, 0.75, 1.0)]
+        values = [abs(float(integrand(mpf(p)))) for p in probes]
+        peak = max(values)
+        if peak == 0.0 or values[-1] <= tol * peak:
+            return u_max
+        u_max *= 2.0
+    return cap
+
+
 def fractionalDeriv_numeric_mpmath(
     order: float,
     prior: mitMGFprior,
@@ -334,10 +414,32 @@ def fractionalDeriv_numeric_mpmath(
         n = int(mp.floor(order))
         gamma_val = mpf((n + 1) - order)
 
+        # `M^(n+1)` at full precision where the prior allows it. Falling back
+        # to the float route rather than failing keeps the Bell and JAX integer
+        # methods usable; they are float by construction, so `dps` cannot help
+        # them and the fallback says so by warning once.
+        mp_derivative = _mp_integer_derivative(prior, n + 1, complete)
+        if mp_derivative is None:
+            warnings.warn(
+                f"No symbolic MGF for prior '{getattr(prior, 'name', '?')}', so the "
+                "integrand is evaluated in double precision and `dps` cannot "
+                "improve the result beyond about 1e-10. Supply `mgf_sym` to get "
+                "the precision this backend advertises.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
         def integrand(u_var):
             u_var = mpf(u_var)
             z = exp(u_var)
             y = t_val - z
+
+            if mp_derivative is not None:
+                value = mp_derivative(y, u_val, mp.dps)
+                if value == 0:
+                    return mpf(0.0)
+                return exp(gamma_val * u_var) * value
+
             log_abs, sign = mgfDerivative_integer(
                 order=n + 1,
                 prior=prior,
@@ -353,48 +455,66 @@ def fractionalDeriv_numeric_mpmath(
             log_integrand = gamma_val * u_var + mpf(log_abs)
             return exp(log_integrand) * sign
 
-        L = initial_L
-        integral_valid = None
-        prev_integral = None
-        final_L = None
+        # ---- Derived range, replacing the symmetric doubling loop ---------
+        #
+        # This used to integrate over (-L, L) with L doubling from 10 until
+        # consecutive estimates agreed. Two things were wrong with that, and
+        # together they returned a confidently wrong number.
+        #
+        # The range was SYMMETRIC, but the two tails are nothing alike. The
+        # transformed integrand behaves like e^{gamma*u} as u -> -infinity and
+        # dies quickly to the right, so the left endpoint needs
+        # log(tol)/gamma -- about -64 at gamma = 0.5 -- while the right needs
+        # only a small positive u. Doubling both together drove L to 5120,
+        # integrating over a range where the integrand is numerically zero
+        # across almost all of its width, which is what defeated tanh-sinh.
+        #
+        # And on failing to converge it printed a warning and returned the last
+        # iterate anyway. Measured at order 1.5, t = -1: dps <= 30 returned
+        # +1.119329613307 against a closed-form -1.453832084236 -- wrong sign,
+        # 177% wrong in magnitude -- and was SLOWER than the dps = 50 run that
+        # got the right answer (8.2 s against 5.6 s). `dps` is reachable from
+        # the constructor through DERIVATIVE_KWARGS, so an ordinary caller
+        # could ask for less precision and receive nonsense.
+        #
+        # Deriving the endpoints removes the loop, so there is no stopping rule
+        # left to be wrong and no non-convergence branch to return garbage from.
+        # The truncation target is set by `dps`, not by `tol`. A caller asking
+        # this backend for 50 digits is asking for 50 digits, and a range
+        # derived from `tol` (default 1e-6) would cap the answer at about 1e-8
+        # however high `dps` went -- correct, but silently no better than the
+        # scipy backend, which defeats the purpose of using mpmath at all.
+        range_tol = mpf(10) ** (-int(dps))
+        u_min = log(range_tol) / mpf(gamma_val)
+        u_max = mpf(_right_endpoint(integrand, gamma_val, float(range_tol)))
 
-        while L <= max_L:
-            try:
-                integral = quad(integrand, (-L, L), method='tanh-sinh')
-                integral_valid = float(integral)
-                if prev_integral is not None:
-                    if abs(integral_valid - prev_integral) < tol * max(1.0, abs(prev_integral)):
-                        final_L = L
-                        break
-                prev_integral = integral_valid
-                L *= 2
-            except Exception as e:
-                print(f"mpmath adaptive integration failed at L={L} for t={t_val}, u={u_val}: {e}")
-                if integral_valid is not None:
-                    final_L = L / 2
-                    print(f"  Using last valid result from L={final_L}.")
-                    break
-                else:
-                    print("  No valid adaptive result; falling back to tan‑transform...")
-                    return fractionalDeriv_numeric_mpmath_tan(
-                        order, prior, t_val, method, simplify,
-                        return_log=return_log, dps=dps, complete=complete, u=u_val
-                    )
-
-        # If we reached max_L without convergence
-        if L > max_L and integral_valid is not None:
-            final_L = L / 2
-            print(f"Warning: Adaptive integration did not converge before max_L={max_L} for t={t_val}, u={u_val}. Using last result from L={final_L}.")
-        elif L > max_L and integral_valid is None:
-            print(f"Adaptive method failed for t={t_val}, u={u_val}; falling back to tan‑transform...")
-            return fractionalDeriv_numeric_mpmath_tan(
-                order, prior, t_val, method, simplify,
-                return_log=return_log, dps=dps, complete=complete, u=u_val
-            )
+        try:
+            # Two details that decide whether `dps` means anything.
+            #
+            # The result is NOT cast to float here. Doing so discarded every
+            # digit past the 16th before the log was taken, which capped the
+            # backend at double precision no matter how high `dps` went.
+            #
+            # And the interval is split at 0. tanh-sinh clusters its nodes near
+            # the endpoints, which is right for endpoint singularities but wrong
+            # here: this integrand's mass sits near u = 0 while the interval
+            # runs from about -69 to 8, so almost all the nodes landed where the
+            # integrand is numerically zero. Naming the interior point puts
+            # nodes where the mass is.
+            interior = [u_min, mpf(0), u_max] if u_min < 0 < u_max else [u_min, u_max]
+            integral_valid = quad(integrand, interior, method="tanh-sinh")
+        except Exception as exc:
+            # A genuine quadrature failure is now an error rather than a print
+            # followed by a plausible number.
+            raise RuntimeError(
+                f"mpmath quadrature failed for order={order}, t={t_val}, "
+                f"u={u_val} over the derived range ({float(u_min):.3g}, "
+                f"{float(u_max):.3g}): {exc}"
+            ) from exc
 
         # Compute result using log-scale for stability
         if return_log:
-            if abs(integral_valid) < 1e-300:
+            if abs(integral_valid) < mpf(10) ** (-300):
                 return -float('inf'), 1
             log_abs = float(log(mpf(abs(integral_valid))) - log(gamma(gamma_val)))
             sign = 1 if integral_valid > 0 else -1

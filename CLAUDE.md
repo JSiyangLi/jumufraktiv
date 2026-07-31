@@ -130,7 +130,8 @@ Three layers, each with a single responsibility. Respect the boundaries.
                      │    ├─ symbolic_integerDeriv  │
                      │    ├─ numeric_integerDeriv_Bell / _JAX
                      │    ├─ symbolic_fractionalDeriv
-                     │    └─ numeric_fractionalDeriv_grid / _mpmath │
+                     │    ├─ numeric_fractionalDeriv_grid / _mpmath │
+                     │    └─ numeric_expectation (the `auto` default) │
                      └───────────────┬──────────────┘
                                      │  reads MGF/CGF/PDF
                      ┌───────────────▼──────────────┐
@@ -477,9 +478,9 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 4d | Symbolic fractional backend | **merged** |
 | 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
 | 2 | 5 | Symbolic-path correctness | **in review** |
-| 2 | 6a | Domain guards; the three unusable posterior methods; `logminus` | **in review** |
-| 2 | 6b | The fixed-grid quadrature kernel | **in review** |
-| 2 | 6c | Limits that must become loud, and sequential update | planned |
+| 2 | 6a | Domain guards; the three unusable posterior methods; `logminus` | **merged** |
+| 2 | 6b | The fixed-grid quadrature kernel | **merged** |
+| 2 | 6c | mpmath precision, the expectation route, sequential update | **in review** |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
 | 3 | 8 | Module layout, dead code, and the diagnostics policy | planned |
 | 4 | 9 | Vectorisation | planned |
@@ -580,33 +581,53 @@ where noted as "no runtime repro".
   cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy" is the
   diagnostic.
 
+  **But the conclusion drawn from this — that the case cannot be computed and
+  must merely be flagged — is wrong, and that is newly measured.** "No evaluator
+  at any precision recovers it" is true of the *differentiated-MGF route* only.
+  The defining identity `Dᵃ M(t) = E[θᵃ e^{tθ}]` gives a completely different
+  computation whose integrand is **positive**, so it cannot cancel at all.
+  Evaluating that expectation by ordinary `scipy.integrate.quad` in plain
+  float64, against the same Uniform(0.5, 2) prior at `t = −1`, measured against
+  an mpmath oracle at 80 digits:
+
+  | order | differentiated MGF | direct quadrature |
+  |-------|--------------------|-------------------|
+  | 12    | 2.0e-10            | 2.2e-16           |
+  | 20    | 1.8e-02            | 2.3e-16           |
+  | 30    | 4.5e+08 (wrong sign) | 8.7e-18         |
+  | 100   | —                  | 1.3e-15           |
+
+  So the fix is a route, not a warning: for a prior with a usable density,
+  compute the expectation directly instead of differentiating the MGF. That is
+  an architectural addition rather than a repair, it needs a decision about when
+  to prefer it, and it does not obviously extend to priors given only as an MGF
+  — so it is recorded here for the owner rather than assumed.
+
   *Moved from PR 5 to **PR 6**.* It was filed under symbolic-path correctness
   because the reproduction goes through `method="symbolic"`, but nothing about
   the symbolic path is wrong: `sp.diff` returns the correct derivative and the
   loss happens when float coefficients cancel during evaluation. It is a
   conditioning problem, and it belongs with the other conditioning work rather
   than with the three name-and-substitution defects PR 5 repaired. *(PR 6)*
-- **mpmath below `dps ≈ 30` returns a confident wrong answer.** The
-  range-doubling loop never converges, runs to `max_L`, and returns
-  `log_abs = +1.119329613307` against a closed-form `−1.453832084236` — wrong
-  in sign, 177% wrong in magnitude — announced only by a `print`. It is not
-  faster either (24.7 s at `dps=30` against 24.1 s at `dps=50`), and `dps` is
-  reachable from the constructor through `DERIVATIVE_KWARGS`. *(PR 6)*
+- **`dps` above about 20 cannot improve the mpmath backend's *return value*,
+  because it returns `(log_abs, sign)` as Python floats.** The internals are now
+  arbitrary-precision throughout — the integrand is the prior's symbolic
+  derivative evaluated with `evalf(dps)`, and the quadrature result is no longer
+  cast to float before the log is taken — so the computation carries whatever
+  precision is asked of it. Measured relative error against an mpmath oracle at
+  60 digits: 7.1e-16 at `dps=15`, then 4.0e-17 from `dps=20` upward, which is
+  float64 rounding of an otherwise exact answer.
+
+  So the limit is the return convention, not the mathematics, and lifting it is
+  the deferred "replace `(log_abs, sign)` with a small result type" decision
+  rather than a numerical repair. Recorded here so the two are not confused.
+  *(deferred — see "Deferred decisions")*
 - **Two functions in `gammaMGF.py` misuse `logminus`** as "log minus" — a
   difference of logs — rather than "log of a difference", making `gamma_cgf`
   and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
   `−0.5753641449035616`). Both are unreachable today, since `gamma_factory`
   wires correct inline lambdas, so they go out with the dead-code sweep rather
   than being repaired. `logminus` itself is fixed and tested. *(PR 8)*
-- **A posterior from a numeric backend cannot be updated sequentially.**
-  `to_prior_object` can only build the updated prior's MGF symbolically; its
-  numeric route returns a prior carrying `mgf_backend`/`pdf_backend` and no
-  `mgf_sym`/`cgf_sym`, which no derivative backend can consume. Since no
-  symbolic backend works for fractional orders, fractional posteriors cannot be
-  updated at all. `update` now refuses; it used to return `-inf` on `scipy` and
-  `mpmath`, because the tan-transform integrand's blanket
-  `except Exception: return 0.0` turned the missing MGF into a zero at every
-  quadrature node. *(PR 6)*
 - **The incomplete-MGF derivative is wrong, not merely small, below
   `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
   canonical test problem, its log comes out as `−65.17` at `u = 1e-6` where the
@@ -693,6 +714,51 @@ against the unfixed code before trusting that it passes against the fixed one.
 The third instance adds a corollary — **choose fixture values that are not
 defaults**, since a parameter tested only at its default value is a parameter
 whose plumbing is untested.
+
+---
+
+## Which route computes the derivative
+
+There are two fundamentally different ways to get `Dᵃ M(t)`, and since PR 6c
+the default is the second.
+
+**Differentiate the MGF.** Take `M`, differentiate `a` times — symbolically for
+integer orders, or through the fractional-integral kernel otherwise — and
+evaluate. Every backend except one does this.
+
+**Compute the expectation.** `Dᵃ M(t) = E[θᵃ e^{tθ}] = ∫ θᵃ e^{tθ} p(θ) dθ`.
+Same quantity by definition, entirely different arithmetic, and **the integrand
+is positive**, so it cannot cancel.
+
+`resolve_backend` sends `method="auto"` to the expectation route whenever the
+prior supplies a density, which is always: `mitMGFprior` refuses to construct
+without one in both its symbolic and its backend mode. An explicit `method=` is
+never reinterpreted.
+
+The decision is measured. Across 240 cases — four priors, ten orders from 0.5
+to 30, six evaluation points from −0.5 to −50 — scored against mpmath at 60
+digits with each density written out independently:
+
+| | differentiating | expectation |
+|---|---|---|
+| unacceptable (rel > 1e-8) | 5 of 240 | **0 of 240** |
+| wrong sign | 2 | **0** |
+| worst case | 2.46e+00 | 1.17e-11 |
+| median | 6.3e-17 | 1.0e-16 |
+| cost, order 1.5 | 2087 ms | **270 ms** |
+
+All five failures are the `uniform` prior at orders 12–30 with `t` near zero,
+where its alternating CGF cancels through 25–26 digits.
+
+**It is not uniformly better, and that is worth knowing before relying on it.**
+Its worst case — 1.17e-11, Gamma at half-integer orders — is about 100× worse
+than the differentiated route's worst *non-uniform* case. What it is is never
+catastrophic, which is the property a default needs.
+
+Two consequences beyond accuracy. The route needs only `p(θ)`, never the MGF,
+which is what makes sequential updating work for numeric backends: the prior
+`to_prior_object` builds carries a density and no `mgf_sym`, so no
+differentiating backend could consume it. And it is 5–8× faster.
 
 ---
 

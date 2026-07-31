@@ -21,7 +21,6 @@ import pytest
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
-from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 # ==========================================================================
 # PR 3 — import and registry integrity
@@ -52,34 +51,6 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 # and raises NotImplementedError naming the prior where SymPy declines --
 # rather than returning None, which used to surface as a TypeError far from
 # its cause. Its tests now live, unmarked, in test_symbolic_fractional.py.
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=ValueError,
-    reason="PR 6: MGFDerivative.to_prior_object can only build the updated "
-    "prior's MGF symbolically. Its numeric route returns a prior with no "
-    "mgf_sym/cgf_sym, which no derivative backend can consume, so a posterior "
-    "from any numeric backend cannot be updated. Since no symbolic backend "
-    "works for fractional orders, fractional posteriors cannot be updated at all",
-)
-def test_fractional_posterior_can_be_updated_sequentially(gamma_prior):
-    """Evidence factorises, so staged conditioning must match one-shot.
-
-    Reachable only since the deferred-construction fix: a fractional posterior
-    could not previously be built. `update` now raises rather than returning the
-    ``-inf`` that `scipy` and `mpmath` produced, but raising is not the goal.
-    """
-    staged = MGFDerivative(gamma_prior, data=[1.0, 2.0, 3.0], likelihood="halfnormal")
-    updated = staged.update([1.0], likelihood="halfnormal")
-
-    one_shot = MGFDerivative(
-        gamma_prior, data=[1.0, 2.0, 3.0, 1.0], likelihood="halfnormal"
-    )
-
-    assert staged.evidence()[0] + updated.evidence()[0] == pytest.approx(
-        one_shot.evidence()[0], rel=1e-8
-    )
 
 
 # ==========================================================================
@@ -150,8 +121,14 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 # The domain guards, `post_quantile`'s bracketing and `logminus` were repaired
 # earlier; those tests live in test_numerical_guards.py.
 #
-# What remains for PR 6c: mpmath below dps 30, the alternating-CGF
-# cancellation, and the sequential-update record above.
+# PR 6c closed the rest. mpmath's dps floor is gone (the range was symmetric
+# and the integrand float64); the alternating-CGF cancellation is computed
+# rather than flagged, via the direct-expectation route; and sequential
+# updating works for numeric and fractional posteriors, because that route
+# needs only the prior's density. Those tests live in
+# test_sequential_update.py and test_deferred_construction.py.
+#
+# Nothing from PR 6 remains recorded here.
 
 
 # ==========================================================================
