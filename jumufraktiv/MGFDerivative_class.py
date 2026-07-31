@@ -1151,10 +1151,11 @@ class MGFDerivative:
                 else:
                     return float(results[0]) if scalar_input else np.array(results)
             else:
-                # Joint density: aggregate stats and call helper once
-                stats = self.ready_func(
-                    new_data_arr, **self._likelihood_arguments(**kwargs)
-                )  # returns summed stats
+                # Joint density: the helper aggregates the statistics itself.
+                # An identical `ready_func` call used to sit here, its result
+                # discarded on the next line; it is gone rather than merely
+                # rewritten, since forwarding the stored parameters into a
+                # computation nothing reads would only make the waste tidier.
                 return self._post_predictive_symbolic_scalar(new_data_arr, log=log, **kwargs)
 
         # ---- Numeric path (non‑symbolic posterior, vectorised) ----

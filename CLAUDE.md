@@ -447,8 +447,9 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 3c | Likelihood-statistic correctness tests | **merged** |
 | 1 | 4a | Backend resolution and deferred construction | **merged** |
 | 1 | 4b | Batch evaluation points (converged-mask) | **merged** |
-| 1 | 4c | Array-valued derivative orders | **in review** |
-| 1 | 4d | Symbolic fractional backend | planned |
+| 1 | 4c | Array-valued derivative orders | **merged** |
+| 1 | 4d | Symbolic fractional backend | **merged** |
+| 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **in review** |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
 | 2 | 6b | Test assertions that do not assert | planned |
@@ -457,9 +458,19 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 4 | 9 | Vectorisation | planned |
 | 4 | 10 | Caching and dispatch | planned |
 | 5 | 11 | Diagnostics policy | planned |
-| 5 | 12 | Public API surface | planned |
+| 5 | 12 | Public API surface (less what 12a already took) | planned |
 | 6 | 13 | Documentation infrastructure | planned |
 | 6 | 14 | Docstring sweep | planned |
+
+**PR 12a is in wave 1 rather than wave 5 because it is a reachability repair,
+not an interface decision.** The rest of PR 12 settles questions of taste —
+which options to accept, which names to reserve, what a moment method should
+return — and can wait for the waves that reshape those methods. Two of its
+findings could not: `post_predictive` raised `TypeError` for ten of the
+fourteen likelihoods, and the advertised `torch` extra installed a dependency
+that no code path reached. Both are of a piece with wave 1's work on making
+declared capability actually reachable, and neither is worth leaving in place
+for four more waves.
 
 **A bloat-and-simplification audit ran after wave 1 and is folded into the
 table above rather than kept as a separate stream.** Most of what it found
@@ -477,6 +488,7 @@ PRs touching the same files for different reasons. Where it lands:
 | `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12**, public API surface |
 | Tests that pass against the defect they were written for | **PR 6b** (new) |
 | `pytest -n 4 --dist loadfile` (2.22×) as a documented opt-in | **PR 13**, with the other developer commands |
+| `CHANGELOG.md` has had no entry since PR 4a, leaving 4b, 4c, 4d and 12a unrecorded | **PR 13**, as a catch-up pass |
 
 Only one genuinely new entry was needed. **PR 6b** exists because "a test that
 does not test anything" is not a numerical defect, a symbolic defect or a
@@ -639,9 +651,9 @@ convergence, so `L` had been doubling far past the integrand's support.
 
 ---
 
-### A testing hazard this repository has already hit twice
+### A testing hazard this repository has already hit three times
 
-Recorded here because both instances cost real time and the shape recurs:
+Recorded here because each instance cost real time and the shape recurs:
 **a check that sits downstream of the property being tested can pass for
 reasons unrelated to it.**
 
@@ -655,9 +667,22 @@ reasons unrelated to it.**
 - A `ruff check --select` invocation appeared to show a rule passing when
   `per-file-ignores` was silently suppressing it; `--isolated` showed the
   violations were all still there.
+- **A fixture value that coincides with a default hides every bug that falls
+  back to that default.** `post_predictive` forwarded only the caller's keyword
+  arguments to the likelihood statistics, ignoring the known parameters stored
+  at construction. Thirteen likelihoods raise `TypeError` for that; Poisson
+  alone has a default (`scale=1.0`), so it silently computed against a scale
+  the user never asked for. Poisson is also the likelihood every predictive
+  test used, and `conftest.POISSON_SCALE` is `1.0` — the default exactly, where
+  the wrong answer and the right answer are the same number. Off that value the
+  error is 1.308 nats at `scale=5.0`. So the suite covered the one likelihood
+  that fails quietly, at the one value where the failure cannot be seen.
 
 The general rule: assert the property itself, and confirm a new test fails
 against the unfixed code before trusting that it passes against the fixed one.
+The third instance adds a corollary — **choose fixture values that are not
+defaults**, since a parameter tested only at its default value is a parameter
+whose plumbing is untested.
 
 ---
 

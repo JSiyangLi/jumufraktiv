@@ -111,8 +111,10 @@ without a deprecation period.
   `torch` at module scope and the discovery loop aborted on the first module
   that raised, so a missing optional extra silently removed both `pareto` *and*
   `uniform` from the registry, leaving a warning in place of half the priors.
-  The `torch` import is now lazy — nothing in the package referenced the
-  function it supported — and one module's failure no longer affects the rest.
+  Nothing in the package referenced the function that import supported, so the
+  import was first made lazy and the function has since been deleted outright,
+  along with the `torch` extra that advertised it. One module's failure no
+  longer affects the rest either way.
 - Two intra-package imports in `derivativeDispatch.py` were written without the
   package prefix, so they resolved only when the package directory happened to
   be on `sys.path` and raised `ModuleNotFoundError` under a normal install.
@@ -162,7 +164,7 @@ without a deprecation period.
 - `LICENSE` (MIT), `CITATION.cff` and this changelog.
 - Complete PyPI distribution metadata in `pyproject.toml`: description, readme,
   `requires-python`, license, authors, keywords, classifiers and project URLs.
-- Optional dependency groups: `torch`, `examples`, `docs` and `dev`.
+- Optional dependency groups: `examples`, `docs` and `dev`.
 - `jumufraktiv._version`, a dependency-free single source of truth for the
   version, re-exported as `jumufraktiv.__version__` and read by the build
   backend.

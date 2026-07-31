@@ -208,7 +208,7 @@ def pareto_mgf_jax(t_val, alpha_val, xi_val):
 
 
 # ============================================================
-# Torch version (optional)
+# SciPy PDF / logPDF
 # ============================================================
 
 def pareto_pdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
