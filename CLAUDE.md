@@ -436,14 +436,17 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 |------|----|-------|--------|
 | 0 | 1 | Repo hygiene, packaging metadata, project files, this document | **merged** |
 | 0 | 2 | pytest + Hypothesis harness, CI, lint config | **merged** |
+| 0 | 2b | `slow` marker, CI matrix split, test memoisation | **merged** |
 | 1 | 3 | Import and registry integrity | **merged** |
 | 1 | 3b | Constructor keyword-argument integrity | **merged** |
 | 1 | 3c | Likelihood-statistic correctness tests | **merged** |
-| 1 | 4a | Backend resolution and deferred construction | **in review** |
-| 1 | 4b | Fractional-order dispatch and numerical accuracy | planned |
-| 1 | 4c | Symbolic fractional backend | planned |
+| 1 | 4a | Backend resolution and deferred construction | **merged** |
+| 1 | 4b | Batch evaluation points (converged-mask) | **merged** |
+| 1 | 4c | Array-valued derivative orders | **in review** |
+| 1 | 4d | Symbolic fractional backend | planned |
 | 2 | 5 | Symbolic-path correctness | planned |
 | 2 | 6 | Numerical robustness | planned |
+| 2 | 6b | Test assertions that do not assert | planned |
 | 3 | 7 | De-duplicate `like_stats` | planned |
 | 3 | 8 | Module layout and internal boundaries | planned |
 | 4 | 9 | Vectorisation | planned |
@@ -453,12 +456,82 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13 | Documentation infrastructure | planned |
 | 6 | 14 | Docstring sweep | planned |
 
+**A bloat-and-simplification audit ran after wave 1 and is folded into the
+table above rather than kept as a separate stream.** Most of what it found
+belongs to work already planned, and splitting it out would have meant two
+PRs touching the same files for different reasons. Where it lands:
+
+| Finding | Goes to |
+|---------|---------|
+| `sp.diff` recomputed 96,084 times per quick pass (187 s); a structural-key cache gives 1.66× | **PR 10**, caching and dispatch |
+| 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication |
+| ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** |
+| 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** for the move, **PR 11** for the diagnostics policy |
+| 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** |
+| `to_prior_object`'s numeric route and the two broad `except Exception` clauses that fabricate finite numbers | **PR 6** |
+| `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12**, public API surface |
+| Tests that pass against the defect they were written for | **PR 6b** (new) |
+| `pytest -n 4 --dist loadfile` (2.22×) as a documented opt-in | **PR 13**, with the other developer commands |
+
+Only one genuinely new entry was needed. **PR 6b** exists because "a test that
+does not test anything" is not a numerical defect, a symbolic defect or a
+documentation defect, and burying it inside PR 6 would hide the one finding
+that most undermines confidence in the rest of the suite.
+
 ### Known-broken, scheduled for repair
 
 Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
+- **Integer derivatives of an alternating-CGF prior lose all accuracy above
+  order ~16, and change sign.** `mgfDerivative(30, uniform(0.5, 2.0),
+  method="symbolic", t=-1.0)` returns `−2.97e+15` where the true value of
+  `E[θ³⁰e^{−θ}]` is `+6665897.83` (mpmath, 80 digits) — the wrong sign and a
+  factor of 4.5e8. Accuracy has already gone by order 16 (1.7e-6) and order 20
+  (1.8e-2). The mechanism is 25–26 digits of cancellation against the float
+  coefficients in the stored MGF, so **no evaluator at any precision recovers
+  it**: confirmed with exact rationals (`+3.09e16`) and with `evalf(80)`
+  (`−2.97e15`). `a = Σy` for several likelihoods, so a Poisson sample summing
+  to 30 under a uniform prior reaches this in ordinary use.
+
+  Invisible to the suite for a reason worth fixing alongside it: **`bell` and
+  `jax` are never run against a non-gamma prior anywhere**, and the Gamma
+  MGF's derivatives have one-signed terms, so they cannot cancel. The
+  cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy" is the
+  diagnostic. *(PR 5)*
+- **mpmath below `dps ≈ 30` returns a confident wrong answer.** The
+  range-doubling loop never converges, runs to `max_L`, and returns
+  `log_abs = +1.119329613307` against a closed-form `−1.453832084236` — wrong
+  in sign, 177% wrong in magnitude — announced only by a `print`. It is not
+  faster either (24.7 s at `dps=30` against 24.1 s at `dps=50`), and `dps` is
+  reachable from the constructor through `DERIVATIVE_KWARGS`. *(PR 6)*
+- **`ready*` silently accepts 2-D input for 4 of the 14 likelihoods, halving
+  the derivative order.** `readyPoisson([[1,2],[3,4]], scale=1.0)` gives
+  `b = 2.0` where the flat data gives `4.0`; `readyGamma` gives `a = 4.0`
+  against `8.0` — and `a` is the *order of differentiation*. Ten modules guard
+  with `ndim != 1`; poisson, gamma, inverse gamma and dagum do not, and no
+  `bereit*` checks at all. `bereitPoisson` returns `a` of shape (2,2) with `b`
+  of shape (2,), which then feeds `post_predictive`. No test in the suite
+  exercises 2-D input, so the de-duplication could change this in either
+  direction with a green build — which is why the tests land first. *(PR 7)*
+- **`logminus` is untested, and two functions misuse it.** The two-branch
+  defect is recorded under "Numerical policy" but nothing exercises it: at a
+  gap of 1e-10 it returns `−23.02585084720009` against `−23.025850929990458`,
+  and `-inf` at 1e-17. Separately, `gammaMGF.py` uses it as "log minus" — a
+  difference of logs — rather than "log of a difference", making `gamma_cgf`
+  and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
+  `−0.5753641449035616`). Both are unreachable today, since `gamma_factory`
+  wires correct inline lambdas, so they should go out with the dead-code sweep
+  rather than be repaired. *(PR 6 for `logminus`, PR 8 for the two functions)*
+- **Three near-integer records absorb an `ImportError` as their expected
+  failure.** None of them specifies `raises=`, so if the lazy import at the
+  interpolation branch breaks, they still count as xfail and the suite stays
+  green. `test_interpolation_backend_is_reachable` is the only test that goes
+  red — verified: `5 passed, 3 xfailed` against `1 failed` under a simulated
+  broken import. That test's own assertions are weak enough that inflating the
+  backend's answer by 1e6 leaves the whole suite green, so both halves need
+  repair together. *(PR 6b)*
 - **Large orders silently overflow.** The numeric backends accumulate the
   quadrature in linear space and clamp when it overflows, dropping the
   overflowing contributions rather than raising. Order 150.5 is correct to
