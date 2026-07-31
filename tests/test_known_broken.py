@@ -71,6 +71,7 @@ def test_large_order_does_not_silently_overflow(gamma_prior):
 
 @pytest.mark.xfail(
     strict=True,
+    raises=UnboundLocalError,
     reason="PR 4b: numeric_fractionalDeriv_interpolation binds `result` only "
     "inside its array branch, so the scalar path raises UnboundLocalError. "
     "The module is to be retired rather than repaired",
@@ -125,6 +126,7 @@ def test_order_below_the_interpolation_threshold_is_accurate(gamma_prior):
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="PR 4: above the interpolation threshold the dispatcher switches to "
     "numeric_fractionalDeriv_interpolation, which fits a 4-point cubic spline in "
     "the order and is markedly LESS accurate than the plain quadrature path just "
