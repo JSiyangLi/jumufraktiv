@@ -72,10 +72,31 @@ def test_symbolic_fractional_backend_is_reachable(gamma_prior):
 def test_interpolation_backend_is_reachable(gamma_prior):
     """Near-integer orders trigger the interpolation backend; it must import.
 
-    The result's accuracy is a separate, tracked problem — see
-    ``test_known_broken.py::test_near_integer_order_is_accurate``.
+    **This is the only test in the suite that goes red if that lazy import
+    breaks**, and that makes its assertions load-bearing. The three
+    near-integer records in `test_known_broken.py` cannot cover it: they are
+    expected failures, so an `ImportError` counts as the failure they expect
+    and the suite stays green. Verified — under a simulated broken import they
+    give `5 passed, 3 xfailed` while this test gives `1 failed`.
+
+    It used to assert only `sign in (-1, 1)` and `log_abs == log_abs`, both
+    trivially true. Measured: inflating the backend's answer by a factor of
+    1e6 left the **entire suite** green.
+
+    So it now carries an accuracy floor as well. The backend's relative error
+    at this order is 1.094e-05 against the closed form, so `rel=1e-4` passes
+    with about 9x headroom while still catching any gross corruption.
+
+    The floor is deliberately loose and deliberately temporary. It is not a
+    statement that 1e-05 is acceptable — `test_known_broken.py` records the
+    near-integer inaccuracy as a defect, and CLAUDE.md schedules this module
+    for retirement. Until then the module is on a live user path (any order
+    whose fractional part exceeds 0.95), so it needs *some* floor rather than
+    none.
     """
+    from conftest import gamma_mgf_derivative_log
+
     log_abs, sign = mgfDerivative(1.96, gamma_prior, method="scipy", t=-1.0, log=True)
 
-    assert sign in (-1, 1)
-    assert log_abs == log_abs  # not NaN
+    assert sign == 1
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(1.96, -1.0), rel=1e-4)

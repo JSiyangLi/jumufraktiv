@@ -164,22 +164,18 @@ def test_all_three_routes_to_one_answer_agree(prior_name):
 # ==========================================================================
 # The integration range must not run away
 # ==========================================================================
-def test_batch_does_not_overflow_on_ordinary_input(gamma_prior):
-    """Nothing here should reach the range where `exp` overflows.
-
-    The overflow was a symptom of the same defect -- the loop never settled, so
-    the range kept doubling past the integrand's support. With warnings
-    escalated an overflow raises, so this asserts the absence of one.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        log_abs, sign = mgfDerivative(
-            1.5,
-            gamma_prior,
-            method="scipy",
-            t=np.array([-1.0, -5.0, -20.0]),
-            log=True,
-        )
-
-    assert np.all(np.isfinite(log_abs))
-    assert np.all(sign == 1)
+# `test_batch_does_not_overflow_on_ordinary_input` stood here. It asserted that
+# nothing reaches the range where `exp` overflows, under escalated warnings so
+# that an overflow would raise.
+#
+# It did not work. Measured by restoring the masking defect and running it
+# alone: `1 passed`. The broad `except Exception` in the scipy backend catches
+# the escalated warning, falls back to the point-by-point path, and returns
+# finite positives -- so the assertion holds precisely when the defect is
+# present. The four `test_batch_matches_the_closed_form[spread-three-*]` arms
+# do catch it, so removing this loses nothing.
+#
+# Recorded rather than silently deleted because the shape recurs: this is the
+# third instance in this audit of a check sitting downstream of the property it
+# claims to test. See CLAUDE.md, "A testing hazard this repository has already
+# hit twice" -- now three times, and the count is the point.

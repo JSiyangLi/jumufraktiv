@@ -366,7 +366,28 @@ class TestDeferral:
 
         assert np.all(np.isfinite(np.asarray(value, dtype=float)))
 
-    @pytest.mark.parametrize("method", ["auto", "scipy", "mpmath", "bell", "jax"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "auto",
+            "scipy",
+            # Marked because of the memo above, not because of this test's own
+            # cost. Its sibling `test_every_fractional_backend_is_reachable_
+            # through_the_class[mpmath]` is already slow-marked, but both build
+            # `_build("halfnormal", method="mpmath")` -- the same cache key --
+            # so whichever ran first paid the 21 s and the quick pass paid it
+            # regardless of the marker. Marking both is what makes either
+            # marker mean anything. Measured: file 65.7 s -> 44.4 s, and no
+            # extra cost in the full run, since the sibling already pays.
+            pytest.param("mpmath", marks=pytest.mark.slow),
+            # `bell` and `jax` stay in the quick pass deliberately: they are
+            # the only tests there that drive update-refusal through the
+            # integer-backend-reinterpretation route at a fractional order.
+            # They cost 3.0 s and 5.8 s.
+            "bell",
+            "jax",
+        ],
+    )
     def test_sequential_update_refuses_rather_than_returning_minus_infinity(
         self, method
     ):
