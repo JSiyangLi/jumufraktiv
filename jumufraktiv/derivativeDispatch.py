@@ -26,9 +26,9 @@ Backends:
       and `sp.Derivative`).
     - Bell : Bell polynomial method (integer orders, JAX-based).
     - JAX : JAX `jet` or `grad` (integer orders).
-    - SciPy : adaptive quadrature with fallback to tan‑transform (fractional).
+    - Grid : fixed-grid trapezoid on the z = e^u substitution, with exact
+      near-integer singularity subtraction (fractional; the `scipy` method).
     - Mpmath : high‑precision quadrature (fractional).
-    - Interpolation : cubic interpolation for near‑integer fractional orders.
 
 Incomplete MGF (iMGF) derivatives are supported via the `complete=False` flag,
 which uses the prior's `imgf_sym` or `imgf_jax` functions.
@@ -37,7 +37,8 @@ Imports:
     - integerDeriv_symbolic from symbolic_integerDeriv.py
     - integerDeriv_numeric_bell from numeric_integerDeriv_Bell.py
     - integerDeriv_numeric_jax from numeric_integerDeriv_JAX.py
-    - fractionalDeriv_numeric_scipy / _mpmath / _tan / _interpolated
+    - fractionalDeriv_grid from numeric_fractionalDeriv_grid.py
+    - fractionalDeriv_numeric_mpmath from numeric_fractionalDeriv_mpmath.py
 
 Functions:
     - mgfDerivative_integer(order, prior, method='symbolic', t=None, ...)
@@ -206,8 +207,25 @@ def mgfDerivative_integer(
                 # If any free symbols remain, we keep the expression
                 results_expr[idx] = val_expr
             else:
-                val = float(val_expr.evalf())
-                if abs(val) < 1e-300:
+                evaluated = val_expr.evalf()
+                val = float(evaluated)
+                if math.isinf(val) or (val == 0.0 and evaluated != 0):
+                    # The SymPy value is finite and non-zero; it is the cast to
+                    # a Python float that has overflowed or underflowed. Taking
+                    # the log first keeps the exponent in range, so a large
+                    # derivative order returns its true magnitude instead of
+                    # `inf` or `-inf`.
+                    #
+                    # This is a SECOND source of the recorded large-order
+                    # overflow, and the audit attributes that defect entirely to
+                    # the outer quadrature accumulating in linear space. Fixing
+                    # only the accumulation is not enough: M^(301) of the Gamma
+                    # MGF at t = -1 came back as `inf` here, where M^(151) is
+                    # exact to 1.4e-16, so the fractional derivative built on it
+                    # was wrong before any accumulation happened.
+                    results_log_abs[idx] = float(sp.log(sp.Abs(evaluated)).evalf())
+                    results_sign[idx] = 1 if evaluated > 0 else -1
+                elif abs(val) < 1e-300:
                     results_log_abs[idx] = -np.inf
                     results_sign[idx] = 1
                 else:
@@ -732,8 +750,6 @@ def mgfDerivative(
     complete: bool = True,
     log: bool = True,
     integer_method: str = "symbolic",
-    use_interpolation: bool = True,
-    d_vec: tuple = (0.8, 0.9, 0.95),
     int_tol: float = 1e-12,
     u: float | np.ndarray | list | None = None,
     **kwargs
@@ -788,12 +804,6 @@ def mgfDerivative(
     integer_method : str, optional
         For fractional orders: method for integer derivatives inside the
         fractional integrator (`'symbolic'`, `'bell'`, `'jax'`).
-    use_interpolation : bool, optional
-        If True and the order is near an integer from below, use cubic
-        interpolation to speed up the computation.
-    d_vec : tuple, optional
-        Complements of deviations for interpolation (default `(0.8, 0.9, 0.95)`).
-        Actual deviations are `1 - d_i`.
     int_tol : float, optional
         Tolerance for detecting integer order. If `|order - round(order)| < int_tol`,
         the order is treated as an integer.
@@ -823,8 +833,6 @@ def mgfDerivative(
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - The `'auto'` method chooses `'symbolic'` for integer orders (if available)
       and `'scipy'` for fractional orders by default.
-    - The interpolation (`use_interpolation=True`) is used when the order is
-      within `(n - max_dev, n)` where `n = ceil(order)` and `max_dev = 1 - max(d_vec)`.
     - For `method='symbolic'`, vectorisation over `t` is achieved by looping
       over elements using `.subs().evalf()` to maintain accuracy (mpmath).
 
@@ -857,12 +865,6 @@ def mgfDerivative(
     >>> log_abs, sign = mgfDerivative(orders, prior, method='auto', t=-2.0, log=True)
     # Returns arrays of shape (2, 2), not (4,)
     """
-    # ---- Validate d_vec (independent of order) ----
-    if len(d_vec) != 3:
-        raise ValueError("d_vec must have exactly 3 elements.")
-    if any(d >= 1 for d in d_vec):
-        raise ValueError("All elements of d_vec must be < 1.")
-
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to
@@ -907,8 +909,6 @@ def mgfDerivative(
                 complete=complete,
                 log=log,
                 integer_method=integer_method,
-                use_interpolation=use_interpolation,
-                d_vec=d_vec,
                 int_tol=int_tol,
                 u=uu,
                 **kwargs,
@@ -987,30 +987,35 @@ def mgfDerivative(
         # Fractional order. The backend and integer_method were settled, and
         # any 'bell'/'jax' reinterpretation applied, by resolve_backend above.
 
-        # Check interpolation
-        n = int(np.ceil(order))
-        if use_interpolation and order > n - (1.0 - max(d_vec)):
-            if method.lower() != 'scipy':
-                print(f"⚠️ Interpolation triggered for order {order}. "
-                      f"Overriding method '{method}' with 'scipy'.")
-            scipy_keys = {'epsabs', 'epsrel', 'limit', 'initial_L', 'max_L', 'tol', 'use_tan'}
-            scipy_kwargs = {k: v for k, v in kwargs.items() if k in scipy_keys}
-            from jumufraktiv.numeric_fractionalDeriv_interpolation import (
-                fractionalDeriv_interpolated,
-            )
-            return fractionalDeriv_interpolated(
+        # The near-integer interpolation branch is gone, and so is the module
+        # behind it. It fitted a 4-point cubic spline *in the order* whenever
+        # the fractional part exceeded max(d_vec) = 0.95, which was less
+        # accurate than the plain quadrature just below that threshold, cost
+        # four times the work, and took its sign from an endpoint.
+        #
+        # The difficulty it was working around is real: as the order approaches
+        # an integer from below, gamma -> 0 and the answer is computed as
+        # (1/Gamma(gamma)) x (a diverging integral), i.e. 0 x infinity. But that
+        # has an exact fix rather than an interpolated one -- subtracting a
+        # function with the same value at z = 0 and a known weighted integral --
+        # which `numeric_fractionalDeriv_grid` applies. Measured relative error
+        # at order 1.999: 0.96 through the spline, 2.9e-16 through the kernel.
+        if method == "scipy":
+            from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+
+            grid_keys = {"tol"}
+            return fractionalDeriv_grid(
                 order=order,
                 prior=prior,
-                t=t,
-                d_vec=d_vec,
-                return_log=log,
-                integer_method=integer_method,
+                t_points=t,
+                u_points=u,
                 complete=complete,
-                u=u,
-                **scipy_kwargs
+                integer_method=integer_method,
+                log=log,
+                **{k: v for k, v in kwargs.items() if k in grid_keys},
             )
 
-        # Standard fractional method
+        # `mpmath` and `symbolic` keep their own routes.
         return mgfDerivative_fractional(
             order=order,
             prior=prior,
@@ -1111,7 +1116,7 @@ if __name__ == "__main__":
     log_abs_interp, sign_interp = mgfDerivative(
         order=order_interp, prior=gamma_prior_exp, method='scipy',
         t=t_interp, log=True, integer_method='symbolic',
-        use_interpolation=True, d_vec=(0.8, 0.9, 0.95), epsrel=1e-10
+        epsrel=1e-10
     )
     lambda_exp = gamma_prior_exp.params['beta']
     log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
@@ -1162,7 +1167,7 @@ if __name__ == "__main__":
         log_abs, sign = mgfDerivative(
             order=order_near, prior=gamma_prior, method='scipy',
             t=t_val_i, complete=False, u=u_val, log=True,
-            use_interpolation=True, d_vec=(0.8, 0.9, 0.95), epsrel=1e-10
+            epsrel=1e-10
         )
         val = sign * np.exp(log_abs)
         print(f"  interpolation: {val:.6e} (diff {abs(val - ref_near):.2e})")
