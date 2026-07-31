@@ -14,12 +14,15 @@ The bodies assert the *correct* behaviour, not the broken behaviour, so when the
 fix lands the assertion is already the right one.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 
 # ==========================================================================
 # PR 3 — import and registry integrity
@@ -56,6 +59,153 @@ def test_array_order_does_not_truncate_fractional_orders(gamma_prior):
     ]
 
     assert batch_log == pytest.approx(np.array(scalar_log), rel=1e-8)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4b: the array-order truncation above, seen through the public "
+    "API. post_raw_moment passes an array of orders, so every moment of a "
+    "fractional posterior is computed at the wrong order",
+)
+def test_zeroth_raw_moment_of_a_fractional_posterior_is_one(gamma_prior):
+    """The 0th raw moment of any distribution is exactly 1, by definition.
+
+    This needs no reference value and no tolerance argument, which is what
+    makes it the clearest available statement of the defect: `E[Theta^0] = 1`
+    or the object is not a probability distribution.
+
+    Measured on a halfnormal posterior (`a = 1.5`), asking for orders
+    `[0, 1, 2]` in one call returns `[1.903, 0.571, 0.228]`; asking for the
+    same three one at a time returns the correct `[1.0, 0.35, 0.1575]`. The
+    integer case is unaffected -- a Poisson posterior returns
+    `[1.0, 1.333, 2.0]` either way -- so this bites exactly the likelihoods
+    that deferred construction has just made reachable.
+    """
+    post = MGFDerivative(gamma_prior, data=[1.0, 2.0, 3.0], likelihood="halfnormal")
+
+    moments = np.asarray(post.post_raw_moment([0, 1, 2], log=False), dtype=float)
+
+    assert moments[0] == pytest.approx(1.0, rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4b: _batch_quad_vec_method zeroes the integrand at points that "
+    "have already converged (`val[converged] = 0.0`). Because `converged` is "
+    "assigned after quad_vec returns, that zero overwrites the point's stored "
+    "value, the difference against its previous value then un-converges it, "
+    "and the loop oscillates while L doubles",
+)
+@pytest.mark.parametrize("prior_name", ["uniform", "pareto", "heaviside"])
+def test_array_evaluation_points_agree_with_scalar_ones(prior_name):
+    """Evaluating at several `t` at once must match evaluating one at a time.
+
+    The batch path is the default whenever `t` is an array, which covers
+    `post_predictive` and any density or CDF drawn over a grid. Measured at
+    order 1.5, `t = [-1, -5]`, against both the scalar loop and mpmath at 40
+    digits -- which agree with each other to eight decimals:
+
+    ===========  ==========================  ==========================
+    prior        batch                       correct
+    ===========  ==========================  ==========================
+    uniform      [-1.13787913, -5.27628737]  [-1.00472722, -5.02474464]
+    pareto       [-1.09622690, -6.13597991]  [-0.99090985, -5.99500176]
+    heaviside    [ 0.07901551, -6.45212254]  [ 0.12115759, -6.32604737]
+    ===========  ==========================  ==========================
+
+    That is 4 to 13 per cent in the value. `gamma` agrees exactly, which is
+    part of why the suite never caught it: the Gamma prior is the closed-form
+    reference used throughout.
+
+    **The other part is that this suite's own configuration hides the defect,
+    which is why the warning filter below is load-bearing and must not be
+    removed.** `pyproject.toml` sets ``filterwarnings = ["error"]``, so NumPy's
+    "overflow encountered in exp" becomes an exception. The batch method then
+    aborts, falls back to the scalar loop, and returns the *correct* answer.
+    Written the obvious way, this test passes and proves nothing. Measured on
+    the uniform prior:
+
+    ===================================  ==========================
+    warning state                        result
+    ===================================  ==========================
+    ignored (an ordinary user session)   [-1.13787913, -5.27628737]
+    escalated (this suite's default)     [-1.00472722, -5.02474464]
+    ===================================  ==========================
+
+    So the wrong answer is what a user gets and the right answer is an
+    artefact of the harness. The overflow is itself a downstream symptom: the
+    masking bug stops the loop converging, `L` keeps doubling, and eventually
+    `exp` overflows -- so escalating the warning accidentally rescues the
+    result rather than reporting the fault.
+
+    **On the tolerance.** ``rel=1e-8`` is the two paths' own accuracy, not a
+    slack figure: both integrate with ``epsabs = epsrel = 1e-8``, so they
+    cannot be expected to agree more closely than that, and with the defect
+    removed they agree to about 2.5e-09. Asking for 1e-10 would leave this
+    test failing after the repair, so the record would never fire. There is
+    no risk of the bar being too loose either way: the defect is a
+    disagreement of order 1e-1, seven orders of magnitude above it.
+    """
+    params = {
+        "uniform": {"a": 0.5, "b": 2.0},
+        "pareto": {"alpha": 2.5, "xi": 1.0},
+        "heaviside": {"k": 1.0},
+    }[prior_name]
+    prior = mitMGFprior.from_registry(prior_name, params=params)
+    t_values = np.array([-1.0, -5.0])
+
+    with warnings.catch_warnings():
+        # Reproduce an ordinary session, where overflow does not abort the
+        # batch method. Without this the fallback masks the defect entirely.
+        warnings.simplefilter("ignore")
+        batch, _ = mgfDerivative(1.5, prior, method="scipy", t=t_values, log=True)
+        one_at_a_time = [
+            mgfDerivative(1.5, prior, method="scipy", t=float(x), log=True)[0]
+            for x in t_values
+        ]
+
+    assert batch == pytest.approx(np.array(one_at_a_time), rel=1e-8)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4b: the numeric backends accumulate the quadrature in linear "
+    "space and clamp on overflow, so a large derivative order silently loses "
+    "the overflowing contributions instead of raising",
+)
+def test_large_order_does_not_silently_overflow(gamma_prior):
+    """A large order must be right or raise, not be quietly wrong.
+
+    Measured against the closed-form Gamma reference: order 150.5 is correct
+    to 6e-14 nats, but order 300.5 returns 694.234 where the exact value is
+    1006.311 -- wrong by 312 nats, a factor of about 1e135, with no warning.
+    The order is `a = sum(y)` for several likelihoods, so it grows with the
+    sample and this is reachable from ordinary data.
+    """
+    from conftest import gamma_mgf_derivative_log
+
+    log_abs, sign = mgfDerivative(300.5, gamma_prior, method="scipy", t=-1.0, log=True)
+
+    assert sign == 1
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(300.5, -1.0), rel=1e-8)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR 4b: numeric_fractionalDeriv_interpolation binds `result` only "
+    "inside its array branch, so the scalar path raises UnboundLocalError. "
+    "The module is to be retired rather than repaired",
+)
+def test_near_integer_order_works_without_log(gamma_prior):
+    """The `log` argument decides the return shape and nothing else.
+
+    That is the log principle, and here `log=False` does not merely change the
+    shape -- it raises `UnboundLocalError: cannot access local variable
+    'result'`. The same call with `log=True` returns a value.
+    """
+    value = mgfDerivative(1.99, gamma_prior, method="scipy", t=-1.0, log=False)
+
+    assert np.isfinite(float(value))
 
 
 @pytest.mark.xfail(
@@ -114,27 +264,46 @@ def test_near_integer_order_is_accurate(gamma_prior, order):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="PR 6: the default truncation initial_L=10 stops short at large |t|. "
-    "The L-doubling loop compares consecutive iterates against "
+    reason="PR 6: the L-doubling loop stops widening the integration range too "
+    "early at large |t|. It compares consecutive iterates against "
     "tol * max(1.0, |prev|) with tol=1e-6, which is an absolute test whenever "
-    "the integral is below 1, and consecutive-iterate change underestimates the "
-    "remaining tail when convergence is slow",
+    "the integral is below 1, and a consecutive-iterate change underestimates "
+    "the remaining tail when convergence is slow",
 )
-def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior):
+@pytest.mark.parametrize("t_value", [-14.0, -30.0])
+def test_quadrature_reaches_tolerance_at_large_evaluation_points(gamma_prior, t_value):
     """Accuracy must not depend on where `t` happens to land.
 
     ``maxwell-boltzmann`` on three observations gives ``a = 4.5, b = 14``, an
     ordinary use of the package, and the evidence comes out with relative error
-    6.9e-06. Measured: ``epsabs``, ``epsrel`` and ``limit`` change nothing at
-    all, while ``initial_L=40`` alone brings it to 2.4e-15 — so it is the
-    truncation, not the tolerance.
+    2.9e-06.
+
+    **Both `t` values are here on purpose, because they do not have the same
+    fix.** Measured against the closed-form Gamma reference:
+
+    ==========  ============  ==========  ===========
+    setting       t = -14       t = -30
+    ==========  ============  ==========  ===========
+    tol=1e-6      2.9e-06       1.5e-06     (default)
+    tol=1e-9      1.0e-15       2.8e-10
+    tol=1e-12     1.0e-15       2.1e-10
+    ==========  ============  ==========  ===========
+
+    ``epsabs``, ``epsrel`` and ``limit`` change neither. Tightening ``tol``
+    repairs ``t = -14`` outright but leaves ``t = -30`` on a plateau at
+    2.1e-10, because it makes the loop widen for longer without making the
+    stopping rule correct. So a ``tol`` change would turn the first case green
+    and not the second — which is exactly why both are recorded. The real
+    repair is the fixed-grid kernel, which takes its range from ``gamma``
+    directly instead of discovering it by doubling. See CLAUDE.md,
+    "Numerical policy".
     """
     from conftest import gamma_mgf_derivative_log
 
-    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=-14.0, log=True)
+    log_abs, sign = mgfDerivative(4.5, gamma_prior, method="scipy", t=t_value, log=True)
 
     assert sign == 1
-    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, -14.0), rel=1e-10)
+    assert log_abs == pytest.approx(gamma_mgf_derivative_log(4.5, t_value), rel=1e-10)
 
 
 @pytest.mark.xfail(

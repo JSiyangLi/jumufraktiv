@@ -443,12 +443,63 @@ Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
-- **Fractional orders are truncated in the array path.** `int(o)` in
-  `mgfDerivative`'s array-order branch silently rounds — and truncates rather
-  than rounds, so 1.5 returns the order-1 answer. `post_predictive` uses this
-  path. The same block also `float()`s `t`, so an array order with `t=None`
-  raises instead of returning an expression, and flattens the result, losing
-  the order array's shape. *(PR 4b)*
+- **Array evaluation points return wrong values, and the suite cannot see it.**
+  `_batch_quad_vec_method` zeroes the integrand at points that have already
+  converged (`val[converged] = 0.0`). Because `converged` is assigned *after*
+  `quad_vec` returns, that zero overwrites the point's stored value, the
+  difference against its previous value un-converges it, and the loop
+  oscillates while `L` doubles. Against both the scalar loop and mpmath at 40
+  digits, at order 1.5 and `t = [−1, −5]`: `uniform` returns
+  `[−1.1379, −5.2763]` for `[−1.0047, −5.0247]`, `pareto` `[−1.0962, −6.1360]`
+  for `[−0.9909, −5.9950]`, `heaviside` `[0.0790, −6.4521]` for
+  `[0.1212, −6.3260]` — 4 to 13% in the value. `gamma` agrees exactly, which
+  is why the closed-form reference used throughout the suite never caught it.
+
+  **The suite's own configuration hides it as well**, and that matters for
+  anyone writing a test here. `pyproject.toml` sets
+  `filterwarnings = ["error"]`, so NumPy's "overflow encountered in exp"
+  becomes an exception; the batch method aborts, falls back to the scalar loop
+  and returns the *correct* answer. The overflow is a downstream symptom of
+  the same masking bug — the loop never converges, so `L` balloons — which
+  means escalating the warning accidentally rescues the result instead of
+  reporting the fault. A test written the obvious way passes and proves
+  nothing; the record in `test_known_broken.py` restores the ordinary warning
+  state deliberately. *(PR 4b)*
+- **The order is coerced to an integer in the array path.** `int(o)` in
+  `mgfDerivative`'s array-order branch. The defect is the coercion itself, not
+  the choice of rounding rule: at order 2.5 both `int` and `round` give 2, and
+  the answer is 15% wrong either way. Truncation-versus-rounding is only a
+  sub-case, biting near an integer, where `int(1.9) = 1` but `round(1.9) = 2`.
+  Measured against the closed form at `t = −2`: order 0.5 is 68% wrong,
+  1.5 is 35%, 1.9 is 61%, 2.5 is 15%.
+
+  Which method suffers depends on the **parity** of the sample size, so a test
+  fixture that picks `n` carelessly asserts nothing. For a Normal likelihood
+  the aggregate is `a = n/2` and the per-observation value is `a = 1/2`, so
+  `post_predictive` is wrong for **even** `n` (75% at `n = 2`, exact at
+  `n = 3`) while `post_raw_moment` and `post_central_moment` are wrong for
+  **odd** `n` (17% at `n = 3`, exact at `n = 4`). Every sample size is wrong
+  in one of the two.
+
+  The same block also `float()`s `t`, so an array order with `t=None` raises
+  instead of returning an expression, and flattens the result, losing
+  the order array's shape. Seen through the public API: a halfnormal posterior
+  (`a = 1.5`) asked for raw moments `[0, 1, 2]` in one call returns
+  `[1.903, 0.571, 0.228]`, where the same three one at a time give the correct
+  `[1.0, 0.35, 0.1575]`. The first entry is the 0th raw moment, which is
+  exactly 1 for any distribution, so that one needs no reference at all.
+  *(PR 4b)*
+- **Large orders silently overflow.** The numeric backends accumulate the
+  quadrature in linear space and clamp when it overflows, dropping the
+  overflowing contributions rather than raising. Order 150.5 is correct to
+  6e-14 nats; order 300.5 returns 694.234 against an exact 1006.311 — wrong by
+  312 nats, a factor of about 1e135, with no warning. `a = Σ y` for several
+  likelihoods, so the order grows with the sample. *(PR 4b)*
+- **`log=False` raises on the near-integer path.**
+  `numeric_fractionalDeriv_interpolation` binds `result` only inside its array
+  branch, so the scalar path raises `UnboundLocalError`. The `log` argument is
+  supposed to decide the return shape and nothing else. The module is to be
+  retired rather than repaired. *(PR 4b)*
 - **The dispatcher and the backends disagree on what an integer is.**
   `resolve_backend` classifies within `int_tol`; all seven backend sites test
   `order == int(order)`. In the gap the backend takes `n = floor(order)`, so
@@ -469,9 +520,19 @@ where noted as "no runtime repro".
   `tol * max(1.0, |prev|)` with `tol = 1e-6` — an *absolute* test whenever the
   integral is below 1 — and a consecutive-iterate change underestimates the
   remaining tail when convergence is slow. `maxwell-boltzmann` on three
-  observations (`a = 4.5`, `b = 14`) comes out with relative error 6.9e-06.
-  `epsabs`, `epsrel` and `limit` change nothing; `initial_L = 40` alone brings
-  it to 2.4e-15. *(PR 6)*
+  observations (`a = 4.5`, `b = 14`) comes out with **absolute error 3.1e-05
+  in the log** — quote the absolute figure, because two different relative
+  ones are correct and they are easy to confuse: 6.9e-06 against the log
+  evidence (−4.5308) and 2.9e-06 against the log derivative alone (−10.5561).
+  The two differ only in the denominator; `log_c = 6.0253` is exact, so the
+  error is entirely in the derivative and the absolute figure is the one that
+  does not depend on which quantity you divide by.
+
+  `epsabs`, `epsrel` and `limit` change nothing. Two settings do help, neither
+  sufficiently: `initial_L = 40` brings that case to 2.4e-15, and `tol = 1e-9`
+  to 1.0e-15 — but `a = 4.5, t = −30` plateaus at 2.1e-10 under any `tol`.
+  See "Numerical policy" for the measurements and for why the interim `tol`
+  change was deliberately not taken. *(PR 6)*
 - **A posterior from a numeric backend cannot be updated sequentially.**
   `to_prior_object` can only build the updated prior's MGF symbolically; its
   numeric route returns a prior carrying `mgf_backend`/`pdf_backend` and no
@@ -554,6 +615,37 @@ reaching tolerance needs `U ≳ log(1/tol)/γ` — about 55 at `a = 1.5` but 276
 `a = 1.99`. The current `initial_L = 10` with a doubling test cannot get there,
 and `math.exp(u)` overflows above `u = 709` regardless, so `max_L = 1e4` is
 unreachable.
+
+**The `tol` default is the binding constraint before the range is, and a
+tighter one is a partial fix — deliberately deferred, not overlooked.** `tol`
+governs when the `L`-doubling loop stops *widening*, so despite its name it
+controls the truncation range rather than the quadrature precision. Measured
+against the closed-form Gamma reference, relative error at each setting:
+
+| order | `t` | `tol=1e-6` (default) | `tol=1e-9` | `tol=1e-12` |
+|-------|-----|----------------------|------------|-------------|
+| 4.5   | −14 | **2.9e−06**          | 1.0e−15    | 1.0e−15     |
+| 2.5   | −5  | 3.6e−10              | 1.7e−15    | 1.7e−15     |
+| 1.5   | −50 | 1.2e−06              | 5.5e−11    | 9.3e−15     |
+| 4.5   | −30 | 1.5e−06              | 2.8e−10    | **2.1e−10** |
+| 1.5   | −1  | 4.6e−16              | unchanged  | unchanged   |
+| 0.5   | −1  | 7.9e−16              | unchanged  | unchanged   |
+
+So tightening `tol` alone repairs the `a = 4.5, t = −14` case outright and
+improves two others by four to six orders of magnitude, at roughly 2–3× the
+runtime on the calls that need it and no cost elsewhere. **It is not
+sufficient**: `a = 4.5, t = −30` plateaus at 2.1e−10 however tight `tol` goes,
+because the stopping rule compares consecutive iterates and that underestimates
+the remaining tail when convergence is slow. Tightening `tol` makes the loop
+widen for longer; it does not make the rule correct.
+
+The decision (owner's call, taken deliberately) is **not** to ship the `tol`
+change as an interim fix, but to let the fixed-grid kernel supersede it —
+that kernel chooses its range from `γ` directly rather than discovering it by
+doubling, so it removes the stopping rule instead of tuning it. Both cases are
+carried as `xfail(strict=True)` records, parametrised over `t = −14` and
+`t = −30`, so the kernel work cannot claim the easy one and quietly leave the
+other.
 
 **`logminus` is wrong for small gaps.** It implements only the `log1p` branch.
 The standard two-branch form (Mächler 2012, the `Rmpfr` `log1mexp` vignette)
