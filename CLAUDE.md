@@ -405,6 +405,7 @@ number cannot tell a refactor from a regression.
 | `test_registry.py` | registry, prior container, custom-prior route, constructor validation |
 | `test_deferred_construction.py` | `resolve_backend`, the deferred representation, all 14 likelihoods on every backend |
 | `test_batch_evaluation.py` | array evaluation points vs. the closed form, and independence from the caller's warning filter |
+| `test_array_order.py` | array-valued derivative orders: closed form, shape, symbolic `t`, and the parity cases |
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
@@ -458,30 +459,6 @@ Do not build on these paths; do not paper over them. Each has a PR assigned and
 a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
 where noted as "no runtime repro".
 
-- **The order is coerced to an integer in the array path.** `int(o)` in
-  `mgfDerivative`'s array-order branch. The defect is the coercion itself, not
-  the choice of rounding rule: at order 2.5 both `int` and `round` give 2, and
-  the answer is 15% wrong either way. Truncation-versus-rounding is only a
-  sub-case, biting near an integer, where `int(1.9) = 1` but `round(1.9) = 2`.
-  Measured against the closed form at `t = −2`: order 0.5 is 68% wrong,
-  1.5 is 35%, 1.9 is 61%, 2.5 is 15%.
-
-  Which method suffers depends on the **parity** of the sample size, so a test
-  fixture that picks `n` carelessly asserts nothing. For a Normal likelihood
-  the aggregate is `a = n/2` and the per-observation value is `a = 1/2`, so
-  `post_predictive` is wrong for **even** `n` (75% at `n = 2`, exact at
-  `n = 3`) while `post_raw_moment` and `post_central_moment` are wrong for
-  **odd** `n` (17% at `n = 3`, exact at `n = 4`). Every sample size is wrong
-  in one of the two.
-
-  The same block also `float()`s `t`, so an array order with `t=None` raises
-  instead of returning an expression, and flattens the result, losing
-  the order array's shape. Seen through the public API: a halfnormal posterior
-  (`a = 1.5`) asked for raw moments `[0, 1, 2]` in one call returns
-  `[1.903, 0.571, 0.228]`, where the same three one at a time give the correct
-  `[1.0, 0.35, 0.1575]`. The first entry is the 0th raw moment, which is
-  exactly 1 for any distribution, so that one needs no reference at all.
-  *(PR 4b)*
 - **Large orders silently overflow.** The numeric backends accumulate the
   quadrature in linear space and clamp when it overflows, dropping the
   overflowing contributions rather than raising. Order 150.5 is correct to
@@ -568,6 +545,12 @@ model to within `1e-8`. Integer derivatives of the Gamma MGF match the
 analytic formula for orders 0–5, and the `symbolic` and `bell` backends agree.
 The defects above are in dispatch, plumbing and edge handling — not in the
 core mathematics.
+
+**Array-valued derivative orders** now match the closed form to 1e-10 at
+orders 0.5, 1.5, 1.9 and 2.5, preserve the caller's shape, broadcast against an
+array `t`, and return expressions when `t is None`. The public consequence is
+visible without any reference value: the 0th raw moment of a fractional
+posterior is exactly 1, where it used to be 1.903.
 
 **Array evaluation points**, once the batch path stopped zeroing the integrand
 at converged points, agree with the closed form to `1e-12` or better across

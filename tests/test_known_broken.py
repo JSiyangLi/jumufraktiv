@@ -37,59 +37,12 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 # test_deferred_construction.py.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 4: the array-order branch of mgfDerivative coerces each order "
-    "with int(o), silently truncating fractional orders to integers",
-)
-def test_array_order_does_not_truncate_fractional_orders(gamma_prior):
-    """Vectorising over order must agree with looping over scalar orders.
-
-    This path is not hypothetical: ``post_predictive`` always passes an array
-    of orders, so a fractional ``a`` yields a silently wrong predictive.
-    """
-    orders = np.array([1.0, 1.5])
-    batch_log, _ = mgfDerivative(orders, gamma_prior, method="auto", t=-1.0, log=True)
-    scalar_log = [
-        mgfDerivative(float(o), gamma_prior, method="auto", t=-1.0, log=True)[0]
-        for o in orders
-    ]
-
-    assert batch_log == pytest.approx(np.array(scalar_log), rel=1e-8)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR 4b: the array-order truncation above, seen through the public "
-    "API. post_raw_moment passes an array of orders, so every moment of a "
-    "fractional posterior is computed at the wrong order",
-)
-def test_zeroth_raw_moment_of_a_fractional_posterior_is_one(gamma_prior):
-    """The 0th raw moment of any distribution is exactly 1, by definition.
-
-    This needs no reference value and no tolerance argument, which is what
-    makes it the clearest available statement of the defect: `E[Theta^0] = 1`
-    or the object is not a probability distribution.
-
-    Measured on a halfnormal posterior (`a = 1.5`), asking for orders
-    `[0, 1, 2]` in one call returns `[1.903, 0.571, 0.228]`; asking for the
-    same three one at a time returns the correct `[1.0, 0.35, 0.1575]`. The
-    integer case is unaffected -- a Poisson posterior returns
-    `[1.0, 1.333, 2.0]` either way -- so this bites exactly the likelihoods
-    that deferred construction has just made reachable.
-    """
-    post = MGFDerivative(gamma_prior, data=[1.0, 2.0, 3.0], likelihood="halfnormal")
-
-    moments = np.asarray(post.post_raw_moment([0, 1, 2], log=False), dtype=float)
-
-    assert moments[0] == pytest.approx(1.0, rel=1e-10)
-
-
-# The batch-path masking defect (`val[converged] = 0.0` corrupting points that
-# had already converged) is fixed. Its tests now live, unmarked and expanded,
-# in test_batch_evaluation.py -- including one asserting that the result does
-# not depend on the caller's warning filter, which is what this suite's own
-# `filterwarnings = ["error"]` had been hiding.
+# The array-order coercion (`int(o)` turning a fractional order into a whole
+# one, plus the float() coercions of t and u and the flattened reassembly) is
+# fixed. Its two records -- the dispatcher-level one and the public-API one
+# asserting that the 0th raw moment is exactly 1 -- now live, unmarked, in
+# test_array_order.py, along with the sample-size parity coverage that the
+# originals lacked.
 
 
 @pytest.mark.xfail(
