@@ -586,12 +586,21 @@ where noted as "no runtime repro".
   loss happens when float coefficients cancel during evaluation. It is a
   conditioning problem, and it belongs with the other conditioning work rather
   than with the three name-and-substitution defects PR 5 repaired. *(PR 6)*
-- **mpmath below `dps ≈ 30` returns a confident wrong answer.** The
-  range-doubling loop never converges, runs to `max_L`, and returns
-  `log_abs = +1.119329613307` against a closed-form `−1.453832084236` — wrong
-  in sign, 177% wrong in magnitude — announced only by a `print`. It is not
-  faster either (24.7 s at `dps=30` against 24.1 s at `dps=50`), and `dps` is
-  reachable from the constructor through `DERIVATIVE_KWARGS`. *(PR 6)*
+- **`dps` above about 15 buys the mpmath backend nothing**, because the
+  integrand it evaluates is float64. `mgfDerivative_integer` returns
+  `(log_abs, sign)` as NumPy floats, so the mpmath backend integrates a
+  float-precision function at arbitrary precision: the quadrature is exact to
+  `dps` digits, but of a function known only to 16. Measured after the range
+  fix, relative error against the closed form does not improve monotonically
+  with `dps` — 2.6e-10 at 15, 2.6e-12 at 20, 2.8e-10 at 30, 1.7e-10 at 50,
+  2.6e-13 at 80 — it bounces around a floor set by the integrand rather than
+  by the quadrature.
+
+  This is newly recorded, and it is a design limitation rather than a bug: the
+  backend's advertised reason to exist is precision it cannot currently
+  deliver. Repairing it means giving the integer-derivative layer an mpmath
+  path, which is a larger change than this PR. *(unassigned — needs an owner
+  decision on whether the mpmath backend is worth that)*
 - **Two functions in `gammaMGF.py` misuse `logminus`** as "log minus" — a
   difference of logs — rather than "log of a difference", making `gamma_cgf`
   and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
