@@ -423,6 +423,7 @@ class MGFDerivative:
             self.method,
             self._deriv_kwargs.get("integer_method", "symbolic"),
             self._deriv_kwargs.get("int_tol", 1e-12),
+            prior=self.prior,
         )
 
         if resolved_method == "symbolic":
