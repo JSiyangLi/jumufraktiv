@@ -52,8 +52,12 @@ def _prior(name):
 @pytest.mark.parametrize(
     "t_values",
     [
+        # Kept in the quick pass: this fixture detects the defect at orders
+        # 1.9 and 2.5, so the fast path retains real coverage of it.
         np.array([-0.1, -1.0, -30.0]),
-        np.array([-1.0, -2.0, -4.0, -8.0, -16.0]),
+        # Five points cost about 31 s of the eight parametrisations. It is the
+        # most sensitive fixture and is kept, but only for the full run.
+        pytest.param(np.array([-1.0, -2.0, -4.0, -8.0, -16.0]), marks=pytest.mark.slow),
     ],
     ids=["spread-three", "five-points"],
 )
