@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from conftest import gamma_mgf_derivative_log
 
-from jumufraktiv.derivativeDispatch import mgfDerivative
+from jumufraktiv.derivativeDispatch import mgfDerivative, mgfDerivative_fractional
 
 #: Cases the previous kernel got wrong, with its measured relative error.
 #: Keeping the old figure next to each case is what makes the improvement
@@ -68,6 +68,37 @@ def test_cases_the_old_kernel_got_wrong(order, t, previous_error):
 def test_cases_the_old_kernel_got_right_are_unchanged(order):
     """Replacing a kernel must not cost accuracy anywhere it was already fine."""
     assert _relative_error(order, -1.0) < 1e-12
+
+
+@pytest.mark.parametrize("order,t,previous_error", PREVIOUSLY_WRONG)
+@pytest.mark.slow
+def test_both_public_entry_points_use_this_kernel(order, t, previous_error):
+    """`mgfDerivative` and `mgfDerivative_fractional` must give the same answer.
+
+    Both are exported from the package root, both take a `method` argument,
+    and for `method="scipy"` they are two doors onto one question. Until PR 8
+    they were two doors onto two *kernels*: PR 6b moved `mgfDerivative` to the
+    fixed grid and left `mgfDerivative_fractional` calling the adaptive scheme
+    the grid replaced. Every error in `PREVIOUSLY_WRONG` was therefore still
+    reachable -- not as history, but as the answer the second door returned.
+
+    Asserting agreement rather than a tolerance is deliberate. A tolerance
+    would be satisfied by two kernels that are each independently accurate
+    enough; what needs to be true is that there is only one kernel.
+    """
+    prior = _prior()
+    exact = gamma_mgf_derivative_log(order, t)
+
+    log_a, sign_a = mgfDerivative(order, prior, method="scipy", t=t, log=True)
+    log_b, sign_b = mgfDerivative_fractional(order, prior, method="scipy", t=t, log=True)
+
+    a = float(np.ravel(log_a)[0])
+    b = float(np.ravel(log_b)[0])
+
+    assert int(np.ravel(sign_a)[0]) == int(np.ravel(sign_b)[0]) == 1
+    assert a == pytest.approx(b, rel=1e-15, abs=1e-15)
+    # And the answer they agree on is the right one, not merely a shared one.
+    assert abs(b - exact) / abs(exact) < 1e-12
 
 
 @pytest.mark.parametrize("order", [150.5, 300.5, 500.5])

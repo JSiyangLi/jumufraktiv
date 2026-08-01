@@ -351,7 +351,8 @@ def mgfDerivative_fractional(
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend:
-        - `'scipy'`: uses `scipy.integrate.quad` (adaptive) with fallback.
+        - `'scipy'`: uses the fixed-grid kernel in
+          `numeric_fractionalDeriv_grid`.
         - `'mpmath'`: uses `mpmath.quad` (high precision).
         - `'symbolic'`: returns a symbolic expression (may be slow).
     t : float or array-like, optional
@@ -374,8 +375,7 @@ def mgfDerivative_fractional(
         If array‑like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
-        For `'scipy'`: `epsabs`, `epsrel`, `limit`, `initial_L`, `max_L`, `tol`,
-        `use_tan`.
+        For `'scipy'`: `tol`.
         For `'mpmath'`: `dps`, `tol`, `use_tan`.
         For `'symbolic'`: `timeout_seconds`.
 
@@ -393,8 +393,9 @@ def mgfDerivative_fractional(
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - For the symbolic path, when `t` is an array, each element is evaluated
       individually using `.subs().evalf()` to preserve accuracy (mpmath).
-    - The `scipy` backend uses an adaptive quadrature with range expansion;
-      the `mpmath` backend uses `tanh-sinh` quadrature with arbitrary precision.
+    - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
+      substitution, with the range derived from `gamma = floor(order)+1-order`;
+      the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
 
     Examples
     --------
@@ -520,17 +521,23 @@ def mgfDerivative_fractional(
 
     # ---- scipy ----
     if method.lower() == "scipy":
-        from jumufraktiv.numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
-        return fractionalDeriv_numeric_scipy(
+        # The same fixed-grid kernel `mgfDerivative` uses. Until PR 8 these two
+        # entry points reached *different* implementations: `mgfDerivative`
+        # was moved onto the grid kernel by PR 6b while this one was left on
+        # the adaptive scheme the grid kernel replaced, so the answer depended
+        # on which public function the caller happened to reach for.
+        from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+
+        grid_keys = {"tol"}
+        return fractionalDeriv_grid(
             order=order,
             prior=prior,
-            t=t,
-            method=integerDeriv_method,
-            simplify=simplify,
-            return_log=log,
+            t_points=t,
+            u_points=u,
             complete=complete,
-            u=u,
-            **kwargs
+            integer_method=integerDeriv_method,
+            log=log,
+            **{k: v for k, v in kwargs.items() if k in grid_keys},
         )
 
     # ---- mpmath ----

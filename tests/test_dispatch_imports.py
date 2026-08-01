@@ -20,8 +20,9 @@ from jumufraktiv.derivativeDispatch import mgfDerivative
 #: Modules the dispatcher imports lazily, by fully qualified name.
 LAZY_BACKENDS = [
     "jumufraktiv.symbolic_fractionalDeriv",
-    "jumufraktiv.numeric_fractionalDeriv_scipy",
+    "jumufraktiv.numeric_fractionalDeriv_grid",
     "jumufraktiv.numeric_fractionalDeriv_mpmath",
+    "jumufraktiv.numeric_expectation",
 ]
 
 

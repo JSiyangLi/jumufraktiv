@@ -94,15 +94,23 @@ LIKELIHOOD_REGISTRY = {
 #: :func:`~jumufraktiv.derivativeDispatch.mgfDerivative` and, through it, to the
 #: selected backend. Kept explicit rather than inferred, because the backends
 #: terminate in ``**kwargs`` and so cannot be introspected reliably.
+#: Every name here is consumed by some backend. That is a property worth
+#: stating, because the set had drifted: `use_interpolation` and `d_vec` tuned
+#: the near-integer interpolation module PR 6b deleted, and `epsabs`, `epsrel`,
+#: `limit`, `initial_L` and `max_L` tuned the adaptive quadrature PR 8 deleted.
+#: Seven names the constructor accepted therefore reached no code at all -- the
+#: caller who set `initial_L` to widen the truncation range got the default,
+#: silently, which is the same failure mode as rejecting the option except
+#: harder to notice.
 DERIVATIVE_KWARGS = frozenset({
     # mgfDerivative's own named parameters that a caller may reasonably set
-    "integer_method", "use_interpolation", "d_vec", "int_tol",
+    "integer_method", "int_tol",
     # popped from **kwargs inside mgfDerivative
     "cgf_method", "symbolic_timeout",
-    # scipy backend
-    "epsabs", "epsrel", "limit", "initial_L", "max_L", "tol", "use_tan",
+    # fixed-grid fractional kernel
+    "tol",
     # mpmath backend
-    "dps",
+    "dps", "use_tan",
 })
 
 #: Arguments this class supplies to ``mgfDerivative`` itself. A caller must not
