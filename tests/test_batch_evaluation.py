@@ -310,3 +310,83 @@ def test_every_prior_density_accepts_an_array(prior_name=None):
             assert values.shape == thetas.shape, (
                 f"{name}.{func_name} did not return one value per theta"
             )
+
+
+# ==========================================================================
+# A caller-supplied density may be written for scalars
+# ==========================================================================
+# The registry's four priors all take arrays. A density a caller writes need
+# not, and the batched integrand hands it a vector. Deciding what to do about
+# that per call site produced two failure modes, both measured:
+#
+#   * the answer depended on the batch size -- a Python-conditional density
+#     returned 0.28379634 for one evaluation point and raised ValueError for
+#     three, because a one-element array happens to satisfy `if`;
+#   * a real failure became a plausible number -- a `math`-module density
+#     returned -inf where its vectorised twin returns -1.4481850809269488,
+#     because the per-call fallback caught the TypeError and substituted -inf.
+#
+# `_vectorise` settles it once, at setup, by probing. These tests pin both
+# halves: the same density written three ways must give the same answer, and a
+# density that is genuinely broken must raise rather than become a number.
+
+
+def _custom_prior(logpdf):
+    import sympy as sp
+
+    from jumufraktiv.symbols import theta
+
+    return mitMGFprior(
+        name="custom",
+        pdf_sym=sp.exp(-theta),
+        logpdf_func=logpdf,
+        pdf_func=lambda x: np.exp(logpdf(x)),
+        params={},
+    )
+
+
+#: One density -- log p(theta) = -theta on theta > 0 -- written three ways.
+#: Only the first accepts an array of any length.
+DENSITY_WRITINGS = {
+    "vectorised": lambda x: -np.asarray(x, dtype=float),
+    "python-conditional": lambda x: -float(x) if x >= 0.0 else -np.inf,
+    "math-module-scalar": lambda x: -float(x),
+}
+
+
+@pytest.mark.parametrize("writing", sorted(DENSITY_WRITINGS))
+@pytest.mark.parametrize("n_points", [1, 3])
+def test_a_scalar_only_density_gives_the_same_answer(writing, n_points):
+    """Same density, same answer -- whichever way it is written, however many
+    points are asked for."""
+    from jumufraktiv.numeric_expectation import expectationDeriv
+
+    points = np.linspace(-1.0, -3.0, n_points)
+    reference = np.ravel(
+        expectationDeriv(
+            1.5, _custom_prior(DENSITY_WRITINGS["vectorised"]), t=points, log=True
+        )[0]
+    )
+    got = np.ravel(
+        expectationDeriv(
+            1.5, _custom_prior(DENSITY_WRITINGS[writing]), t=points, log=True
+        )[0]
+    )
+
+    assert got == pytest.approx(reference, rel=1e-12, abs=1e-12)
+
+
+def test_a_broken_density_raises_rather_than_returning_minus_infinity():
+    """The failure mode that matters most, because -inf reads as an answer.
+
+    `-inf` is what the route returns when the integrand genuinely has no mass,
+    so a density that fails and is reported as `-inf` is indistinguishable from
+    one that worked. The caller's own exception must survive.
+    """
+    from jumufraktiv.numeric_expectation import expectationDeriv
+
+    def broken(theta):
+        raise RuntimeError("the caller's density has a bug")
+
+    with pytest.raises(RuntimeError, match="has a bug"):
+        expectationDeriv(1.5, _custom_prior(broken), t=-1.0, log=True)

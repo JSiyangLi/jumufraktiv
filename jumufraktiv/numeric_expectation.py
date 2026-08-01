@@ -70,10 +70,15 @@ def expectation_is_available(prior) -> bool:
 
 
 def _log_density(prior):
-    """Return a callable giving ``log p(theta)``, preferring the log form."""
+    """Return a callable giving ``log p(theta)``, preferring the log form.
+
+    The result is guaranteed to accept an array of ``theta`` and return one
+    value per element -- see :func:`_vectorise`, which every caller goes
+    through. Downstream code may assume that without checking.
+    """
     log_pdf = getattr(prior, "logpdf_func", None)
     if log_pdf is not None:
-        return lambda theta: np.asarray(log_pdf(theta), dtype=float)
+        return _vectorise(lambda theta: np.asarray(log_pdf(theta), dtype=float))
 
     pdf = prior.pdf_func
 
@@ -81,7 +86,56 @@ def _log_density(prior):
         with np.errstate(divide="ignore"):
             return np.log(np.asarray(pdf(theta), dtype=float))
 
-    return from_pdf
+    return _vectorise(from_pdf)
+
+
+def _vectorise(density):
+    """Return ``density`` if it takes an array, else an elementwise adapter.
+
+    Decided **once**, by probing with a two-element array, rather than guarded
+    at each call site. That matters for more than tidiness.
+
+    The registry's priors all take arrays. A caller-supplied one need not: a
+    density written as ``0.0 if theta >= k else -inf`` accepts a one-element
+    array and raises on anything longer, and one written with ``math`` accepts
+    no array at all. Handling that per call site produced two failure modes,
+    both measured on the Gamma-style prior below:
+
+    * **The answer depended on the batch size.** A Python-conditional density
+      returned ``0.28379634`` for one evaluation point and raised
+      ``ValueError`` for three, because a one-element array happens to satisfy
+      ``if``.
+    * **A real failure became a plausible number.** A genuinely scalar-only
+      density returned ``-inf`` where its vectorised twin returns
+      ``-1.4481850809269488``, because the per-call fallback caught the
+      ``TypeError`` and substituted ``-inf`` -- turning "this density cannot be
+      called that way" into "the integrand has no mass here".
+
+    Probing once removes both: the adapter is chosen before any evaluation, so
+    every point sees the same function, and a density that works under neither
+    calling convention raises **the caller's own exception** instead of being
+    converted into a number.
+    """
+    probe = np.array([1.0, 2.0])
+    try:
+        probed = np.asarray(density(probe), dtype=float)
+        if probed.shape == probe.shape:
+            return density
+    except (ValueError, TypeError, FloatingPointError, ZeroDivisionError):
+        # Not a failure: the answer to "does this take an array?" is no.
+        pass
+
+    def elementwise(theta):
+        values = np.asarray(theta, dtype=float)
+        flat = [float(np.ravel(density(float(x)))[0]) for x in values.ravel()]
+        return np.asarray(flat, dtype=float).reshape(values.shape)
+
+    # Confirm the adapter works before promising that it does. If the density
+    # cannot be called elementwise either, this raises the caller's exception,
+    # which is the honest outcome -- and it happens once, at setup, rather than
+    # from inside a quadrature where the traceback says nothing useful.
+    elementwise(probe)
+    return elementwise
 
 
 def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
@@ -109,29 +163,18 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
 
         `log_integrand` is elementwise in theta, so the 121-point scan below
         and the two bisections are each one call rather than one call per
-        point. That is 241 calls saved per evaluation point, and each of those
-        calls reaches the prior's density.
+        point -- 241 calls saved per evaluation point, each of which reaches
+        the prior's density.
 
-        The elementwise fallback exists because a prior may carry a
-        caller-supplied density that only accepts scalars. The three exception
-        types are the ones the elementwise version already caught; a genuine
-        failure of a vectorised density still surfaces, because the fallback
-        re-raises nothing and simply recomputes the same values one at a time.
+        There is deliberately no exception handling here. The density arrives
+        already able to take an array, because :func:`_vectorise` settled that
+        once at setup; a density that can be called neither way raised there.
+        Catching here as well would put back exactly what that removed -- a
+        failure quietly becoming ``-inf``, which reads as "no mass at this
+        theta" rather than "this call did not work".
         """
-        thetas = np.asarray(thetas, dtype=float)
-        try:
-            out = np.asarray(log_integrand(thetas, t_value), dtype=float)
-        except (ValueError, FloatingPointError, ZeroDivisionError, TypeError):
-            out = np.array([_value_at_scalar(x) for x in thetas.ravel()])
-            out = out.reshape(thetas.shape)
+        out = np.asarray(log_integrand(np.asarray(thetas, dtype=float), t_value))
         return np.where(np.isfinite(out), out, -np.inf)
-
-    def _value_at_scalar(theta):
-        try:
-            out = float(np.ravel(log_integrand(np.array([theta]), t_value))[0])
-        except (ValueError, FloatingPointError, ZeroDivisionError, TypeError):
-            return -np.inf
-        return out if math.isfinite(out) else -np.inf
 
     # Find any point with mass, scanning geometrically.
     grid = np.geomspace(lower_hint, upper_hint, 121)
