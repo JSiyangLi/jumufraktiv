@@ -411,18 +411,70 @@ def test_options_the_chosen_route_cannot_read_are_announced(gamma_prior):
         mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-12)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 12: the log principle says the log argument alone decides the "
-    "return shape, but post_raw_moment returns a bare scalar while "
-    "post_central_moment returns (log_abs, sign) for the same log=True",
-)
-def test_moment_methods_share_a_return_convention(poisson_posterior):
-    raw = poisson_posterior.post_raw_moment(2)
-    central = poisson_posterior.post_central_moment(2)
+def test_a_pair_is_returned_exactly_where_the_quantity_can_be_negative(
+    poisson_posterior,
+):
+    """The rule PR 12 settled: `(log_abs, sign)` iff the quantity is signed.
 
-    assert type(raw) is type(central)
+    Every quantity here is non-negative by construction except a central moment
+    of odd order. `Theta > 0`, so `D^a M(t) = E[Theta^a e^{t Theta}] > 0`, and
+    an evidence, density, CDF, MGF, predictive or raw moment built from it is
+    positive too. A negative value in any of those is a numerical failure, not
+    a signed answer, and the package raises rather than returning a flag.
+
+    Asserted together rather than method by method, because the property is
+    that they agree on a rule -- the previous state had `evidence` and
+    `post_central_moment` returning pairs for two entirely different reasons,
+    one of them being no reason at all.
+    """
+    unsigned = {
+        "evidence": poisson_posterior.evidence(),
+        "post_density": poisson_posterior.post_density(1.0),
+        "post_cdf": poisson_posterior.post_cdf(1.0),
+        "post_mgf": poisson_posterior.post_mgf(-1.0),
+        "post_predictive": poisson_posterior.post_predictive([2.0]),
+        "post_raw_moment": poisson_posterior.post_raw_moment(2),
+    }
+    for name, value in unsigned.items():
+        assert not isinstance(value, tuple), f"{name} returned a pair"
+        assert np.isfinite(float(value)), f"{name} was not a finite log"
+
+    log_abs, sign = poisson_posterior.post_central_moment(2)
+    assert np.isfinite(log_abs)
+    assert sign in (-1, 1)
+
+
+def test_the_signed_moment_really_can_be_negative():
+    """The one case that justifies the pair, so it is not kept out of symmetry.
+
+    A Uniform(0.5, 2) prior with Poisson counts pushes the posterior against
+    the upper endpoint, which makes it left-skewed: `mu_3 = -0.0219`. Under a
+    Gamma prior the same moment is `+0.0741`.
+    """
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    uniform = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+    post = MGFDerivative(uniform, data=[1, 2, 3], likelihood="poisson", scale=1.0)
+
+    log_abs, sign = post.post_central_moment(3)
+
+    assert sign == -1
+    assert -float(np.exp(log_abs)) == pytest.approx(-0.0219, abs=1e-3)
+
+
+def test_a_negative_evidence_raises_rather_than_returning_a_sign(gamma_prior):
+    """Dropping the sign must not mean dropping the check that used it.
+
+    `_store_result` refuses a negative derivative at `t = -b`. That refusal is
+    what makes the sign redundant, so it is asserted here rather than left
+    implied by the absence of a return value.
+    """
+    from jumufraktiv.MGFDerivative_class import MGFDerivative as _MGFDerivative
+
+    post = _MGFDerivative(gamma_prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
+
+    with pytest.raises(ValueError, match="negative"):
+        post._store_result((0.5, -1))
 
 
 def test_post_sample_is_reproducible(poisson_posterior):

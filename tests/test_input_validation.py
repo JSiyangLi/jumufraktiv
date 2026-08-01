@@ -181,7 +181,7 @@ class TestMomentDomain:
         prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
         post = MGFDerivative(prior, data=[0.1], likelihood="pareto", scale=0.1)
 
-        assert np.isfinite(post.evidence()[0])
+        assert np.isfinite(post.evidence())
 
     @pytest.mark.parametrize("order", [1, 2, 3])
     def test_a_prior_with_all_moments_is_unaffected_at_the_origin(
@@ -196,7 +196,7 @@ class TestMomentDomain:
             gamma_prior, data=[0.1] * order, likelihood="pareto", scale=0.1
         )
 
-        assert np.isfinite(post.evidence()[0])
+        assert np.isfinite(post.evidence())
 
     @pytest.mark.parametrize("prior_name", ["pareto", "heaviside"])
     def test_restricted_priors_are_unaffected_away_from_the_origin(self, prior_name):
@@ -211,7 +211,7 @@ class TestMomentDomain:
         post = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
 
         assert post.b > 0
-        assert np.isfinite(post.evidence()[0])
+        assert np.isfinite(post.evidence())
 
     def test_improper_prior_is_rejected_at_every_order_at_the_origin(self):
         """The heaviside prior is improper: not even E[Theta^0] is finite."""

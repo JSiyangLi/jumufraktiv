@@ -226,4 +226,4 @@ def test_every_likelihood_still_reaches_the_jax_slots(gamma_prior, name):
     """
     post = _posterior(gamma_prior, name)
 
-    assert np.isfinite(post.evidence()[0])
+    assert np.isfinite(post.evidence())

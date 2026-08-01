@@ -348,8 +348,8 @@ class MGFDerivative:
     >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
     >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
     >>> deriv = MGFDerivative(gamma_prior, data=[1.0, 2.0], likelihood='poisson', scale=1.0)
-    >>> log_ev, sign = deriv.evidence()
-    >>> print(log_ev)
+    >>> log_evidence = deriv.evidence()
+    >>> print(log_evidence)
     """
     def __init__(
         self,
@@ -707,15 +707,14 @@ class MGFDerivative:
 
         Returns
         -------
-        sympy.Expr or tuple or float
-            - If the posterior is symbolic (`self._is_symbolic is True`):
-                Returns a SymPy expression for the evidence.
-            - If the posterior is numeric:
-                - If `self.log is True`: returns a tuple `(log_abs, sign)` where
-                `log_abs` is the natural logarithm of the absolute evidence,
-                and `sign` is the sign (±1) of the evidence.
-                - If `self.log is False`: returns the ordinary float value of the
-                evidence.
+        sympy.Expr or float
+            A SymPy expression if the posterior is symbolic; otherwise
+            `log p(y)` when `self.log` is True and `p(y)` when it is False.
+
+        Raises
+        ------
+        ValueError
+            At construction, if the derivative at `t = -b` came out negative.
 
         Notes
         -----
@@ -724,10 +723,21 @@ class MGFDerivative:
         where `c_func` is the likelihood's normalising constant and the
         derivative is evaluated at the posterior mode location `t = -b`.
 
+        No sign accompanies the logarithm, because the evidence cannot be
+        negative: `p(y) = c(y) D^a M(-b)`, `c(y) > 0`, and
+        `D^a M(t) = E[Theta^a e^{t Theta}] > 0` for positive `Theta`. A negative
+        value therefore means the computation failed rather than that the
+        quantity is signed, and the constructor rejects it outright rather than
+        returning a flag for the caller to notice.
+
+        `post_central_moment` is the one method here that does return
+        `(log_abs, sign)`, because an odd central moment genuinely can be
+        negative.
+
         Examples
         --------
-        >>> evidence_log, sign = deriv.evidence()
-        >>> print(f"log evidence = {evidence_log:.4f}, sign = {sign}")
+        >>> log_evidence = deriv.evidence()
+        >>> print(f"log evidence = {log_evidence:.4f}")
         """
 
         if self._is_symbolic:
@@ -750,7 +760,7 @@ class MGFDerivative:
             return sp.exp(self.log_c) * self._result_expr
 
         if self.log:
-            return self.log_c + self.log_abs, self._sign
+            return self.log_c + self.log_abs
 
         return np.exp(self.log_c) * self.value
 
@@ -2365,7 +2375,7 @@ class MGFDerivative:
         >>> # Sequential update: add two new observations
         >>> deriv2 = deriv.update(new_data=[5, 7], likelihood='poisson', scale=1.0)
         >>> # Check the updated evidence
-        >>> log_ev, sign = deriv2.evidence()
+        >>> log_evidence = deriv2.evidence()
         """
         # Extract known arguments
         method = kwargs.pop("method", self.method)

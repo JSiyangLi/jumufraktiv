@@ -244,12 +244,11 @@ def test_symbolic_and_numeric_evidence_agree(symbolic_prior):
     symbolic = _numbers(_posterior(symbolic_prior).evidence())
 
     numeric_prior = Prior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
-    log_abs, sign = MGFDerivative(
+    log_abs = MGFDerivative(
         numeric_prior,
         data=POISSON_DATA,
         likelihood="poisson",
         scale=POISSON_SCALE,
     ).evidence()
 
-    assert sign == 1
     assert symbolic == pytest.approx(float(np.exp(log_abs)), rel=1e-10)

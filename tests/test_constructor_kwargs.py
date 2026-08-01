@@ -79,10 +79,10 @@ def test_likelihood_parameter_reaches_the_likelihood(gamma_prior):
     """A correctly spelled parameter must change the answer."""
     default = MGFDerivative(
         gamma_prior, data=POISSON_DATA, likelihood="poisson"
-    ).evidence()[0]
+    ).evidence()
     scaled = MGFDerivative(
         gamma_prior, data=POISSON_DATA, likelihood="poisson", scale=2.0
-    ).evidence()[0]
+    ).evidence()
 
     assert default != pytest.approx(scaled)
     assert scaled == pytest.approx(
@@ -107,7 +107,7 @@ def test_derivative_options_are_accepted(gamma_prior, option):
             gamma_prior, data=POISSON_DATA, likelihood="poisson", scale=1.0, **option
         )
 
-    assert post.evidence()[0] == pytest.approx(
+    assert post.evidence() == pytest.approx(
         poisson_log_evidence(POISSON_DATA), rel=1e-8
     )
 
@@ -115,7 +115,7 @@ def test_derivative_options_are_accepted(gamma_prior, option):
 def test_no_extra_kwargs_is_fine(gamma_prior):
     post = MGFDerivative(gamma_prior, data=POISSON_DATA, likelihood="poisson")
 
-    assert post.evidence()[0] == pytest.approx(
+    assert post.evidence() == pytest.approx(
         poisson_log_evidence(POISSON_DATA), rel=1e-10
     )
 

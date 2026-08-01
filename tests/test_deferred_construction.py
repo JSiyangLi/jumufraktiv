@@ -247,7 +247,7 @@ class TestConstruction:
         post = _build(name)
         expected = post.log_c + gamma_mgf_derivative_log(post.a, -post.b)
 
-        assert post.evidence()[0] == pytest.approx(expected, rel=1e-8)
+        assert post.evidence() == pytest.approx(expected, rel=1e-8)
 
     @pytest.mark.parametrize("method", ["auto", "symbolic", "bell", "jax"])
     def test_every_integer_backend_is_reachable_through_the_class(self, method):
@@ -258,7 +258,7 @@ class TestConstruction:
         """
         post = _build("poisson", method=method)
 
-        assert post.evidence()[0] == pytest.approx(-6.0965964652, rel=1e-8)
+        assert post.evidence() == pytest.approx(-6.0965964652, rel=1e-8)
 
     @pytest.mark.parametrize(
         "method",
@@ -276,7 +276,7 @@ class TestConstruction:
         """`bell`/`jax` here exercise the reinterpretation path end to end."""
         post = _build("halfnormal", method=method)
 
-        assert post.evidence()[0] == pytest.approx(-5.338223705, rel=1e-8)
+        assert post.evidence() == pytest.approx(-5.338223705, rel=1e-8)
 
 
 # ==========================================================================
@@ -310,7 +310,7 @@ class TestDeferral:
         """
         post = _build("halfnormal", tol=1e-12)
 
-        assert np.isfinite(post.evidence()[0])
+        assert np.isfinite(post.evidence())
 
     def test_deferred_thunk_respects_the_log_argument(self):
         """`_build_derivative` hardcoded `log=False`, which `_store_result` rejects.
@@ -319,11 +319,13 @@ class TestDeferral:
         and raises `TypeError` otherwise, so a thunk built with a fixed
         `log=False` fails for every construction in the default configuration.
         """
-        assert isinstance(_build("halfnormal", log=True).evidence(), tuple)
+        logged = _build("halfnormal", log=True)
+        assert logged.log_abs is not None and logged.value is None
+        assert np.isfinite(float(logged.evidence()))
 
-        value = _build("halfnormal", log=False).evidence()
-        assert not isinstance(value, tuple)
-        assert np.isfinite(float(value))
+        plain = _build("halfnormal", log=False)
+        assert plain.value is not None and plain.log_abs is None
+        assert np.isfinite(float(plain.evidence()))
 
     @pytest.mark.parametrize("spelling", ["symbolic", "SYMBOLIC", "Symbolic"])
     def test_casing_does_not_change_the_representation(self, spelling):
@@ -414,8 +416,8 @@ class TestDeferral:
             gamma_prior_spec(), data=[1.0, 2.0, 3.0, 1.0], likelihood="halfnormal"
         )
 
-        assert post.evidence()[0] + updated.evidence()[0] == pytest.approx(
-            one_shot.evidence()[0], rel=1e-8
+        assert post.evidence() + updated.evidence() == pytest.approx(
+            one_shot.evidence(), rel=1e-8
         )
 
 
@@ -440,8 +442,8 @@ class TestUpdateGuard:
             gamma_prior_spec(), data=[1, 2, 3, 4], likelihood="poisson", scale=1.0
         )
 
-        assert staged.evidence()[0] + updated.evidence()[0] == pytest.approx(
-            one_shot.evidence()[0], rel=1e-8
+        assert staged.evidence() + updated.evidence() == pytest.approx(
+            one_shot.evidence(), rel=1e-8
         )
 
     @pytest.mark.parametrize(
@@ -549,7 +551,7 @@ class TestAutoUsesTheExpectationRoute:
         )
         expected = self._uniform_oracle(float(post.a), -float(post.b))
 
-        assert post.evidence()[0] - post.log_c == pytest.approx(expected, rel=1e-12)
+        assert post.evidence() - post.log_c == pytest.approx(expected, rel=1e-12)
 
     def test_an_explicit_backend_is_never_diverted(self):
         """`method="symbolic"` must be honoured as asked, warts and all.
@@ -567,7 +569,7 @@ class TestAutoUsesTheExpectationRoute:
         )
         expected = self._uniform_oracle(float(post.a), -float(post.b))
 
-        assert post.evidence()[0] - post.log_c != pytest.approx(expected, rel=1e-12)
+        assert post.evidence() - post.log_c != pytest.approx(expected, rel=1e-12)
 
     def test_the_symbolic_representation_survives_the_diversion(self, gamma_prior):
         """Routing numerically must not cost the expression the class holds.
