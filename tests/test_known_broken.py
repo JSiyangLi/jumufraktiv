@@ -209,26 +209,18 @@ def test_pareto_symbolic_incomplete_mgf_is_correct():
 # because PR 12 owns the interface decisions behind them.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    # The test fails by *not* raising, which pytest reports as its own
-    # `Failed`, not as the TypeError the body asks for.
-    raises=pytest.fail.Exception,
-    reason="PR 12: post_predictive merges **kwargs straight into the "
-    "likelihood's own **kwargs with no validation, so a misspelled parameter "
-    "is swallowed and the default silently used",
-)
 def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
-    """The constructor catches this typo; the method one call away does not.
+    """The constructor catches this typo, and now so does the method.
 
     `MGFDerivative(..., likelihood="weibull", rh=2.0)` raises with "did you
-    mean 'rho'?". `post.post_predictive([2.0], rh=9.0)` returns
+    mean 'rho'?". `post.post_predictive([2.0], rh=9.0)` used to return
     -1.1053356325054668 -- exactly the value for the default -- where
-    `rho=9.0` gives -14.108023936618837. A typo costs 13.003 nats, silently.
+    `rho=9.0` gives -14.108023936618833. A typo cost 13.003 nats, silently.
 
     PR 12a fixed the neighbouring half of this: `post_predictive` used to
     ignore the parameters stored at construction. The forwarding was repaired
-    in `_likelihood_arguments`; the validation was not.
+    in `_likelihood_arguments`; PR 12 added the validation to the same place,
+    so both predictive paths are covered by one check.
     """
     post = MGFDerivative(
         gamma_prior, data=[1.0, 2.0, 3.0], likelihood="weibull", rho=2.0
@@ -236,6 +228,13 @@ def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
 
     with pytest.raises(TypeError, match="rh"):
         post.post_predictive([2.0], rh=9.0)
+
+    # The cost of not raising, so the record carries the size of the defect
+    # rather than only its shape.
+    assert post.post_predictive([2.0]) == pytest.approx(-1.1053356325054668)
+    assert post.post_predictive([2.0], rho=9.0) == pytest.approx(
+        -14.108023936618833
+    )
 
 
 @pytest.mark.xfail(

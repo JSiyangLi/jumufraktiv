@@ -30,6 +30,7 @@ predictive evaluation).
 """
 
 import difflib
+import functools
 import inspect
 import math
 import warnings
@@ -136,12 +137,18 @@ _RESERVED_DERIVATIVE_KWARGS = frozenset({
 })
 
 
+@functools.lru_cache(maxsize=None)
 def _likelihood_kwargs(ready_func) -> frozenset:
     """Return the keyword arguments a likelihood's ``ready`` function accepts.
 
     Derived from the function's signature rather than a hardcoded list, so it
     cannot drift out of step with the likelihood modules, and so each likelihood
     is checked against *its own* parameters instead of the union of everyone's.
+
+    Memoised on the function object. There are fourteen of them and they never
+    change, so the cache is bounded by the registry; it exists because
+    ``_likelihood_arguments`` now consults this on every predictive evaluation,
+    where ``inspect.signature`` would be a per-call cost on a hot path.
 
     Parameters
     ----------
@@ -207,29 +214,56 @@ def _split_kwargs(kwargs, ready_func, likelihood):
 
     unknown = set(kwargs) - accepted - DERIVATIVE_KWARGS
     if unknown:
-        raise TypeError(_unknown_kwargs_message(unknown, accepted, likelihood))
+        raise TypeError(
+            _unknown_kwargs_message(unknown, accepted, likelihood, "MGFDerivative")
+        )
 
     return likelihood_kwargs, derivative_kwargs
 
 
-def _unknown_kwargs_message(unknown, accepted, likelihood):
-    """Build an actionable message for unrecognised keyword arguments."""
+def _unknown_kwargs_message(
+    unknown, accepted, likelihood, caller, derivative_options=DERIVATIVE_KWARGS
+):
+    """Build an actionable message for unrecognised keyword arguments.
+
+    Parameters
+    ----------
+    unknown : set of str
+        The names that matched nothing.
+    accepted : frozenset of str
+        The chosen likelihood's own parameters.
+    likelihood : str
+        Name of the chosen likelihood, quoted in the message.
+    caller : str
+        What to name as the thing that was called. The constructor and
+        ``post_predictive`` both reach this, and a message naming the wrong one
+        sends the reader to the wrong line.
+    derivative_options : frozenset of str, optional
+        Options the *derivative layer* accepts, if this caller forwards to it.
+        Pass an empty set for an entry point that forwards only to the
+        likelihood, so the message neither lists nor suggests a name the caller
+        cannot use.
+    """
+    candidates = sorted(accepted | derivative_options)
+
     lines = []
     for name in sorted(unknown):
-        suggestions = difflib.get_close_matches(
-            name, sorted(accepted | DERIVATIVE_KWARGS), n=1, cutoff=0.7
-        )
+        suggestions = difflib.get_close_matches(name, candidates, n=1, cutoff=0.7)
         if suggestions:
             lines.append(f"'{name}' (did you mean '{suggestions[0]}'?)")
         else:
             lines.append(f"'{name}'")
 
     accepted_text = ", ".join(sorted(accepted)) if accepted else "none"
-    return (
-        f"Unexpected keyword argument(s) for MGFDerivative: {', '.join(lines)}. "
-        f"The '{likelihood}' likelihood accepts: {accepted_text}. "
-        f"Derivative options are: {', '.join(sorted(DERIVATIVE_KWARGS))}."
+    message = (
+        f"Unexpected keyword argument(s) for {caller}: {', '.join(lines)}. "
+        f"The '{likelihood}' likelihood accepts: {accepted_text}."
     )
+    if derivative_options:
+        message += (
+            f" Derivative options are: {', '.join(sorted(derivative_options))}."
+        )
+    return message
 
 
 # ============================================================
@@ -412,7 +446,40 @@ class MGFDerivative:
         evaluate the predictive under a different known parameter than the one
         the posterior was built with -- passing ``rho`` for a new observation
         from a different Weibull shape, say.
+
+        Raises
+        ------
+        TypeError
+            For an override the likelihood does not accept, with the same "did
+            you mean" suggestion the constructor gives.
+
+        Notes
+        -----
+        The validation is here rather than in ``post_predictive`` because this
+        is the funnel: both the vectorised path and the symbolic scalar path
+        call it, so one check covers both.
+
+        It is here at all because the constructor one call away has rejected
+        unknown names since PR 3b and this did not, which made a misspelling
+        expensive and silent. ``MGFDerivative(..., likelihood="weibull",
+        rh=2.0)`` raises with "did you mean 'rho'?"; ``post_predictive([2.0],
+        rh=9.0)`` used to return -1.1053356325054668, exactly the value for
+        the default shape, where ``rho=9.0`` gives -14.108023936618833. A typo
+        cost 13.003 nats and looked like an answer.
         """
+        accepted = _likelihood_kwargs(self.ready_func)
+        unknown = set(overrides) - accepted
+        if unknown:
+            raise TypeError(
+                _unknown_kwargs_message(
+                    unknown,
+                    accepted,
+                    self.likelihood,
+                    "post_predictive",
+                    derivative_options=frozenset(),
+                )
+            )
+
         merged = dict(self._ready_kwargs)
         merged.update(overrides)
         return merged
