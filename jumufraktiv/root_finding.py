@@ -15,9 +15,13 @@ Dispatcher:
     - solve_root: choose method based on root_method argument.
 """
 
-import numpy as np
+import logging
+
 import jax
 import jax.numpy as jnp
+import numpy as np
+
+logger = logging.getLogger(__name__)
 jax.config.update("jax_enable_x64", True)
 
 
@@ -368,7 +372,9 @@ def solve_root(
     rel_tol : float, optional
         Relative tolerance (Newton only).
     verbose : bool, optional
-        If True, print messages about which methods are tried and whether they succeed.
+        If True, report which methods are tried and whether they succeed, at
+        ``logging.INFO`` on the ``jumufraktiv.root_finding`` logger. Nothing is
+        written to stdout; configure logging to see it.
 
     Returns
     -------
@@ -420,11 +426,11 @@ def solve_root(
     # ---- If explicit method, try it directly ----
     if root_method != "auto":
         if verbose:
-            print(f"Trying method: {root_method}...")
+            logger.info("Trying root method %s.", root_method)
         result = try_method(root_method)
         if result is not None:
             if verbose:
-                print(f"Method {root_method} succeeded.")
+                logger.info("Root method %s succeeded.", root_method)
             return result
         else:
             raise RuntimeError(f"Method '{root_method}' failed.")
@@ -441,127 +447,25 @@ def solve_root(
     ]
     # Filter out methods requiring df if df is None
     if df is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
     # Filter out methods requiring brackets if brackets are missing
     if lower is None or upper is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "bisection-jax", "bisectioned-newton-np", "bisection-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "bisection-jax", "bisectioned-newton-np", "bisection-np")]
     # Filter out methods requiring x0 if x0 is None (Newton methods)
     if x0 is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
 
     # Try each method in order
     for method_name in methods:
         if verbose:
-            print(f"Trying method: {method_name}...")
+            logger.info("Trying root method %s.", method_name)
         result = try_method(method_name)
         if result is not None:
             if verbose:
-                print(f"Method {method_name} succeeded.")
+                logger.info("Root method %s succeeded.", method_name)
             return result
         else:
             if verbose:
-                print(f"Method {method_name} failed, trying next.")
+                logger.info("Root method %s failed; trying the next.", method_name)
 
     raise RuntimeError("All auto methods failed.")
-
-# ======================================================================
-# Example usage (run only when script is executed directly)
-# ======================================================================
-if __name__ == "__main__":
-    import math
-
-    # ---- Test function: f(x) = x - cos(x), root ≈ 0.739085 ----
-    def f(x):
-        return x - np.cos(x)
-
-    def df(x):
-        return 1.0 + np.sin(x)
-
-    # ---- JAX versions for JAX tests ----
-    import jax.numpy as jnp
-    def f_jax(x):
-        return x - jnp.cos(x)
-    def df_jax(x):
-        return 1.0 + jnp.sin(x)
-
-    # ---- Initial guesses and brackets ----
-    x0 = np.array([0.5])      # initial guess
-    lower = np.array([0.0])   # f(0) = -1 < 0
-    upper = np.array([1.0])   # f(1) = 0.4597 > 0
-
-    # Convert to JAX arrays for JAX methods
-    x0_jax = jnp.array([0.5])
-    lower_jax = jnp.array([0.0])
-    upper_jax = jnp.array([1.0])
-
-    # ---- List of methods to test ----
-    methods = [
-        "bisectioned-newton-jax",
-        "newton-jax",
-        "bisection-jax",
-        "bisectioned-newton-np",
-        "newton-np",
-        "bisection-np",
-    ]
-
-    print("=" * 60)
-    print("Testing root-finding methods on f(x) = x - cos(x)")
-    print("True root ≈ 0.7390851332151606")
-    print("=" * 60)
-
-    for method in methods:
-        # Select the appropriate function variants
-        if "jax" in method:
-            f_use = f_jax
-            df_use = df_jax
-            x0_use = x0_jax
-            lower_use = lower_jax
-            upper_use = upper_jax
-        else:
-            f_use = f
-            df_use = df
-            x0_use = x0
-            lower_use = lower
-            upper_use = upper
-
-        try:
-            root = solve_root(
-                f=f_use,
-                df=df_use if "newton" in method or "bisectioned" in method else None,
-                x0=x0_use if "newton" in method or "bisectioned" in method else None,
-                lower=lower_use if "bisection" in method or "bisectioned" in method else None,
-                upper=upper_use if "bisection" in method or "bisectioned" in method else None,
-                root_method=method,
-                maxiter=50,
-                tol=1e-12,
-                rel_tol=1e-12,
-            )
-            # Convert to float if JAX array
-            if hasattr(root, 'item'):
-                root = root.item()
-            else:
-                root = float(root[0])
-            error = abs(root - 0.7390851332151606)
-            print(f"{method:>25}: root = {root:.12f}, error = {error:.2e}")
-        except Exception as e:
-            print(f"{method:>25}: FAILED ({e})")
-
-    # ---- Test without derivative: auto should fall back to bisection ----
-    print("\n" + "=" * 60)
-    print("Test without derivative (auto → bisection methods)")
-    print("=" * 60)
-    try:
-        root_auto = solve_root(
-            f=f,
-            df=None,
-            lower=lower,
-            upper=upper,
-            root_method="auto",
-            maxiter=100,
-            tol=1e-12,
-        )
-        root_auto = float(root_auto[0])
-        error = abs(root_auto - 0.7390851332151606)
-        print(f"auto (no df): root = {root_auto:.12f}, error = {error:.2e}")
-    except Exception as e:
-        print(f"auto (no df): FAILED ({e})")

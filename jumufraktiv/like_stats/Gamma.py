@@ -31,10 +31,11 @@ This module provides two statistics functions:
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 from scipy.special import gammaln
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
@@ -83,12 +84,9 @@ def readyGamma(
     elif isinstance(shape, (int, float)):
         shape_vals = _extract_1d(np.full(n, float(shape)), "shape")
     else:
-        try:
-            shape_vals = _extract_1d(shape, "shape")
-            if len(shape_vals) != n:
-                raise ValueError("shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        shape_vals = _extract_1d(shape, "shape")
+        if len(shape_vals) != n:
+            raise ValueError("shape must have same length as data or be scalar")
 
     # ---- Positivity checks ----
     if np.any(shape_vals <= 0):
@@ -146,12 +144,9 @@ def bereitGamma(
     elif isinstance(shape, (int, float)):
         shape_vals = _extract_1d(np.full(n, float(shape)), "shape")
     else:
-        try:
-            shape_vals = _extract_1d(shape, "shape")
-            if len(shape_vals) != n:
-                raise ValueError("shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        shape_vals = _extract_1d(shape, "shape")
+        if len(shape_vals) != n:
+            raise ValueError("shape must have same length as data or be scalar")
 
     # ---- Positivity checks ----
     if np.any(shape_vals <= 0):
@@ -191,22 +186,3 @@ def cGamma() -> sp.Expr:
     # Expression: ∏_{i=1}^{n} y_i^{α_i-1} / Γ(α_i)
     expr = sp.Product(y[i]**(alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Example with scalar shape
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0, 4.0]})
-    shape_scalar = 2.5
-    stats = readyGamma(data_df, shape_scalar)
-    print("Scalar shape:", stats)
-
-    # Example with vector shape
-    shape_df = pd.DataFrame({'alpha': [1.5, 2.0, 3.0, 2.5]})
-    stats2 = readyGamma(data_df, shape_df)
-    print("Vector shape:", stats2)
-
-    # Symbolic constant
-    c_expr = cGamma()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

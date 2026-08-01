@@ -23,11 +23,12 @@ Thus:
          = n * (log(4) - 0.5 * log(π)) + 2 Σ log(y_i)
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d
 
@@ -146,16 +147,3 @@ def cMaxwellBoltzmann() -> sp.Expr:
     const = 4 / sp.sqrt(sp.pi)
     expr = sp.Product(const * y[i]**2, (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0]})
-    stats = readyMaxwellBoltzmann(data_df)
-    print("Statistics for Maxwell‑Boltzmann:", stats)
-
-    # Symbolic constant
-    c_expr = cMaxwellBoltzmann()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

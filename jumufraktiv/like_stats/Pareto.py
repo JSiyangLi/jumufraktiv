@@ -21,11 +21,11 @@ For a sample of size n:
 If σ is a scalar, it is recycled. If σ is a vector, it must have length n.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -79,12 +79,9 @@ def readyPareto(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- 3. Check support ----
     if np.any(scale_vals <= 0):
@@ -144,12 +141,9 @@ def bereitPareto(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Check support ----
     if np.any(scale_vals <= 0):
@@ -186,22 +180,3 @@ def cPareto() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(1 / y[i], (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar scale
-    data_df = pd.DataFrame({'y': [2.0, 3.0, 4.0]})
-    scale_scalar = 1.0
-    stats = readyPareto(data_df, scale_scalar)
-    print("Scalar scale (σ=1):", stats)
-
-    # Vector scale
-    scale_vec = pd.DataFrame({'scale': [1.0, 2.0, 1.5]})
-    stats2 = readyPareto(data_df, scale_vec)
-    print("Vector scale:", stats2)
-
-    # Symbolic constant
-    c_expr = cPareto()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

@@ -21,6 +21,7 @@ import pytest
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
+from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 # ==========================================================================
 # PR 3 — import and registry integrity
@@ -132,8 +133,179 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 
 
 # ==========================================================================
+# Unscheduled — the Pareto prior's numeric incomplete MGF
+# ==========================================================================
+# Found while clearing PR 8's lint baseline. `F841` flagged a `sign` computed
+# and discarded in `pareto_logimgf`; the discarded sign turned out to be the
+# least of it. Both numeric routes are unusable and the two fail differently,
+# while the symbolic route is exact -- so this is a defect in the numeric
+# implementations, not in the mathematics.
+#
+# It is recorded rather than repaired because it is a numerical fix needing its
+# own verification, and PR 8 is a module-layout and dead-code pass. No PR owns
+# it yet; see "Known-broken" in CLAUDE.md.
+def _pareto_prior():
+    from jumufraktiv import registry
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    registry.initialize()
+    return mitMGFprior.from_registry("pareto", params={"alpha": 3.0, "xi": 1.0})
+
+
+#: E[e^{tX} 1{X <= u}] for Pareto(alpha=3, xi=1) at t=-1, u=2, by direct
+#: quadrature of the density at 40 digits -- independent of the package.
+PARETO_IMGF_AT_MINUS_ONE = 0.24880390851855957
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="unscheduled: pareto_imgf calls scipy's gammaincc(a, z) with "
+    "a = -alpha < 0, which is outside its domain, so it returns NaN at every "
+    "argument",
+)
+def test_pareto_numeric_incomplete_mgf_is_finite():
+    value = _pareto_prior().imgf(-1.0, 2.0)
+
+    assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AttributeError,
+    reason="unscheduled: pareto_imgf_jax calls jnp.gamma, which does not "
+    "exist in jax.numpy, so it raises before reaching the gammaincc domain "
+    "error its scipy twin hits",
+)
+def test_pareto_jax_incomplete_mgf_is_finite():
+    value = float(_pareto_prior().imgf_jax(-1.0, 2.0))
+
+    assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
+
+
+def test_pareto_symbolic_incomplete_mgf_is_correct():
+    """Not broken -- asserted here to bound the defect above.
+
+    The symbolic incomplete MGF is exact, so the two failures are in the
+    numeric implementations rather than in the expression they implement.
+    Without this, "the Pareto incomplete MGF is broken" would be too broad a
+    claim, and a repair might start from the wrong end.
+    """
+    from jumufraktiv.symbols import t as t_sym
+    from jumufraktiv.symbols import u as u_sym
+
+    expr = _pareto_prior().imgf_sym.subs({t_sym: -1.0, u_sym: 2.0})
+
+    assert float(sp.re(sp.N(expr))) == pytest.approx(
+        PARETO_IMGF_AT_MINUS_ONE, rel=1e-10
+    )
+
+
+# ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================
+# Three findings from PR 8's review, all the same shape: a check that exists at
+# one entry point and not at the neighbouring one. Recorded rather than fixed,
+# because PR 12 owns the interface decisions behind them.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    # The test fails by *not* raising, which pytest reports as its own
+    # `Failed`, not as the TypeError the body asks for.
+    raises=pytest.fail.Exception,
+    reason="PR 12: post_predictive merges **kwargs straight into the "
+    "likelihood's own **kwargs with no validation, so a misspelled parameter "
+    "is swallowed and the default silently used",
+)
+def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
+    """The constructor catches this typo; the method one call away does not.
+
+    `MGFDerivative(..., likelihood="weibull", rh=2.0)` raises with "did you
+    mean 'rho'?". `post.post_predictive([2.0], rh=9.0)` returns
+    -1.1053356325054668 -- exactly the value for the default -- where
+    `rho=9.0` gives -14.108023936618837. A typo costs 13.003 nats, silently.
+
+    PR 12a fixed the neighbouring half of this: `post_predictive` used to
+    ignore the parameters stored at construction. The forwarding was repaired
+    in `_likelihood_arguments`; the validation was not.
+    """
+    post = MGFDerivative(
+        gamma_prior, data=[1.0, 2.0, 3.0], likelihood="weibull", rho=2.0
+    )
+
+    with pytest.raises(TypeError, match="rh"):
+        post.post_predictive([2.0], rh=9.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="PR 12: the two public fractional entry points name the same option "
+    "differently -- mgfDerivative calls it integer_method, "
+    "mgfDerivative_fractional calls it integerDeriv_method -- so the sibling's "
+    "spelling is accepted and dropped",
+)
+def test_the_two_fractional_entry_points_name_options_alike():
+    """Both spellings are valid layer options, so no guard can catch the mix-up.
+
+    `mgfDerivative_fractional(..., integer_method="bell")` reaches the kernel
+    with `integer_method="symbolic"`, the default. The value is discarded
+    because the parameter is spelled `integerDeriv_method` here, and
+    `integer_method` is a perfectly good name elsewhere in the layer -- so it
+    passes the unknown-option guard and lands in `**kwargs`, where nothing
+    reads it.
+    """
+    import inspect
+
+    from jumufraktiv.derivativeDispatch import (
+        mgfDerivative,
+        mgfDerivative_fractional,
+    )
+
+    unified = set(inspect.signature(mgfDerivative).parameters)
+    fractional = set(inspect.signature(mgfDerivative_fractional).parameters)
+
+    assert "integer_method" in unified and "integer_method" in fractional
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="PR 12: since PR 6c made the direct-expectation route the default "
+    "for numeric evaluation, every tuning option is inert under method='auto' "
+    "-- expectationDeriv has no tuning parameters at all",
+)
+def test_tol_reaches_the_kernel_on_the_default_path(gamma_prior):
+    """`tol` is documented as tuning the fixed-grid kernel. By default it is not.
+
+    Measured for a Gamma(2, 3) prior at order 1.5, t = -1:
+
+    ==================  =====================
+    call                log of the derivative
+    ==================  =====================
+    auto, tol=1e-14     -1.4538320842478814
+    auto, tol=1e-1      -1.4538320842478814
+    scipy, tol=1e-14    -1.4538320842363235
+    scipy, tol=1e-1     -1.4542925617536986
+    ==================  =====================
+
+    So the option is real -- it moves the answer by 4.6e-4 through `scipy` --
+    and simply unreachable through `auto`, which routes to the expectation
+    integral instead. The same holds for `dps`, `use_tan`, `cgf_method`,
+    `symbolic_timeout` and `integer_method`.
+
+    Not a defect in the expectation route, which is more accurate and faster;
+    a defect in an interface that accepts options the chosen route cannot use.
+    """
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    loose = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-1)
+    tight = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-14)
+
+    assert loose[0] != tight[0]
+
+
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,

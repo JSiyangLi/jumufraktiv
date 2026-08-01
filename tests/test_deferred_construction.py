@@ -236,17 +236,18 @@ class TestConstruction:
     def test_evidence_matches_the_closed_form(self, name):
         """`log p(y) = log_c + log D^a M(-b)`, with the Gamma MGF known exactly.
 
-        `maxwell-boltzmann` gets a looser tolerance because it lands at
-        `a = 4.5, t = -14`, where the default truncation `initial_L = 10` stops
-        short — see `test_known_broken.py`. That is a quadrature defect this PR
-        does not touch, and the loose tolerance here is scoped to the one case
-        that hits it rather than blanketing the others.
+        Every likelihood is held to the same tolerance. `maxwell-boltzmann`
+        used to be excepted at `1e-4`, because it lands at `a = 4.5, t = -14`
+        and the adaptive kernel's truncation stopped short there. PR 6b
+        replaced that kernel and the case now agrees to 1.6e-14, so the
+        exception was four orders of magnitude looser than the *worst* result
+        it was covering — a test that would no longer have noticed the defect
+        coming back, let alone a smaller one.
         """
         post = _build(name)
         expected = post.log_c + gamma_mgf_derivative_log(post.a, -post.b)
-        tolerance = 1e-4 if name == "maxwell-boltzmann" else 1e-8
 
-        assert post.evidence()[0] == pytest.approx(expected, rel=tolerance)
+        assert post.evidence()[0] == pytest.approx(expected, rel=1e-8)
 
     @pytest.mark.parametrize("method", ["auto", "symbolic", "bell", "jax"])
     def test_every_integer_backend_is_reachable_through_the_class(self, method):
@@ -307,7 +308,7 @@ class TestDeferral:
         That branch had never run, so the double-pass was invisible; it would
         have raised for any caller who set a backend option.
         """
-        post = _build("halfnormal", epsrel=1e-12, epsabs=1e-14, limit=200)
+        post = _build("halfnormal", tol=1e-12)
 
         assert np.isfinite(post.evidence()[0])
 

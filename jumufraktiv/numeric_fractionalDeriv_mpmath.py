@@ -16,13 +16,16 @@ All arithmetic is performed with the precision specified by mp.dps.
 """
 import math
 import warnings
+
 import numpy as np
-from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
 import sympy as sp
+from mpmath import exp, gamma, log, mp, mpf, pi, quad, tan
+
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_cache import cached_diff
-from jumufraktiv.symbols import t as _t_sym, u as _u_sym
+from jumufraktiv.symbols import t as _t_sym
+from jumufraktiv.symbols import u as _u_sym
 
 
 def fractionalDeriv_numeric_mpmath_tan(
@@ -158,7 +161,15 @@ def fractionalDeriv_numeric_mpmath_tan(
                 log_jacobian = log(max_u) + log(1 + tan_theta * tan_theta)
                 log_integrand = gamma_val * u_var + mpf(log_abs) + log_jacobian
                 return exp(log_integrand) * sign
-            except Exception:
+            except (OverflowError, ValueError, ZeroDivisionError):
+                # Only the endpoint overflow is expected, and zero is its
+                # correct limit: as theta -> +pi/2, `z = exp(max_u tan theta)`
+                # runs away, so `y = t - z` runs to -infinity and
+                # `M^{(n+1)}(y)` decays to nothing. Catching `Exception` here
+                # instead would have turned any genuine failure -- a prior with
+                # a broken MGF, a wrong argument type -- into a zero at every
+                # node, and the quadrature would have returned a confident
+                # answer built entirely out of them.
                 return mpf(0.0)
 
         a = -pi / 2 + margin
@@ -167,11 +178,14 @@ def fractionalDeriv_numeric_mpmath_tan(
         try:
             integral = quad(integrand_theta, (a, b), method='tanh-sinh')
         except Exception as e:
-            print(f"mpmath tan‑transform integration failed for t={t_val}, u={u_val}: {e}")
-            if return_log:
-                return float('nan'), 1
-            else:
-                return float('nan')
+            # This used to print and return NaN. A NaN is not an error: it
+            # compares False against everything, so downstream branches take
+            # their `else` and the failure surfaces somewhere else entirely,
+            # if at all.
+            raise RuntimeError(
+                f"mpmath tan-transform quadrature failed at t={t_val}, "
+                f"u={u_val}, order={order}, dps={mp.dps}."
+            ) from e
 
         if return_log:
             if integral == 0:
@@ -294,8 +308,6 @@ def fractionalDeriv_numeric_mpmath(
     complete: bool = True,
     simplify: bool = False,
     return_log: bool = False,
-    initial_L: float = 10.0,
-    max_L: float = 1e4,
     tol: float = 1e-8,
     use_tan: bool = False,
     dps: int = 50,
@@ -322,12 +334,15 @@ def fractionalDeriv_numeric_mpmath(
         If False, differentiate the incomplete MGF.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
-    initial_L : float
-        Starting half‑width for integration range (adaptive method only).
-    max_L : float
-        Maximum allowed half‑width.
     tol : float
         Relative tolerance for convergence (default 1e-8).
+
+        `initial_L` and `max_L` used to sit here, as the starting half-width
+        and cap of a doubling loop. PR 6c replaced that loop with a range
+        derived from `dps`, and left the two parameters declared and
+        documented but unread -- so a caller could set `max_L` and be told
+        nothing. They are gone; the range is not tunable because it is no
+        longer discovered.
     use_tan : bool
         If True, directly use the tan‑transform method.
     dps : int
@@ -548,176 +563,3 @@ def fractionalDeriv_numeric_mpmath(
             return float(val_vals.item())
         else:
             return val_vals
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    import math
-    import numpy as np
-    import jumufraktiv.MGFdictionary  # ensures priors are registered
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
-    from mpmath import mp, exp
-
-    # ---- Build Gamma prior ----
-    gamma_prior = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 2.0, "beta": 3.0}
-    )
-
-    # ============================================================
-    # Scalar tests (original)
-    # ============================================================
-    t_val = -1.0
-    frac_order = 1.99
-
-    print("=" * 60)
-    print("Testing mpmath fractional derivative of Gamma MGF (scalar t)")
-    print("=" * 60)
-    print(f"  order={frac_order}, t={t_val}, alpha=2, beta=3")
-    print("  Using default adaptive method (with fallback to tan)...")
-    result_adaptive = fractionalDeriv_numeric_mpmath(
-        order=frac_order,
-        prior=gamma_prior,
-        t=t_val,
-        method='symbolic',
-        return_log=False,
-        dps=60,          # higher precision
-        tol=1e-10         # tighter tolerance
-    )
-    print(f"  Adaptive result: {result_adaptive:.6e}")
-
-    print("\n  Using explicit tan‑transform method...")
-    result_tan = fractionalDeriv_numeric_mpmath(
-        order=frac_order,
-        prior=gamma_prior,
-        t=t_val,
-        method='symbolic',
-        return_log=False,
-        use_tan=True,
-        dps=60
-    )
-    print(f"  Tan‑transform result: {result_tan:.6e}")
-
-    # Compare with ordinary 2nd derivative
-    log_abs2, sign2 = mgfDerivative_integer(
-        order=2,
-        prior=gamma_prior,
-        method='symbolic',
-        t=t_val,
-        simplify=False,
-        log=True,
-        complete=True
-    )
-    deriv2 = sign2 * float(exp(mpf(log_abs2)))
-    print(f"\n  Ordinary 2nd derivative at t={t_val}: {deriv2:.6e}")
-    print(f"  Relative diff (adaptive vs 2nd): {abs(result_adaptive - deriv2) / abs(deriv2):.2e}")
-    print(f"  Relative diff (tan vs 2nd):      {abs(result_tan - deriv2) / abs(deriv2):.2e}")
-    print(f"  Relative diff (adaptive vs tan): {abs(result_adaptive - result_tan) / abs(result_tan):.2e}")
-
-    # ============================================================
-    # Scalar iMGF test (incomplete MGF)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Testing mpmath fractional derivative for iMGF (scalar t)")
-    print("=" * 60)
-
-    u_val = 2.0
-    t_val_imgf = -1.0
-    frac_order_imgf = 1.5
-
-    gamma_prior_imgf = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 2.0, "beta": 3.0}
-    )
-
-    print(f"  order={frac_order_imgf}, t={t_val_imgf}, u={u_val}, alpha=2, beta=3")
-
-    # ---- Adaptive method ----
-    try:
-        result_adaptive = fractionalDeriv_numeric_mpmath(
-            order=frac_order_imgf,
-            prior=gamma_prior_imgf,
-            t=t_val_imgf,
-            method='symbolic',
-            return_log=False,
-            complete=False,
-            u=u_val,
-            dps=60,
-            tol=1e-10
-        )
-        print(f"  Adaptive result (ordinary): {result_adaptive:.6e}")
-    except Exception as e:
-        print(f"  Adaptive failed: {e}")
-        result_adaptive = None
-
-    # ---- Tan‑transform method ----
-    try:
-        result_tan = fractionalDeriv_numeric_mpmath(
-            order=frac_order_imgf,
-            prior=gamma_prior_imgf,
-            t=t_val_imgf,
-            method='symbolic',
-            return_log=False,
-            use_tan=True,
-            complete=False,
-            u=u_val,
-            dps=60
-        )
-        print(f"  Tan‑transform result (ordinary): {result_tan:.6e}")
-    except Exception as e:
-        print(f"  Tan‑transform failed: {e}")
-        result_tan = None
-
-    # ---- Compare adaptive vs tan ----
-    if result_adaptive is not None and result_tan is not None:
-        diff_abs = abs(result_adaptive - result_tan)
-        rel_diff = diff_abs / max(abs(result_adaptive), abs(result_tan), 1e-300)
-        print(f"  Absolute diff (adaptive vs tan): {diff_abs:.2e}")
-        print(f"  Relative diff: {rel_diff:.2e}")
-        if rel_diff < 1e-6:
-            print("  ✅ Good agreement between adaptive and tan.")
-        else:
-            print("  ⚠️  Significant difference – check precision.")
-
-    # ============================================================
-    # Vectorized tests (mpmath)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Vectorized t test (mpmath, fractional derivative)")
-    print("=" * 60)
-
-    t_vec = np.linspace(-2.0, -0.5, 5)
-    print(f"  order={frac_order}, t values: {t_vec}")
-    print("  Using tan‑transform method (use_tan=True)...")
-    results_vec = fractionalDeriv_numeric_mpmath(
-        order=frac_order,
-        prior=gamma_prior,
-        t=t_vec,
-        method='symbolic',
-        return_log=False,
-        use_tan=True,
-        dps=60
-    )
-    print("  Results:")
-    for t_val, res in zip(t_vec, results_vec):
-        print(f"    t={t_val:.2f}: {res:.6e}")
-
-    # ---- Vectorized iMGF test ----
-    print("\n" + "=" * 60)
-    print("Vectorized iMGF test (mpmath, tan‑transform)")
-    print("=" * 60)
-    t_vec_imgf = np.linspace(-2.0, -0.5, 5)
-    print(f"  order={frac_order_imgf}, t values: {t_vec_imgf}, u={u_val}")
-    results_vec_imgf = fractionalDeriv_numeric_mpmath(
-        order=frac_order_imgf,
-        prior=gamma_prior_imgf,
-        t=t_vec_imgf,
-        method='symbolic',
-        return_log=False,
-        use_tan=True,
-        complete=False,
-        u=u_val,
-        dps=60
-    )
-    print("  Results:")
-    for t_val, res in zip(t_vec_imgf, results_vec_imgf):
-        print(f"    t={t_val:.2f}: {res:.6e}")

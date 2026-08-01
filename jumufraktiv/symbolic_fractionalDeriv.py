@@ -17,13 +17,12 @@ Mellin. If both fail, it returns None.
 Supports both complete and incomplete MGFs via the `complete` flag.
 """
 
+import concurrent.futures
+
 import sympy as sp
-from sympy.integrals.transforms import laplace_transform, mellin_transform
+
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_cache import cached_diff
-from jumufraktiv.symbols import t  # only t is needed
-
-import concurrent.futures
 
 
 class FunctionTimedOut(TimeoutError):
@@ -239,33 +238,3 @@ def fractionalDeriv_symbolic(
         frac_expr = _guarded(lambda: sp.simplify(frac_expr))
 
     return frac_expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    import jumufraktiv.MGFdictionary  # ensures priors are registered
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
-
-    # Create a Gamma prior
-    gamma_prior = mitMGFprior.from_registry(
-        "gamma",
-        params={"alpha": 2.0, "beta": 3.0}
-    )
-
-    print("Testing fractional derivative of Gamma MGF (order 0.5):")
-    result = fractionalDeriv_symbolic(0.5, gamma_prior, simplify=True)
-    if result is not None:
-        print("Symbolic result:")
-        sp.pprint(result)
-    else:
-        print("Failed to compute fractional derivative.")
-
-    print("\n" + "-" * 60)
-
-    print("Testing fractional derivative of Gamma MGF (order 3.2):")
-    result = fractionalDeriv_symbolic(3.2, gamma_prior, simplify=True)
-    if result is not None:
-        print("Symbolic result:")
-        sp.pprint(result)
-    else:
-        print("Failed to compute fractional derivative.")

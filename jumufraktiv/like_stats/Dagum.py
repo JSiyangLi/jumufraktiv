@@ -24,11 +24,11 @@ If the known parameters are scalars, they are recycled. If they are vectors,
 they must have the same length as data.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -91,13 +91,10 @@ def readyDagum(
         elif isinstance(param, (int, float)):
             return _extract_1d(np.full(n, float(param)), name)
         else:
-            try:
-                vals = _extract_1d(param, name)
-                if len(vals) != n:
-                    raise ValueError(f"{name} must have same length as data or be scalar")
-                return vals
-            except Exception:
-                raise ValueError(f"{name} must be a numeric scalar or 1‑dimensional array/DataFrame")
+            vals = _extract_1d(param, name)
+            if len(vals) != n:
+                raise ValueError(f"{name} must have same length as data or be scalar")
+            return vals
 
     r_vals = _handle_param(r, 'r')
     s_vals = _handle_param(s, 's')
@@ -169,13 +166,10 @@ def bereitDagum(
         elif isinstance(param, (int, float)):
             return _extract_1d(np.full(n, float(param)), name)
         else:
-            try:
-                vals = _extract_1d(param, name)
-                if len(vals) != n:
-                    raise ValueError(f"{name} must have same length as data or be scalar")
-                return vals
-            except Exception:
-                raise ValueError(f"{name} must be a numeric scalar or 1‑dimensional array/DataFrame")
+            vals = _extract_1d(param, name)
+            if len(vals) != n:
+                raise ValueError(f"{name} must have same length as data or be scalar")
+            return vals
 
     r_vals = _handle_param(r, 'r')
     s_vals = _handle_param(s, 's')
@@ -225,24 +219,3 @@ def cDagum() -> sp.Expr:
         (i, 1, n)
     )
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar r and s
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5]})
-    r_scalar = 2.0
-    s_scalar = 1.0
-    stats = readyDagum(data_df, r_scalar, s_scalar)
-    print("Scalar r=2, s=1:", stats)
-
-    # Vector r and s
-    r_vec = pd.DataFrame({'r': [2.0, 3.0, 1.5]})
-    s_vec = pd.DataFrame({'s': [1.0, 0.8, 1.2]})
-    stats2 = readyDagum(data_df, r_vec, s_vec)
-    print("Vector r and s:", stats2)
-
-    # Symbolic constant
-    c_expr = cDagum()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

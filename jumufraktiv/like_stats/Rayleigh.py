@@ -25,11 +25,11 @@ Thus:
     log_c = Σ log(y_i)
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d
 
@@ -146,16 +146,3 @@ def cRayleigh() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(y[i], (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0]})
-    stats = readyRayleigh(data_df)
-    print("Statistics for Rayleigh:", stats)
-
-    # Symbolic constant
-    c_expr = cRayleigh()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

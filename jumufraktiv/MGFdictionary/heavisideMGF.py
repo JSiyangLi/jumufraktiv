@@ -12,59 +12,18 @@ This prior is improper (integral diverges), but the MGF exists for t < 0.
 """
 
 import math
-import sympy as sp
+
 import jax.numpy as jnp
-import scipy.stats as stats
 import numpy as np
+import sympy as sp
 
-from jumufraktiv.registry import register_prior, make_prior_spec
-from jumufraktiv.symbols import t, theta, param
-
+from jumufraktiv.registry import make_prior_spec, register_prior
+from jumufraktiv.symbols import param, t, theta
 
 # ============================================================
 # Canonical symbolic parameters
 # ============================================================
 k = param("k")
-
-
-# ============================================================
-# Symbolic expressions
-# ============================================================
-
-def heaviside_mgf_symbolic():
-    """
-    Symbolic expression for the Heaviside MGF.
-
-    Returns
-    -------
-    sympy.Expr
-        M(t) = -exp(k*t)/t, for t < 0.
-    """
-    return -sp.exp(k * t) / t
-
-
-def heaviside_cgf_symbolic():
-    """
-    Symbolic expression for the Heaviside CGF.
-
-    Returns
-    -------
-    sympy.Expr
-        K(t) = log(-1/t) + k*t, for t < 0.
-    """
-    return sp.log(-1 / t) + k * t
-
-
-def heaviside_pdf_symbolic():
-    """
-    Symbolic expression for the Heaviside PDF.
-
-    Returns
-    -------
-    sympy.Expr
-        Piecewise((1, theta >= k), (0, True)).
-    """
-    return sp.Piecewise((1, theta >= k), (0, True))
 
 
 # ============================================================

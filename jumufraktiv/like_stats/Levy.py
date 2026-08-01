@@ -21,11 +21,12 @@ For a sample of size n:
 If μ is a scalar, it is recycled. If μ is a vector, it must have length n.
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -79,12 +80,9 @@ def readyLevy(
     elif isinstance(location, (int, float)):
         loc_vals = _extract_1d(np.full(n, float(location)), "location")
     else:
-        try:
-            loc_vals = _extract_1d(location, "location")
-            if len(loc_vals) != n:
-                raise ValueError("location must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("location must be a numeric scalar or 1‑dimensional array/DataFrame")
+        loc_vals = _extract_1d(location, "location")
+        if len(loc_vals) != n:
+            raise ValueError("location must have same length as data or be scalar")
 
     # ---- 3. Check support ----
     diff = data_vals - loc_vals
@@ -142,12 +140,9 @@ def bereitLevy(
     elif isinstance(location, (int, float)):
         loc_vals = _extract_1d(np.full(n, float(location)), "location")
     else:
-        try:
-            loc_vals = _extract_1d(location, "location")
-            if len(loc_vals) != n:
-                raise ValueError("location must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("location must be a numeric scalar or 1‑dimensional array/DataFrame")
+        loc_vals = _extract_1d(location, "location")
+        if len(loc_vals) != n:
+            raise ValueError("location must have same length as data or be scalar")
 
     # ---- Check support ----
     diff = data_vals - loc_vals
@@ -187,22 +182,3 @@ def cLevy() -> sp.Expr:
     const = (2 * sp.pi) ** (-n / 2)
     prod = sp.Product((y[i] - mu[i]) ** (-sp.Rational(3, 2)), (i, 1, n))
     return const * prod
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar location
-    data_df = pd.DataFrame({'y': [1.5, 2.0, 3.0]})
-    loc_scalar = 1.0
-    stats = readyLevy(data_df, loc_scalar)
-    print("Scalar location (μ=1):", stats)
-
-    # Vector location (unusual, but supported)
-    loc_vec = pd.DataFrame({'loc': [1.0, 1.5, 2.0]})
-    stats2 = readyLevy(data_df, loc_vec)
-    print("Vector location:", stats2)
-
-    # Symbolic constant
-    c_expr = cLevy()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

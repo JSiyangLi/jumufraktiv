@@ -25,11 +25,11 @@ If c is a scalar, it is recycled. If c is a vector, it must have length n.
 The user-facing argument is `known_shape`, which corresponds to the known shape parameter c.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -85,12 +85,9 @@ def readyBurrXII(
     elif isinstance(known_shape, (int, float)):
         c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
-        try:
-            c_vals = _extract_1d(known_shape, "known_shape")
-            if len(c_vals) != n:
-                raise ValueError("known_shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("known_shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        c_vals = _extract_1d(known_shape, "known_shape")
+        if len(c_vals) != n:
+            raise ValueError("known_shape must have same length as data or be scalar")
 
     # ---- 3. Check positivity ----
     if np.any(c_vals <= 0):
@@ -153,12 +150,9 @@ def bereitBurrXII(
     elif isinstance(known_shape, (int, float)):
         c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
-        try:
-            c_vals = _extract_1d(known_shape, "known_shape")
-            if len(c_vals) != n:
-                raise ValueError("known_shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("known_shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        c_vals = _extract_1d(known_shape, "known_shape")
+        if len(c_vals) != n:
+            raise ValueError("known_shape must have same length as data or be scalar")
 
     # ---- Check positivity ----
     if np.any(c_vals <= 0):
@@ -198,22 +192,3 @@ def cBurrXII() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(known_shape[i] * y[i]**(known_shape[i] - 1) / (1 + y[i]**known_shape[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar known_shape
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5]})
-    known_shape_scalar = 2.0
-    stats = readyBurrXII(data_df, known_shape=known_shape_scalar)
-    print("Scalar known_shape (value=2.0):", stats)
-
-    # Vector known_shape
-    known_shape_vec = pd.DataFrame({'known_shape': [2.0, 3.0, 1.5]})
-    stats2 = readyBurrXII(data_df, known_shape=known_shape_vec)
-    print("Vector known_shape:", stats2)
-
-    # Symbolic constant
-    c_expr = cBurrXII()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

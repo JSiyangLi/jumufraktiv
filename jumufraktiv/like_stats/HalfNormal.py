@@ -18,11 +18,12 @@ For a sample of size n:
     log_c = n/2 * (log(2) - log(π))
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d
 
@@ -137,16 +138,3 @@ def cHalfNormal() -> sp.Expr:
     n = sp.Symbol('n', integer=True, positive=True)
     const = sp.sqrt(2 / sp.pi)
     return const ** n
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5, 2.0]})
-    stats = readyHalfNormal(data_df)
-    print("Statistics for Half‑Normal:", stats)
-
-    # Symbolic constant
-    c_expr = cHalfNormal()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

@@ -19,11 +19,12 @@ Thus:
     log_c = n * log(1/2)
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -79,12 +80,9 @@ def readyLaplace(
         mean_vals = _extract_1d(np.full(n, float(mean)), "mean")
     else:
         # Try to treat as array‑like
-        try:
-            mean_vals = _extract_1d(mean, "mean")
-            if len(mean_vals) != n:
-                raise ValueError("mean must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("mean must be a numeric scalar or 1‑dimensional array/DataFrame")
+        mean_vals = _extract_1d(mean, "mean")
+        if len(mean_vals) != n:
+            raise ValueError("mean must have same length as data or be scalar")
 
     # ---- 3. Compute sufficient statistics ----
     a = float(n)                     # n
@@ -135,12 +133,9 @@ def bereitLaplace(
     elif isinstance(mean, (int, float)):
         mean_vals = _extract_1d(np.full(n, float(mean)), "mean")
     else:
-        try:
-            mean_vals = _extract_1d(mean, "mean")
-            if len(mean_vals) != n:
-                raise ValueError("mean must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("mean must be a numeric scalar or 1‑dimensional array/DataFrame")
+        mean_vals = _extract_1d(mean, "mean")
+        if len(mean_vals) != n:
+            raise ValueError("mean must have same length as data or be scalar")
 
     # ---- Per‑element statistics ----
     a_vals = np.ones(n, dtype=float)
@@ -169,22 +164,3 @@ def cLaplace() -> sp.Expr:
     """
     n = sp.Symbol('n', integer=True, positive=True)
     return (sp.Rational(1, 2)) ** n
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # Example with scalar mean
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0, 4.0]})
-    mean_scalar = 2.5
-    stats = readyLaplace(data_df, mean_scalar)
-    print("Scalar mean:", stats)
-
-    # Example with vector mean (unusual, but supported)
-    mean_vec = pd.DataFrame({'mean': [2.0, 2.5, 3.0, 3.5]})
-    stats2 = readyLaplace(data_df, mean_vec)
-    print("Vector mean:", stats2)
-
-    # Symbolic constant
-    c_expr = cLaplace()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

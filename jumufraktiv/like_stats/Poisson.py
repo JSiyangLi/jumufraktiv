@@ -37,10 +37,10 @@ Examples
 3.0
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
-from typing import Union, Dict
+import pandas as pd
 import sympy as sp
 from scipy.special import gammaln
 
@@ -94,12 +94,9 @@ def readyPoisson(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Check validity ----
     if np.any(scale_vals <= 0):
@@ -157,12 +154,9 @@ def bereitPoisson(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Check validity ----
     if np.any(scale_vals <= 0):
@@ -206,24 +200,3 @@ def cPoisson() -> sp.Expr:
     # Expression: ∏_{i=1}^{n} s_i^{y_i} / y_i!
     expr = sp.Product(s[i]**y[i] / sp.factorial(y[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-if __name__ == "__main__":
-    # ---- readyPoisson examples ----
-    data_df = pd.DataFrame({'counts': [1, 2, 3, 4]})
-    stats_default = readyPoisson(data_df)   # scale defaults to 1.0
-    print("With default scale (1.0):", stats_default)
-
-    stats_scalar = readyPoisson(data_df, scale=2.0)
-    print("With scalar scale 2.0:", stats_scalar)
-
-    scale_df = pd.DataFrame({'exposure': [0.5, 1.0, 1.5, 2.0]})
-    stats_vector = readyPoisson(data_df, scale=scale_df)
-    print("With vector scale:", stats_vector)
-
-    # ---- cPoisson example ----
-    c_expr = cPoisson()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)
-    # Optional: show that it can be substituted later

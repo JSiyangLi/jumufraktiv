@@ -65,7 +65,7 @@ Numeric Backends
    :members:
    :undoc-members:
 
-.. automodule:: numeric_fractionalDeriv_scipy
+.. automodule:: numeric_fractionalDeriv_grid
    :members:
    :undoc-members:
 
@@ -73,7 +73,7 @@ Numeric Backends
    :members:
    :undoc-members:
 
-.. automodule:: numeric_fractionalDeriv_interpolation
+.. automodule:: numeric_expectation
    :members:
    :undoc-members:
 

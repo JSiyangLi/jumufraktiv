@@ -176,3 +176,194 @@ def test_every_likelihood_rejects_an_unknown_argument(gamma_prior):
                 definitely_not_a_parameter=1.0,
                 **LIKELIHOOD_KWARGS[name],
             )
+
+
+# ==========================================================================
+# The constructor and the dispatch functions must agree
+# ==========================================================================
+# `MGFDerivative` rejects an unknown keyword argument with a `TypeError` and a
+# "did you mean" suggestion. `mgfDerivative` and `mgfDerivative_fractional` --
+# also exported at package level, also part of the public surface -- used to
+# accept anything and filter it away just before calling the backend.
+#
+# So the same name behaved two ways depending on which door the caller used:
+#
+#   name         constructor   mgfDerivative*   reaches any backend?
+#   epsrel       TypeError     accepted           no
+#   initial_L    TypeError     accepted           no
+#   epsrell      TypeError     accepted           no   (a misspelling)
+#
+# The middle column is the dangerous one. A caller tightening `epsrel` got the
+# default and no indication of it, which is precisely the failure mode PR 8
+# removed everywhere else.
+from jumufraktiv.derivativeDispatch import (  # noqa: E402
+    DERIVATIVE_OPTIONS,
+    mgfDerivative,
+    mgfDerivative_fractional,
+)
+
+#: Names that reach no backend: the tuning parameters of the two quadrature
+#: implementations PR 6b and PR 8 deleted, plus a plain typo.
+DEAD_OPTIONS = [
+    "epsabs",
+    "epsrel",
+    "limit",
+    "initial_L",
+    "max_L",
+    "use_interpolation",
+    "d_vec",
+    "epsrell",
+    "definitely_not_an_option",
+]
+
+
+@pytest.mark.parametrize("name", DEAD_OPTIONS)
+def test_dead_options_are_refused_by_every_public_entry_point(gamma_prior, name):
+    """One name, three doors, one answer."""
+    with pytest.raises(TypeError, match=name):
+        MGFDerivative(
+            gamma_prior,
+            data=POISSON_DATA,
+            likelihood="poisson",
+            scale=1.0,
+            **{name: 1e-9},
+        )
+
+    with pytest.raises(TypeError, match=name):
+        mgfDerivative(1.5, gamma_prior, method="scipy", t=-1.0, **{name: 1e-9})
+
+    with pytest.raises(TypeError, match=name):
+        mgfDerivative_fractional(
+            1.5, gamma_prior, method="scipy", t=-1.0, **{name: 1e-9}
+        )
+
+
+@pytest.mark.parametrize("name", sorted(DERIVATIVE_OPTIONS))
+def test_live_options_are_accepted_by_every_public_entry_point(gamma_prior, name):
+    """The converse, so the guard cannot pass by refusing everything.
+
+    A test that only checks rejections is satisfied by a function that rejects
+    its own valid arguments too.
+    """
+    value = {
+        "integer_method": "symbolic",
+        "cgf_method": "auto",
+        "use_tan": False,
+        "dps": 30,
+        "symbolic_timeout": 60.0,
+    }.get(name, 1e-9)
+
+    MGFDerivative(
+        gamma_prior,
+        data=POISSON_DATA,
+        likelihood="poisson",
+        scale=1.0,
+        **{name: value},
+    )
+    mgfDerivative(1.5, gamma_prior, method="scipy", t=-1.0, **{name: value})
+    mgfDerivative_fractional(1.5, gamma_prior, method="scipy", t=-1.0, **{name: value})
+
+
+def test_the_constructor_does_not_keep_its_own_list_of_options():
+    """The two sets must be one object, not two that happen to match today.
+
+    They did not match: the constructor's literal set still named
+    `use_interpolation` and `d_vec` long after PR 6b deleted the module that
+    read them. Asserting equality would let the next divergence live until
+    someone wrote a test for it; asserting identity makes divergence
+    impossible to express.
+    """
+    assert DERIVATIVE_KWARGS is DERIVATIVE_OPTIONS
+
+
+def test_the_option_list_matches_the_backends_in_both_directions():
+    """Every accepted option reaches a backend, and every backend option is accepted.
+
+    The second half is not decoration. I wrote this guard with only the first
+    half and immediately broke `timeout_seconds`, which the symbolic fractional
+    backend has always taken: a one-directional check is satisfied by a list
+    that is too *short* as well as by one that is right, and too-short means
+    refusing an argument that works.
+
+    `symbolic_timeout` and `timeout_seconds` are different options -- the first
+    bounds the Bell backend's symbolic attempt, the second the symbolic
+    fractional backend's transform -- so neither is a typo for the other and
+    both belong in the list.
+    """
+    from jumufraktiv.derivativeDispatch import BACKEND_OPTIONS, mgfDerivative_integer
+    from jumufraktiv.numeric_expectation import expectationDeriv
+    from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+    from jumufraktiv.numeric_fractionalDeriv_mpmath import (
+        fractionalDeriv_numeric_mpmath,
+    )
+    from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
+
+    #: Parameters that carry the request itself rather than tune how it is
+    #: answered. A caller supplies these positionally or by name through the
+    #: dispatcher's own signature, never through **kwargs.
+    STRUCTURAL = {
+        "order",
+        "prior",
+        "t",
+        "u",
+        "method",
+        "simplify",
+        "complete",
+        "log",
+        "return_log",
+        "t_points",
+        "u_points",
+        "integer_method",
+        "int_tol",
+        "integerDeriv_method",
+        "kwargs",
+    }
+
+    declared = set()
+    for backend in (
+        fractionalDeriv_grid,
+        fractionalDeriv_numeric_mpmath,
+        fractionalDeriv_symbolic,
+        expectationDeriv,
+        mgfDerivative_integer,
+    ):
+        declared |= set(inspect.signature(backend).parameters)
+    tunable = declared - STRUCTURAL
+
+    accepted_but_unreachable = sorted(set(BACKEND_OPTIONS) - tunable)
+    reachable_but_refused = sorted(tunable - set(BACKEND_OPTIONS))
+
+    assert not accepted_but_unreachable, (
+        "accepted but consumed by no backend: " + ", ".join(accepted_but_unreachable)
+    )
+    assert not reachable_but_refused, (
+        "a backend takes these but the dispatcher refuses them: "
+        + ", ".join(reachable_but_refused)
+    )
+
+
+def test_the_symbolic_fractional_timeout_still_works():
+    """The option the one-directional guard broke, asserted on its own.
+
+    A set-comparison test can pass while the behaviour is wrong, if the sets
+    are compared with the same mistake in both. This calls the thing.
+    """
+    import warnings
+
+    from jumufraktiv.derivativeDispatch import mgfDerivative_fractional
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expr = mgfDerivative_fractional(
+            1.5, _GAMMA_PRIOR(), method="symbolic", t=None, timeout_seconds=30.0
+        )
+
+    assert expr is not None
+
+
+def _GAMMA_PRIOR():
+    from jumufraktiv import registry
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    registry.initialize()
+    return mitMGFprior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})

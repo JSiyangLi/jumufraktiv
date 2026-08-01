@@ -46,16 +46,88 @@ Functions:
     - mgfDerivative(order, prior, method='auto', t=None, ...)
 """
 
+import difflib
 import math
 import warnings
-import sympy as sp
+
 import numpy as np
-from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
-from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
-from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+import sympy as sp
 
 from jumufraktiv.numeric_expectation import expectation_is_available
-from jumufraktiv.symbols import t as t_sym, u as u_sym   # <-- import canonical u
+from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
+from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
+from jumufraktiv.symbols import t as t_sym  # <-- import canonical u
+from jumufraktiv.symbols import u as u_sym
+
+#: Tuning options the derivative layer understands, and which backend consumes
+#: each. This is the authoritative list: :data:`MGFDerivative_class.
+#: DERIVATIVE_KWARGS` is built from it rather than restated, so the constructor
+#: and the ``mgfDerivative*`` functions cannot disagree about what a valid
+#: option is.
+#:
+#: They used to disagree, and in the direction that hides mistakes. The
+#: constructor rejects an unknown keyword argument with a ``TypeError`` and a
+#: "did you mean" suggestion (PR 3b), while the functions accepted anything and
+#: filtered it away just before the call -- so ``epsrel=1e-14`` raised through
+#: one public entry point and was silently ignored through the other, and so
+#: was a plain misspelling like ``epsrell``.
+BACKEND_OPTIONS = {
+    "tol": "the fixed-grid and mpmath fractional kernels",
+    "dps": "the mpmath fractional kernel",
+    "use_tan": "the mpmath fractional kernel",
+    "cgf_method": "the Bell integer backend",
+    "symbolic_timeout": "the Bell integer backend",
+    "timeout_seconds": "the symbolic fractional backend",
+}
+
+#: Every option name the derivative layer accepts, including the named
+#: parameters of :func:`mgfDerivative` itself that a caller may reasonably set.
+DERIVATIVE_OPTIONS = frozenset(BACKEND_OPTIONS) | {"integer_method", "int_tol"}
+
+
+def _reject_unknown_options(kwargs, function_name):
+    """Raise ``TypeError`` for any keyword argument no backend consumes.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Leftover keyword arguments, after the caller's named parameters bind.
+    function_name : str
+        Name to quote in the message, so the caller knows which call to fix.
+
+    Raises
+    ------
+    TypeError
+        Naming each unrecognised option, what the layer does accept, and a
+        close match where one exists.
+
+    Notes
+    -----
+    Only names that reach *no* backend are refused here. A name that some
+    backend understands but the selected one does not -- ``dps`` under
+    ``method="scipy"``, say -- is still accepted and dropped. That is a
+    narrower defect with a real design question behind it (reject, warn, or
+    honour by switching backends?), it predates this guard, and PR 12 owns it;
+    see "Known-broken" in :file:`CLAUDE.md`.
+    """
+    unknown = sorted(set(kwargs) - DERIVATIVE_OPTIONS)
+    if not unknown:
+        return
+
+    parts = []
+    for name in unknown:
+        close = difflib.get_close_matches(name, sorted(DERIVATIVE_OPTIONS), n=1)
+        parts.append(f"'{name}'" + (f" (did you mean '{close[0]}'?)" if close else ""))
+
+    raise TypeError(
+        f"{function_name}() got unexpected keyword argument(s): "
+        + ", ".join(parts)
+        + ". Options the derivative layer accepts: "
+        + ", ".join(sorted(DERIVATIVE_OPTIONS))
+        + "."
+    )
+
 
 def mgfDerivative_integer(
     order: int | sp.Expr,
@@ -351,7 +423,8 @@ def mgfDerivative_fractional(
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend:
-        - `'scipy'`: uses `scipy.integrate.quad` (adaptive) with fallback.
+        - `'scipy'`: uses the fixed-grid kernel in
+          `numeric_fractionalDeriv_grid`.
         - `'mpmath'`: uses `mpmath.quad` (high precision).
         - `'symbolic'`: returns a symbolic expression (may be slow).
     t : float or array-like, optional
@@ -374,10 +447,10 @@ def mgfDerivative_fractional(
         If array‑like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
-        For `'scipy'`: `epsabs`, `epsrel`, `limit`, `initial_L`, `max_L`, `tol`,
-        `use_tan`.
-        For `'mpmath'`: `dps`, `tol`, `use_tan`.
-        For `'symbolic'`: `timeout_seconds`.
+        Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
+        `TypeError` naming it. For `'scipy'`: `tol`. For `'mpmath'`: `dps`,
+        `tol`, `use_tan`. A name valid for a backend other than the one
+        selected is accepted and ignored — see `BACKEND_OPTIONS`.
 
     Returns
     -------
@@ -393,8 +466,9 @@ def mgfDerivative_fractional(
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - For the symbolic path, when `t` is an array, each element is evaluated
       individually using `.subs().evalf()` to preserve accuracy (mpmath).
-    - The `scipy` backend uses an adaptive quadrature with range expansion;
-      the `mpmath` backend uses `tanh-sinh` quadrature with arbitrary precision.
+    - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
+      substitution, with the range derived from `gamma = floor(order)+1-order`;
+      the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
 
     Examples
     --------
@@ -412,11 +486,15 @@ def mgfDerivative_fractional(
     >>> # Symbolic fractional derivative (warning: slow)
     >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
+    _reject_unknown_options(kwargs, "mgfDerivative_fractional")
+
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
         warnings.warn(
             "Symbolic fractional derivatives can be very slow. "
-            "Consider 'scipy' or 'mpmath' instead."
+            "Consider 'scipy' or 'mpmath' instead.",
+            UserWarning,
+            stacklevel=2,
         )
         from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 
@@ -520,22 +598,30 @@ def mgfDerivative_fractional(
 
     # ---- scipy ----
     if method.lower() == "scipy":
-        from jumufraktiv.numeric_fractionalDeriv_scipy import fractionalDeriv_numeric_scipy
-        return fractionalDeriv_numeric_scipy(
+        # The same fixed-grid kernel `mgfDerivative` uses. Until PR 8 these two
+        # entry points reached *different* implementations: `mgfDerivative`
+        # was moved onto the grid kernel by PR 6b while this one was left on
+        # the adaptive scheme the grid kernel replaced, so the answer depended
+        # on which public function the caller happened to reach for.
+        from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+
+        grid_keys = {"tol"}
+        return fractionalDeriv_grid(
             order=order,
             prior=prior,
-            t=t,
-            method=integerDeriv_method,
-            simplify=simplify,
-            return_log=log,
+            t_points=t,
+            u_points=u,
             complete=complete,
-            u=u,
-            **kwargs
+            integer_method=integerDeriv_method,
+            log=log,
+            **{k: v for k, v in kwargs.items() if k in grid_keys},
         )
 
     # ---- mpmath ----
     if method.lower() == "mpmath":
-        from jumufraktiv.numeric_fractionalDeriv_mpmath import fractionalDeriv_numeric_mpmath
+        from jumufraktiv.numeric_fractionalDeriv_mpmath import (
+            fractionalDeriv_numeric_mpmath,
+        )
         return fractionalDeriv_numeric_mpmath(
             order=order,
             prior=prior,
@@ -833,8 +919,9 @@ def mgfDerivative(
         If array‑like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
-        For integer methods: `symbolic_timeout`, `cgf_method`.
-        For fractional methods: `epsabs`, `epsrel`, `limit`, `dps`, `tol`, etc.
+        Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
+        `TypeError`. For integer methods: `symbolic_timeout`, `cgf_method`.
+        For fractional methods: `tol`, and `dps` / `use_tan` for `'mpmath'`.
 
     Returns
     -------
@@ -886,6 +973,10 @@ def mgfDerivative(
     >>> log_abs, sign = mgfDerivative(orders, prior, method='auto', t=-2.0, log=True)
     # Returns arrays of shape (2, 2), not (4,)
     """
+    # Before anything else, so a misspelled option is refused whether the order
+    # is scalar or array-valued, and whether the request ends up symbolic.
+    _reject_unknown_options(kwargs, "mgfDerivative")
+
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to
@@ -1091,192 +1182,3 @@ def mgfDerivative(
             u=u,
             **kwargs
         )
-
-
-if __name__ == "__main__":
-    import math
-    import numpy as np
-    import sympy as sp
-    import jumufraktiv.MGFdictionary  # registers priors
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
-    from scipy.special import gammainc, gamma
-
-    # ------------------------------------------------------------------
-    # Exact analytical reference for incomplete Gamma MGF derivatives
-    # ------------------------------------------------------------------
-    def exact_imgf_deriv(order, t, alpha, beta, u):
-        z = beta - t
-        lower_gamma_val = gamma(alpha + order) * gammainc(alpha + order, z * u)
-        return (beta**alpha / gamma(alpha)) * (z**(-(alpha + order))) * lower_gamma_val
-
-    # ---- Create Gamma priors ----
-    gamma_prior = mitMGFprior.from_registry(
-        "gamma", params={"alpha": 2.0, "beta": 3.0}
-    )
-    gamma_prior_exp = mitMGFprior.from_registry(
-        "gamma", params={"alpha": 1.0, "beta": 0.9}
-    )
-
-    # ============================================================
-    # 1. Sanity check: symbolic vs analytical (iMGF)
-    # ============================================================
-    print("=" * 60)
-    print("Sanity check: symbolic vs. analytical (iMGF)")
-    print("=" * 60)
-    t_chk, u_chk, alpha_chk, beta_chk, order_chk = -1.0, 2.0, 2.0, 3.0, 2
-    val_sym = mgfDerivative(
-        order=order_chk, prior=gamma_prior, method='symbolic',
-        t=t_chk, complete=False, u=u_chk, log=False
-    )
-    val_ref = exact_imgf_deriv(order_chk, t_chk, alpha_chk, beta_chk, u_chk)
-    print(f"Symbolic: {val_sym:.6e}, Analytical: {val_ref:.6e}")
-    print(f"Difference: {abs(val_sym - val_ref):.2e}")
-    print("✅" if abs(val_sym - val_ref) < 1e-12 else "⚠️ Discrepancy")
-
-    # ============================================================
-    # 2. Integer derivatives (complete MGF)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Integer derivatives (complete MGF)")
-    print("=" * 60)
-    t_int = -1.0
-    for method in ['symbolic', 'bell', 'jax']:
-        log_abs, sign = mgfDerivative_integer(
-            2, gamma_prior, method=method, t=t_int, log=True
-        )
-        print(f"{method:>8}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
-
-    # ============================================================
-    # 3. Fractional derivatives (complete MGF)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Fractional derivatives (complete MGF)")
-    print("=" * 60)
-    frac_order, t_frac = 1.99, -1.0
-    for backend in ['scipy', 'mpmath']:
-        try:
-            if backend == 'scipy':
-                log_abs, sign = mgfDerivative_fractional(
-                    order=frac_order, prior=gamma_prior, method=backend,
-                    t=t_frac, integerDeriv_method='symbolic', epsrel=1e-10, log=True
-                )
-            else:  # mpmath
-                log_abs, sign = mgfDerivative_fractional(
-                    order=frac_order, prior=gamma_prior, method=backend,
-                    t=t_frac, integerDeriv_method='symbolic', dps=60, tol=1e-10, log=True
-                )
-            print(f"{backend:>6}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
-        except Exception as e:
-            print(f"{backend:>6}: failed ({e})")
-
-    # ============================================================
-    # 4. Interpolation test (exponential prior)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Interpolation test (order 1.999, exponential prior)")
-    print("=" * 60)
-    t_interp, order_interp = -1.0, 1.999
-    log_abs_interp, sign_interp = mgfDerivative(
-        order=order_interp, prior=gamma_prior_exp, method='scipy',
-        t=t_interp, log=True, integer_method='symbolic',
-        epsrel=1e-10
-    )
-    lambda_exp = gamma_prior_exp.params['beta']
-    log_analytic = math.log(lambda_exp) + math.lgamma(order_interp + 1) - (order_interp + 1) * math.log(lambda_exp - t_interp)
-    print(f"Interpolated: {log_abs_interp:.6f}, Analytic: {log_analytic:.6f}")
-    print(f"Difference: {log_abs_interp - log_analytic:.2e}")
-
-    # ============================================================
-    # 5. Incomplete MGF (iMGF) derivative tests (integer and fractional)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Incomplete MGF (iMGF) derivative tests")
-    print("=" * 60)
-    u_val, t_val_i, alpha_val, beta_val = 2.0, -1.0, 2.0, 3.0
-
-    # Integer order (exact reference)
-    order_int = 2
-    ref_int = exact_imgf_deriv(order_int, t_val_i, alpha_val, beta_val, u_val)
-    print(f"Integer order {order_int}: exact = {ref_int:.6e}")
-    for method in ['bell', 'jax']:
-        log_abs, sign = mgfDerivative_integer(
-            order_int, gamma_prior, method=method,
-            t=t_val_i, complete=False, u=u_val, log=True
-        )
-        val = sign * np.exp(log_abs)
-        print(f"  {method:>4}: {val:.6e} (diff {abs(val - ref_int):.2e})")
-
-    # Fractional order (non‑near‑integer)
-    order_frac = 1.5
-    ref_frac = exact_imgf_deriv(order_frac, t_val_i, alpha_val, beta_val, u_val)
-    print(f"\nFractional order {order_frac}: exact = {ref_frac:.6e}")
-    for backend, extra_kwargs in [('scipy', {'epsrel': 1e-12}), ('mpmath', {'dps': 60, 'tol': 1e-12})]:
-        try:
-            log_abs, sign = mgfDerivative(
-                order=order_frac, prior=gamma_prior, method=backend,
-                t=t_val_i, complete=False, u=u_val, log=True,
-                **extra_kwargs
-            )
-            val = sign * np.exp(log_abs)
-            print(f"  {backend:>6}: {val:.6e} (diff {abs(val - ref_frac):.2e})")
-        except Exception as e:
-            print(f"  {backend:>6}: failed ({e})")
-
-    # Fractional order near integer (interpolation)
-    order_near = 1.999
-    ref_near = exact_imgf_deriv(order_near, t_val_i, alpha_val, beta_val, u_val)
-    print(f"\nNear‑integer order {order_near}: exact = {ref_near:.6e}")
-    try:
-        log_abs, sign = mgfDerivative(
-            order=order_near, prior=gamma_prior, method='scipy',
-            t=t_val_i, complete=False, u=u_val, log=True,
-            epsrel=1e-10
-        )
-        val = sign * np.exp(log_abs)
-        print(f"  interpolation: {val:.6e} (diff {abs(val - ref_near):.2e})")
-    except Exception as e:
-        print(f"  interpolation: failed ({e})")
-
-    # ============================================================
-    # 6. Vectorized t example (fractional derivative, scipy)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Vectorized t example (fractional derivative, scipy)")
-    print("=" * 60)
-    t_vec = np.linspace(-2.0, -0.5, 5)
-    order_vec = 1.99
-    print(f"  t values: {t_vec}")
-    results_log, results_sign = mgfDerivative(
-        order=order_vec,
-        prior=gamma_prior,
-        method='scipy',
-        t=t_vec,
-        log=True,
-        integer_method='symbolic',
-        epsrel=1e-10
-    )
-    print("  Results (log scale):")
-    for t_val, log_abs, sign in zip(t_vec, results_log, results_sign):
-        print(f"    t={t_val:.2f}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")
-
-    # ============================================================
-    # 7. Vectorized order example (multiple orders, scipy)
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("Vectorized order example (multiple orders, scipy)")
-    print("=" * 60)
-    t_order_vec = -1.0
-    orders_vec = np.array([1.5, 1.99, 2.5])
-    print(f"  t = {t_order_vec}, orders = {orders_vec}")
-    log_abs_orders, sign_orders = mgfDerivative(
-        order=orders_vec,
-        prior=gamma_prior,
-        method='scipy',
-        t=t_order_vec,
-        log=True,
-        integer_method='symbolic',
-        epsrel=1e-10
-    )
-    print("  Results (log scale):")
-    for o, log_abs, sign in zip(orders_vec, log_abs_orders, sign_orders):
-        print(f"    order={o:.2f}: log|deriv| = {log_abs:.6f}, sign = {sign:+d}")

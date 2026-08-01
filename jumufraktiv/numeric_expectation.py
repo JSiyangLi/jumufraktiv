@@ -60,6 +60,7 @@ import math
 import numpy as np
 from scipy import integrate, optimize
 
+
 def expectation_is_available(prior) -> bool:
     """Return True if ``prior`` exposes a density this route can integrate."""
     return (
