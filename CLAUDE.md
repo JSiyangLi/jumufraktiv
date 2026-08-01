@@ -801,28 +801,15 @@ where noted as "no runtime repro".
   the deferred "replace `(log_abs, sign)` with a small result type" decision
   rather than a numerical repair. Recorded here so the two are not confused.
   *(deferred — see "Deferred decisions")*
-- **Accuracy at `t = 0` collapses as the order approaches the prior's
-  `max_finite_moment`.** The guard says an order strictly below the bound is
-  admissible, which is true of the mathematics and not of the quadrature: at
-  the origin the integrand `θ^a p(θ)` decays only polynomially, like
-  `θ^{a−α−1}`, and the closer `a` gets to `α` the slower. Measured for
-  Pareto(α=2, ξ=1) against the exact `E[Θ^a] = 2/(2−a)`:
-
-  | order | exact | `scipy` grid | `auto` (expectation) |
-  |---|---|---|---|
-  | 0.5 | 1.333 | 4.3e-13 | 2.5e-16 |
-  | 1.0 | 2.000 | 1.4e-17 | 1.4e-12 |
-  | 1.5 | 4.000 | 2.0e-04 | 7.2e-07 |
-  | 1.9 | 20.000 | 8.2e-02 | 2.2e-02 |
-  | 1.99 | 200.000 | 6.1e-01 | **2.7e-01** |
-
-  It is a `t = 0` defect specifically, not a heavy-tail defect in general: at
-  `t = −0.01` the same three near-boundary orders are accurate to 1.2e-16,
-  because the exponential restores geometric decay. Found while making the
-  moment guard reachable from all three public entry points — the guard admits
-  these orders, so it promises something the kernel cannot deliver.
-  *(unscheduled — tail handling in the quadrature, needing its own
-  verification)*
+- **The differentiating route loses the tail at `t = 0` near a prior's moment
+  bound.** `method="scipy"` gives 2.0e-04 relative error at order 1.5 against
+  Pareto(α=2), 8.2e-02 at 1.9 and 6.1e-01 at 1.99, where the exact answer is
+  `E[Θᵃ] = 2/(2−a)`. The default `auto` route is exact to 6e-16 across the same
+  range; the mechanism differs, so the repair does not carry across. The
+  expectation route integrates `θᵃ p(θ)` and can have its tail supplied from
+  `max_finite_moment`; the fixed grid integrates `M^{(n+1)}` over the
+  fractional-integral kernel, where that correction has no counterpart.
+  *(unscheduled)*
 
 - **The incomplete-MGF derivative is wrong, not merely small, below
   `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
@@ -861,6 +848,30 @@ orders 0.5, 1.5, 1.9 and 2.5 and over point sets of two, three and five widely
 spread `t`. Removing that mask also made the path *faster* — the suite's batch
 tests run in 178 s against 475 s — because the mask was what prevented
 convergence, so `L` had been doubling far past the integrand's support.
+
+**Moments near a prior's `max_finite_moment` are exact at `t = 0`.** The guard
+admits any order strictly below the bound, which is true of the mathematics and
+was not true of the quadrature: at the origin there is no `e^{tθ}` to force
+decay, so the integrand is `θᵃp(θ)`, falling off only polynomially for a
+heavy-tailed prior. Against Pareto(α=2) at `t = 0`, relative error before and
+after:
+
+| order | before | after |
+|---|---|---|
+| 1.5 | 7.2e-07 | 3.3e-17 |
+| 1.9 | 2.2e-02 | 1.0e-16 |
+| 1.99 | 2.7e-01 | 6.0e-16 |
+| 1.999 | ~0.5 | 5.7e-16 |
+
+**Integrating harder cannot achieve this, which is why the tail is supplied
+rather than computed.** Reaching a relative 1e-10 at order 1.99 needs the
+integral carried to `θ ~ 1e1000`, and even at float64's limit of 1.8e308 a
+thousandth of the answer is still outside — the remaining mass sits where `θ`
+cannot be formed at all. A finite `max_finite_moment` is the prior stating that
+`E[Θᵃ]` diverges at `a = α`, which is the statement that `p` has tail index
+`α`; reading the constant off the density at the bracket's end gives
+`∫_T^∞ θᵃp(θ)dθ = p(T)T^{a+1}/(α−a)`. For Pareto that is exact rather than
+asymptotic, since its density *is* a power law.
 
 **`MGFDerivative(method="auto")` now reaches the same backend as
 `mgfDerivative(method="auto")`.** It did not.

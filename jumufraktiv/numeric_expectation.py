@@ -140,6 +140,85 @@ def _vectorise(density):
     return elementwise
 
 
+def _add_polynomial_tail(
+    log_body, *, order, prior, t_values, u_values, highs, log_density
+):
+    """Add the mass beyond ``highs`` when the integrand decays only polynomially.
+
+    Parameters
+    ----------
+    log_body : numpy.ndarray
+        Log of the quadrature over ``[low, high]``, one entry per live point.
+    order : float
+        Derivative order ``a``.
+    prior : mitMGFprior
+        Consulted for ``max_finite_moment``.
+    t_values, u_values : numpy.ndarray
+        Evaluation and truncation points for the live entries.
+    highs : numpy.ndarray
+        Upper end of each point's bracket.
+    log_density : callable
+        ``log p(theta)``, vectorised.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``log_body`` with the tail added where one applies, unchanged elsewhere.
+
+    Notes
+    -----
+    At ``t < 0`` the factor ``e^{t theta}`` forces geometric decay and the
+    bracket reaches the point where the integrand has fallen 700 below its
+    peak, so nothing measurable is left beyond it. **At ``t = 0`` exactly there
+    is no such factor**: the integrand is ``theta^a p(theta)``, which for a
+    heavy-tailed prior decays like ``theta^{a - alpha - 1}``, and the closer
+    ``a`` comes to ``alpha`` the slower.
+
+    No change of variable rescues this, which is why the tail is supplied
+    rather than integrated. The remaining mass sits where ``theta`` is not a
+    float64: reaching a relative 1e-10 at ``a = 1.99`` against Pareto(2) needs
+    the integral carried to ``theta ~ 1e1000``, and even at the representable
+    limit of 1.8e308 a thousandth of the answer is still outside.
+
+    So the tail is taken from the prior's own declaration. A finite
+    ``max_finite_moment`` says ``E[Theta^a]`` diverges at ``a = alpha``, which
+    is the statement that ``p`` has tail index ``alpha``; reading the constant
+    off the density at ``T`` gives
+
+    .. math:: \\int_T^\\infty \\theta^a p(\\theta)\\,d\\theta
+              = \\frac{p(T)\\,T^{a+1}}{\\alpha - a}.
+
+    For a Pareto prior that is exact rather than asymptotic, since its density
+    *is* a power law. For a prior that only approaches one, it is the leading
+    term, and still far closer than dropping the tail entirely.
+
+    A prior declaring ``max_finite_moment = inf`` gets nothing added, correctly:
+    its tail is lighter than any power law, so the bracket already holds it.
+    """
+    limit = float(getattr(prior, "max_finite_moment", np.inf))
+    if np.isinf(limit) or float(order) >= limit:
+        return log_body
+
+    # Only where there is no exponential to force decay, and where the caller
+    # has not truncated the integral itself.
+    applies = (t_values == 0.0) & ~np.isfinite(u_values)
+    if not np.any(applies):
+        return log_body
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_tail = (
+            log_density(highs)
+            + (float(order) + 1.0) * np.log(highs)
+            - math.log(limit - float(order))
+        )
+
+    usable = applies & np.isfinite(log_tail)
+    if not np.any(usable):
+        return log_body
+
+    return np.where(usable, np.logaddexp(log_body, log_tail), log_body)
+
+
 def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     """Bracket where the *integrand* carries its mass, for one evaluation point.
 
@@ -391,6 +470,16 @@ def expectationDeriv(
             results[live] = np.where(
                 values > 0, np.log(np.where(values > 0, values, 1.0)) + offsets, -np.inf
             )
+
+        results[live] = _add_polynomial_tail(
+            results[live],
+            order=order,
+            prior=prior,
+            t_values=t_flat[live],
+            u_values=u_flat[live],
+            highs=np.asarray(highs, dtype=float),
+            log_density=log_density,
+        )
 
     results = results.reshape(t_arr.shape)
 

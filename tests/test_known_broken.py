@@ -236,72 +236,92 @@ def test_pareto_symbolic_incomplete_mgf_is_correct():
 
 
 # ==========================================================================
-# Unscheduled — accuracy at t = 0 as the order approaches the moment bound
+# Accuracy at t = 0 as the order approaches the prior's moment bound
 # ==========================================================================
-# Found while making `_check_moment_exists_at_origin` reachable from all three
-# public entry points. The guard's contract is that an order strictly below the
-# prior's `max_finite_moment` is admissible, which is true of the mathematics
-# and not of the quadrature: at `t = 0` the integrand `theta^a p(theta)` decays
-# only polynomially, like `theta^(a - alpha - 1)`, and the closer `a` gets to
-# `alpha` the slower. Away from the origin the exponential restores geometric
-# decay and both routes are exact to machine precision, so this is a `t = 0`
-# defect specifically and not a heavy-tail defect in general.
+# The guard admits any order strictly below `max_finite_moment`, which is true
+# of the mathematics. It was not true of the quadrature: at the origin there is
+# no `e^{t theta}` to force decay, so the integrand is `theta^a p(theta)`, which
+# for a heavy-tailed prior falls off only polynomially.
 #
-# Measured for Pareto(alpha=2, xi=1) against the exact E[Theta^a] = 2/(2 - a):
-#
-#   order   exact       scipy grid   auto (expectation)
-#   0.5     1.333       4.3e-13      2.5e-16
-#   1.0     2.000       1.4e-17      1.4e-12
-#   1.5     4.000       2.0e-04      7.2e-07
-#   1.9    20.000       8.2e-02      2.2e-02
-#   1.99  200.000       6.1e-01      2.7e-01
-#
-# At t = -0.01 the same three near-boundary orders are accurate to 1.2e-16.
-#
-# Unscheduled: it is tail-handling in the quadrature, needing its own
-# verification, and PR 12 is an interface pass.
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="unscheduled: at t = 0 the integrand decays only polynomially, so "
-    "accuracy collapses as the order approaches the prior's max_finite_moment "
-    "-- 61% relative error at order 1.99 against Pareto(alpha=2)",
-)
-@pytest.mark.parametrize("order", [1.5, 1.9, 1.99])
+# The expectation route now supplies that tail from the prior's own declaration
+# rather than integrating it, and is exact to 6e-16 across the range. The
+# differentiating route is not fixed and is recorded below.
+@pytest.mark.parametrize("order", [1.5, 1.9, 1.99, 1.999])
 def test_moments_near_the_bound_are_accurate_at_the_origin(order):
-    """An order the guard admits must also be one the kernel can compute."""
+    """An order the guard admits must also be one the kernel can compute.
+
+    Measured before the repair, relative error against `E[Theta^a] = 2/(2-a)`:
+    7.2e-07 at order 1.5, 2.2e-02 at 1.9 and 2.7e-01 at 1.99. Order 1.999 was
+    roughly half the answer.
+    """
     prior = _pareto_prior_alpha_two()
     exact = np.log(2.0 / (2.0 - order))
 
     log_abs, sign = mgfDerivative(order, prior, method="auto", t=0.0, log=True)
 
     assert sign == 1
-    assert log_abs == pytest.approx(exact, rel=1e-8)
+    assert log_abs == pytest.approx(exact, rel=1e-12)
 
 
-def test_moments_near_the_bound_are_accurate_just_off_the_origin():
-    """Not broken -- asserted here to bound the defect above.
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="unscheduled: the fixed-grid kernel reaches the same tail through "
+    "the Caputo fractional integral rather than as an expectation, so the "
+    "tail supplied to the expectation route does not apply to it",
+)
+@pytest.mark.parametrize("order", [1.5, 1.9, 1.99])
+def test_the_grid_route_is_accurate_at_the_origin_too(order):
+    """The differentiating route still loses the tail: 6.1e-01 at order 1.99.
 
-    Without this, "heavy-tailed priors lose accuracy at high orders" would be
-    far too broad a claim, and a repair might start from the wrong end. The
-    same orders at t = -0.01 agree with direct quadrature to 1.2e-16.
+    Recorded separately rather than left inside the repaired record, because
+    the mechanism differs. The expectation route integrates `theta^a p(theta)`
+    and can have its tail supplied from `max_finite_moment`; the fixed grid
+    integrates `M^{(n+1)}` over the fractional-integral kernel, where the same
+    correction has no counterpart.
+    """
+    prior = _pareto_prior_alpha_two()
+    exact = np.log(2.0 / (2.0 - order))
+
+    log_abs, _ = mgfDerivative(order, prior, method="scipy", t=0.0, log=True)
+
+    assert log_abs == pytest.approx(exact, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("prior_name", "params"),
+    [("gamma", {"alpha": 2.0, "beta": 3.0}), ("uniform", {"a": 0.5, "b": 2.0})],
+)
+@pytest.mark.parametrize("order", [1.5, 2.5])
+def test_the_tail_correction_is_inert_for_a_light_tailed_prior(
+    prior_name, params, order
+):
+    """It must add nothing where the bracket already holds the whole integral.
+
+    A prior declaring `max_finite_moment = inf` has a tail lighter than any
+    power law, so there is nothing outside the bracket to supply. Asserted
+    because the correction is applied inside the shared batch path, where a
+    mistake would reach every prior rather than only the heavy-tailed ones.
     """
     import mpmath as mp
 
-    prior = _pareto_prior_alpha_two()
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
     mp.mp.dps = 40
+    prior = mitMGFprior.from_registry(prior_name, params=params)
 
-    def integrand(theta, a):
-        """theta**a e^{t theta} p(theta) for Pareto(2, 1) at t = -0.01."""
-        return theta ** mp.mpf(a) * mp.e ** (mp.mpf("-0.01") * theta) * 2 / theta**3
-
-    for order in (1.5, 1.9, 1.99):
+    if prior_name == "gamma":
         reference = float(
-            mp.log(mp.quad(lambda th, a=order: integrand(th, a), [1, mp.inf]))
+            mp.log(mp.gamma(2 + mp.mpf(order)) / mp.gamma(2) / mp.mpf(3) ** order)
         )
-        log_abs, _ = mgfDerivative(order, prior, method="auto", t=-0.01, log=True)
+    else:
+        reference = float(
+            mp.log(mp.quad(lambda th: th ** mp.mpf(order) / mp.mpf("1.5"), [0.5, 2]))
+        )
 
-        assert log_abs == pytest.approx(reference, rel=1e-12)
+    log_abs, _ = mgfDerivative(order, prior, method="auto", t=0.0, log=True)
+
+    assert log_abs == pytest.approx(reference, rel=1e-12)
 
 
 def _pareto_prior_alpha_two():
