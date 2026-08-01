@@ -548,6 +548,8 @@ agree by inspection.
 | File | Covers |
 |------|--------|
 | `conftest.py` (root) | the doctest namespace, for `--doctest-modules` |
+| `test_incomplete_mgf.py` | the iMGF for every prior, and the four methods built on it |
+| `test_mgf_domain.py` | where the posterior MGF converges, and the origin |
 | `tests/canonical.py` | the Gamma/Poisson problem, shared by both conftests |
 | `conftest.py` | fixtures and closed-form references |
 | `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
@@ -633,8 +635,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 4 | 10 | Caching and dispatch | **merged** |
 | 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **merged** |
 | 5 | 12b | The moment domain at `t = 0`: the analytic tail | **merged** |
-| 6 | 13a | The front door: README, notebooks, and the docstring examples | **in review** |
-| 6 | 13b | Quantities that come back wrong without saying so | planned |
+| 6 | 13a | The front door: README, notebooks, and the docstring examples | **merged** |
+| 6 | 13b | Quantities that come back wrong without saying so | **in review** |
 | 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | planned |
 | 6 | 13d | Packaging: what the sdist and wheel actually contain | planned |
 | 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
@@ -848,9 +850,24 @@ folding it into a list of numerical fixes.
 
 ### Known-broken, scheduled for repair
 
-Do not build on these paths; do not paper over them. Each has a PR assigned and
-a matching `xfail(strict=True)` test in `tests/test_known_broken.py`, except
-where noted as "no runtime repro".
+Do not build on these paths; do not paper over them. **Every entry here has a
+matching `xfail(strict=True)` test in `tests/test_known_broken.py`, and that
+correspondence was re-established by measurement rather than assumed** — it had
+drifted to four entries against one marker, three of them citing merged PRs, so
+nobody could tell a live defect from a stale record. Reconciled by rerunning
+each reproduction:
+
+| entry | recorded | measured | outcome |
+|---|---|---|---|
+| alternating CGF, `symbolic` | wrong sign at order 30 | 5.4e+09, sign flipped | live; xfail added |
+| mpmath `dps` above ~20 | a return-convention limit | unchanged | not a defect; moved to "Deferred decisions" |
+| tail at `t = 0`, `scipy` | 6.1e-01 at order 1.99 | — | live; already carried three xfails |
+| incomplete MGF below `u ≈ 1e-2` | 45 nats off at `u = 1e-6` | **0.000 nats** | fixed by PR 6b; entry deleted |
+
+The general lesson is the one the mechanism exists to prevent: a list of known
+defects that is not executable becomes a list of *claims* about defects, and
+ages in both directions at once — it kept an entry that had been fixed and lost
+one that had not.
 
 - **Integer derivatives of an alternating-CGF prior lose all accuracy above
   order ~16, and change sign.** `mgfDerivative(30, uniform(0.5, 2.0),
@@ -891,12 +908,22 @@ where noted as "no runtime repro".
   to prefer it, and it does not obviously extend to priors given only as an MGF
   — so it is recorded here for the owner rather than assumed.
 
-  *Moved from PR 5 to **PR 6**.* It was filed under symbolic-path correctness
-  because the reproduction goes through `method="symbolic"`, but nothing about
-  the symbolic path is wrong: `sp.diff` returns the correct derivative and the
-  loss happens when float coefficients cancel during evaluation. It is a
-  conditioning problem, and it belongs with the other conditioning work rather
-  than with the three name-and-substitution defects PR 5 repaired. *(PR 6)*
+  **Re-measured, and it is now reachable only by asking for the backend by
+  name.** Against Uniform(0.5, 2) at `t = −1`, with the exact value from mpmath
+  at 80 digits:
+
+  | order | `method="symbolic"` | `method="auto"` (the default) |
+  |---|---|---|
+  | 12 | 2.2e-10 | 2.6e-15 |
+  | 16 | 2.0e-06 | 3.1e-15 |
+  | 20 | 1.8e-02 | 5.1e-15 |
+  | 30 | 5.4e+09, sign flipped | 7.3e-15 |
+
+  So the route PR 6c made the default already computes it correctly, and what
+  is left open is an interface question rather than a numerical one: should an
+  explicitly requested backend be silently replaced by a better one, or should
+  it fail as asked? That is why this stays recorded rather than being closed.
+  *(unscheduled — interface decision)*
 - **`dps` above about 20 cannot improve the mpmath backend's *return value*,
   because it returns `(log_abs, sign)` as Python floats.** The internals are now
   arbitrary-precision throughout — the integrand is the prior's symbolic
@@ -920,20 +947,6 @@ where noted as "no runtime repro".
   fractional-integral kernel, where that correction has no counterpart.
   *(unscheduled)*
 
-- **The incomplete-MGF derivative is wrong, not merely small, below
-  `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
-  canonical test problem, its log comes out as `−65.17` at `u = 1e-6` where the
-  true value is `−110.41` — a 45-nat error — with the computed sign flipped
-  negative. It is already wrong by 17.8 nats at `u = 1e-4` and becomes
-  trustworthy only around `u = 1e-2`.
-
-  The audit previously described this as underflow. It is not: the value is
-  badly wrong well before anything underflows, which is cancellation in the
-  incomplete gamma. `post_quantile` no longer trips over it, because its
-  bracket now starts from the posterior's own scale `(a+1)/b` rather than from
-  `1e-6`, but the inaccuracy itself is untouched and belongs to the kernel
-  work. It bounds how far into the lower tail any CDF-based method can be
-  trusted. *(PR 6b)*
 ### Verified correct
 
 Worth recording, because it bounds where the bugs are. Against closed-form
@@ -1007,6 +1020,74 @@ prior**, whose MGF derivatives have one-signed terms and therefore cannot
 cancel — the same hazard recorded below under a different name. The 240-case
 sweep that established the default measured the *dispatcher*; the class was
 assumed to inherit it.
+
+**The incomplete-MGF derivative's lower tail is repaired.** It was recorded as
+wrong by 45 nats at `u = 1e-6`, with the sign flipped, and trustworthy only
+above `u ≈ 1e-2`. Re-measured against `scipy.stats.gamma.logcdf` for the exact
+Gamma(8, 6) posterior of the canonical problem, `post_cdf` now agrees at every
+`u` tested:
+
+| `u` | package | exact | nats apart |
+|---|---|---|---|
+| 1e-6 | −106.7946 | −106.7946 | 0.000 |
+| 1e-4 | −69.9538 | −69.9538 | 0.000 |
+| 1e-2 | −33.1652 | −33.1652 | 0.000 |
+| 1e-1 | −15.2227 | −15.2227 | 0.000 |
+
+PR 6b's fixed-grid kernel closed it and the known-broken list was not updated,
+which is how the entry survived three PRs after its own repair.
+
+**The posterior CDF now exists for every registry prior.** `post_cdf` needs the
+prior's incomplete MGF `M(t, u) = ∫_{-∞}^{u} e^{tx}p(x)dx`, and
+`post_quantile`, `post_interval` and `post_sample` are all built on it, so a
+prior without one loses four public methods at once, on every backend. Two of
+the four registry priors had none, and the refusal said "Prior does not support
+incomplete MGF (iMGF)" — which reads as a statement about the mathematics and
+was a statement about the module. Both integrals are elementary:
+
+```
+uniform(a, b) :  ∫_a^{min(u,b)} e^{tx}/(b-a) dx = (e^{tm} - e^{ta})/(t(b-a))
+heaviside(k)  :  ∫_k^u e^{tx} dx                = (e^{tu} - e^{tk})/t
+```
+
+Both are formed with `logminus` and ordered by the sign of `t`, for the reason
+`uniform_cgf` already was: below the origin neither factor is positive on its
+own and the signs cancel only in the ratio. Measured against mpmath at 40 dps
+with the density written out separately, the worst relative error is 1.3e-15
+over 42 `(t, u)` pairs for uniform and 9.1e-16 over 24 for heaviside, and the
+posterior CDF is right to 1.3e-13 or better on all four backends.
+
+**`post_mgf` returned the value of a formula outside the domain where that
+formula is the MGF.** The Gamma(8, 6) posterior's MGF is `(6/(6-r))⁸`, finite
+only for `r < 6`. Past that the eighth power keeps the sign positive, so the
+package returned plausible numbers where the answer is infinite:
+
+| `r` | returned | true value |
+|---|---|---|
+| 6.1 | 1.68e+14 | ∞ |
+| 10 | **25.63** | ∞ |
+| 100 | **2.76e-10** | ∞ |
+
+The repair is a prior-level declaration in the same style as
+`max_finite_moment`, because where an MGF converges is a property of the prior
+and not of the data: `mgf_finite_below` is the supremum of `t` with `M(t) < ∞`
+— `β` for gamma, `∞` for uniform, `0` for pareto and heaviside. `post_mgf`
+evaluates at `t = r - b`, so it refuses any `r` that puts the point past the
+bound, and the message names the largest admissible `r`.
+
+**`t = 0` needed its own treatment, and got the answer wrong in two different
+ways.** At `r = b` the exponential is 1 and the value reduces to `E[Θ^a]`.
+Every prior but gamma returned `nan`: uniform because its MGF carries `t` in a
+denominator, so `subs` sees 0/0 where the value is finite; pareto and heaviside
+because the moment genuinely diverges and nothing refused. Both now behave —
+uniform returns 141.404114, exact to 1.4e-15 against mpmath, and the other two
+raise naming the order and the bound.
+
+**`sp.limit` is not the fix for the first of those, and that is worth
+recording.** For the uniform prior at order 6 it returns `∞` where the value is
+`E[Θ⁶] = 12.19`. A limit that returns a wrong number is the same class of
+defect being repaired, so the origin routes through the expectation backend
+instead, which integrates `E[Θ^a]` directly.
 
 **Dimensionality is now checked in one place.** The `ndim != 1` guard lives
 inside the shared `like_stats/_common.py::_extract_1d`, which every entry point

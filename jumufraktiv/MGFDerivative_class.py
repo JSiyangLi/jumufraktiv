@@ -101,6 +101,7 @@ from jumufraktiv.symbols import r, t, theta, u
 #: `ValueError` run before these blocks and are unaffected.
 _DELIBERATE_REFUSALS = (NotImplementedError,)
 
+
 # ============================================================
 # Likelihood registry
 # ============================================================
@@ -601,6 +602,93 @@ class MGFDerivative:
             # re-forwarding `**self._deriv_kwargs` here raises TypeError for
             # every option the closure already carries.
             return self._deriv(t_value)
+
+    def _check_mgf_converges(self, r_values) -> None:
+        """Refuse an `r` at which the posterior MGF does not exist.
+
+        The posterior MGF evaluates the prior at `t = r - b`, so it inherits
+        the prior's convergence bound shifted by `b`. Past that bound the
+        integral `E[e^{r theta}]` diverges and there is no value to return.
+
+        Raises
+        ------
+        ValueError
+            If any `r` puts the evaluation point above `prior.mgf_finite_below`.
+
+        Notes
+        -----
+        This has to be a guard rather than something the arithmetic discovers,
+        because an analytic MGF evaluated outside its domain returns the value
+        of the *formula*: a Gamma(8, 6) posterior's MGF is `(6/(6-r))**8`, and
+        the even power makes that positive and plausible for every `r > 6` --
+        `25.63` at `r = 10`, `2.76e-10` at `r = 100`, where the answer is
+        infinite in both cases.
+        """
+        bound = float(getattr(self.prior, "mgf_finite_below", np.inf))
+        if np.isinf(bound):
+            return
+
+        points = np.asarray(r_values, dtype=float) - float(self.b)
+
+        # Strictly past the bound is always divergent. The bound itself is
+        # divergent too, except at the origin, which has its own guard: there
+        # `D^a M(0) = E[Theta^a]` and admissibility depends on the ORDER as well
+        # as the prior, which is what `max_finite_moment` decides. Refusing
+        # `t = 0` here would pre-empt that and reject orders it admits.
+        outside = points > bound if bound == 0.0 else points >= bound
+        if not np.any(outside):
+            self._check_mgf_moment_at_origin(points)
+            return
+
+        offending = np.asarray(r_values, dtype=float)[outside]
+        largest_r = float(bound) + float(self.b)
+        raise ValueError(
+            f"the posterior MGF does not exist at r = "
+            f"{', '.join(f'{value:g}' for value in np.atleast_1d(offending)[:4])}"
+            f"{' ...' if offending.size > 4 else ''}. It evaluates the prior's "
+            f"MGF at t = r - b with b = {float(self.b):g}, and this prior's MGF "
+            f"is finite only for t < {bound:g}, so E[exp(r*theta)] diverges "
+            f"for r above {largest_r:g}."
+        )
+
+    def _is_origin(self, r_values) -> bool:
+        """Whether any numeric evaluation point puts `t = r - b` at zero."""
+        if r_values is None or isinstance(r_values, sp.Basic):
+            return False
+        return bool(
+            np.any(np.asarray(r_values, dtype=float) - float(self.b) == 0.0)
+        )
+
+    def _check_mgf_moment_at_origin(self, points) -> None:
+        """Refuse `r = b`, the origin, when the raw moment there diverges.
+
+        At `t = r - b = 0` the exponential is 1 and the numerator reduces to
+        `E[Theta^a]`, so the posterior MGF exists there only if that moment
+        does. This is the same admissibility question `max_finite_moment`
+        answers for the evidence, and it depends on the ORDER as well as the
+        prior: `a = 6` against Pareto(alpha=2) diverges, `a = 1` does not.
+
+        Raises
+        ------
+        ValueError
+            If any point is the origin and `a >= prior.max_finite_moment`.
+        """
+        limit = float(getattr(self.prior, "max_finite_moment", np.inf))
+        if np.isinf(limit):
+            return
+        if not np.any(np.asarray(points, dtype=float) == 0.0):
+            return
+
+        order = float(self.a)
+        if order < limit:
+            return
+
+        raise ValueError(
+            f"the posterior MGF does not exist at r = b = {float(self.b):g}. "
+            f"There t = r - b = 0, the exponential is 1, and the value reduces "
+            f"to the raw moment E[Theta^{order:g}] -- which diverges, because "
+            f"this prior has finite moments only below order {limit:g}."
+        )
 
     def _should_dispatch_numerically(self, t_value) -> bool:
         """Whether to route this evaluation point through `mgfDerivative`.
@@ -1539,8 +1627,24 @@ class MGFDerivative:
         >>> print(f"{float(expr.subs(r, 0.2)):.6f}")  # agrees with the numeric call
         1.311554
         """
+        # Whether the posterior MGF exists at `r` is a property of the prior and
+        # of `r`, not of the backend, so the check precedes the branch. Putting
+        # it inside one of the two arms is how a guard comes to hold on the
+        # numeric route and not on the symbolic one.
+        if r_val is not None and not isinstance(r_val, sp.Basic):
+            self._check_mgf_converges(np.atleast_1d(np.asarray(r_val, dtype=float)))
+
         # ---- Symbolic path (if derivative is symbolic) ----
-        if self._deriv_is_symbolic:
+        #
+        # Except at `r = b`. There `t = r - b = 0`, and any prior whose MGF
+        # carries `t` in a denominator -- uniform's is
+        # `(e^{t b} - e^{t a}) / (t (b - a))`, and differentiating it keeps that
+        # factor -- gives `0/0` under substitution. `sp.limit` does not rescue
+        # it: for that same uniform prior at order 6 it returns `oo` where the
+        # value is `E[Theta^6] = 12.19`, which is a wrong number rather than a
+        # failure. The expectation backend computes `E[Theta^a e^{0}]` as an
+        # ordinary integral and gets it right, so the origin goes there.
+        if self._deriv_is_symbolic and not self._is_origin(r_val):
             try:
                 # Build symbolic expression using the canonical `r`
                 num_expr = self._deriv.subs(t, r - self.b)
@@ -1646,6 +1750,8 @@ class MGFDerivative:
         scalar_input = r_arr.ndim == 0
         if scalar_input:
             r_arr = np.array([r_val])
+
+        self._check_mgf_converges(r_arr)
 
         log_abs_num, sign_num = mgfDerivative(
             order=self.a,
