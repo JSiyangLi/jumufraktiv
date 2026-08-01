@@ -15,9 +15,13 @@ Dispatcher:
     - solve_root: choose method based on root_method argument.
 """
 
+import logging
+
 import numpy as np
 import jax
 import jax.numpy as jnp
+
+logger = logging.getLogger(__name__)
 jax.config.update("jax_enable_x64", True)
 
 
@@ -368,7 +372,9 @@ def solve_root(
     rel_tol : float, optional
         Relative tolerance (Newton only).
     verbose : bool, optional
-        If True, print messages about which methods are tried and whether they succeed.
+        If True, report which methods are tried and whether they succeed, at
+        ``logging.INFO`` on the ``jumufraktiv.root_finding`` logger. Nothing is
+        written to stdout; configure logging to see it.
 
     Returns
     -------
@@ -420,11 +426,11 @@ def solve_root(
     # ---- If explicit method, try it directly ----
     if root_method != "auto":
         if verbose:
-            print(f"Trying method: {root_method}...")
+            logger.info("Trying root method %s.", root_method)
         result = try_method(root_method)
         if result is not None:
             if verbose:
-                print(f"Method {root_method} succeeded.")
+                logger.info("Root method %s succeeded.", root_method)
             return result
         else:
             raise RuntimeError(f"Method '{root_method}' failed.")
@@ -452,14 +458,14 @@ def solve_root(
     # Try each method in order
     for method_name in methods:
         if verbose:
-            print(f"Trying method: {method_name}...")
+            logger.info("Trying root method %s.", method_name)
         result = try_method(method_name)
         if result is not None:
             if verbose:
-                print(f"Method {method_name} succeeded.")
+                logger.info("Root method %s succeeded.", method_name)
             return result
         else:
             if verbose:
-                print(f"Method {method_name} failed, trying next.")
+                logger.info("Root method %s failed; trying the next.", method_name)
 
     raise RuntimeError("All auto methods failed.")

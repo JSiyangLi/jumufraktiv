@@ -22,8 +22,11 @@ Functions:
 import jax
 import jax.numpy as jnp
 from jax.experimental import jet
+import logging
 import math
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 jax.config.update("jax_enable_x64", True)
 
@@ -140,7 +143,9 @@ def _integerDeriv_numeric_jax_scalar(
             if not unsupported:
                 raise
 
-            print(f"⚠️ Jet failed ({type(e).__name__}: {e}). Falling back to grad().")
+            logger.debug(
+                "jet() failed (%s: %s); using nested grad() instead. "
+                "Both compute the same derivatives.", type(e).__name__, e)
 
             deriv = expr
             for _ in range(order):

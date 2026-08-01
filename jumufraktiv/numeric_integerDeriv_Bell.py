@@ -7,6 +7,7 @@ symbolic (SymPy) and numeric (JAX). Falls back to JAX if symbolic fails
 or exceeds a user‑specified timeout.
 """
 
+import logging
 import math
 import time
 import numpy as np
@@ -23,6 +24,8 @@ from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.logsum import logminus
 from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
+
+logger = logging.getLogger(__name__)
 
 # ===== Helper: CGF derivatives (unchanged) =====
 def cgf_derivatives_jet(cgf_func, t, order):
@@ -97,7 +100,9 @@ def _cgf_derivatives_jax_scalar(cgf_func, t, order, cgf_mode):
         except Exception as e:
             msg = str(e).lower()
             if any(key in msg for key in ("jet", "primitive", "not implemented", "igamma")):
-                print(f"⚠️ Jet failed ({type(e).__name__}: {e}). Falling back to grad().")
+                logger.debug(
+                    "jet() failed (%s: %s); using nested grad() instead. "
+                    "Both compute the same derivatives.", type(e).__name__, e)
                 return cgf_derivatives_grad(cgf_func, t, order)
             raise
     else:
@@ -283,7 +288,7 @@ def integerDeriv_numeric_bell(
             cgf_expr = sp.log(prior.imgf_sym)
         else:
             cgf_expr = None
-            print("No imgf_sym; symbolic path will be skipped.")
+            logger.debug("Prior has no imgf_sym; taking the numeric (JAX) path.")
         if prior.logimgf_jax is not None:
             cgf_func = prior.logimgf_jax
         elif prior.imgf_jax is not None:
@@ -326,7 +331,7 @@ def integerDeriv_numeric_bell(
         use_symbolic = True
     elif cgf_mode.lower() in ('jet', 'grad'):
         use_symbolic = False
-        print(f"Decision: Forced JAX numeric path (cgf_mode='{cgf_mode}')")
+        logger.debug("cgf_mode=%r forces the numeric (JAX) path.", cgf_mode)
     else:
         if cgf_expr is not None:
             decision = suggest_method_integerDeriv(
@@ -336,10 +341,12 @@ def integerDeriv_numeric_bell(
                 return_decision=True
             )
             use_symbolic = decision['recommend_symbolic']
-            print(f"Decision: {'Symbolic' if use_symbolic else 'Numeric (JAX)'}")
+            logger.debug(
+                "Chose the %s path.",
+                "symbolic" if use_symbolic else "numeric (JAX)")
         else:
             use_symbolic = False
-            print("No symbolic expression; using numeric (JAX) path.")
+            logger.debug("No symbolic CGF available; taking the numeric (JAX) path.")
 
     # ------------------------------------------------------------
     # 5. Symbolic path (iterate over points)
@@ -412,7 +419,7 @@ def integerDeriv_numeric_bell(
     # 6. Numeric (JAX) path – tuple‑vectorised, no Python loops
     # ------------------------------------------------------------
     if not use_symbolic:
-        print("Using JAX numeric path (tuple‑vectorised)...")
+        logger.debug("Evaluating on the tuple-vectorised JAX path.")
 
         # Prepare JAX arrays
         t_vals = jnp.asarray(t_flat)

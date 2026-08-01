@@ -16,10 +16,14 @@ not implement that family. A helper for choosing how to compute a transform
 the package never takes is not a partial feature; it is a leftover.
 """
 
+import logging
 import time
+
 import sympy as sp
 
 from jumufraktiv.symbolic_cache import cached_diff
+
+logger = logging.getLogger(__name__)
 
 def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.0, return_decision=False):
     """
@@ -35,20 +39,22 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
 
     Returns:
         if return_decision: dict with keys 'recommend_symbolic', 'elapsed', etc.
-        else: prints and returns None
+        else: logs the recommendation at INFO and returns None
     """
     if test_order is None:
         test_order = min(order, 2)   # test low order
     if test_order <= 0:
         test_order = 1
 
-    print(f"🔬 Testing symbolic derivative of order {test_order} (target order: {order})...")
+    logger.debug(
+        "Timing a symbolic derivative of order %s (target order %s).",
+        test_order, order)
     start = time.time()
     try:
         deriv = cached_diff(expr, symbol, test_order)
         elapsed = time.time() - start
         complexity = sp.count_ops(deriv)
-        print(f"   ✅ Test succeeded in {elapsed:.3f}s, complexity={complexity}")
+        logger.debug("Succeeded in %.3fs, complexity %s.", elapsed, complexity)
 
         # If the test derivative is already heavy, high order will be worse
         if elapsed < 0.1 and complexity < 100:
@@ -61,7 +67,7 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
             recommend = False
             msg = "❌ NOT RECOMMENDED: Symbolic test is already slow/large. Use numeric (JAX)."
     except Exception as e:
-        print(f"   ❌ Test failed: {e}")
+        logger.debug("Symbolic test failed (%s); recommending the numeric path.", e)
         recommend = False
         msg = "❌ Symbolic test failed. Use numeric (JAX)."
         elapsed = timeout
@@ -71,5 +77,5 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
         return {'recommend_symbolic': recommend, 'elapsed': elapsed,
                 'complexity': complexity, 'message': msg, 'test_order': test_order}
     else:
-        print(msg)
+        logger.info("%s", msg)
         return None

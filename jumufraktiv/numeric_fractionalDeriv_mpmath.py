@@ -158,7 +158,15 @@ def fractionalDeriv_numeric_mpmath_tan(
                 log_jacobian = log(max_u) + log(1 + tan_theta * tan_theta)
                 log_integrand = gamma_val * u_var + mpf(log_abs) + log_jacobian
                 return exp(log_integrand) * sign
-            except Exception:
+            except (OverflowError, ValueError, ZeroDivisionError):
+                # Only the endpoint overflow is expected, and zero is its
+                # correct limit: as theta -> +pi/2, `z = exp(max_u tan theta)`
+                # runs away, so `y = t - z` runs to -infinity and
+                # `M^{(n+1)}(y)` decays to nothing. Catching `Exception` here
+                # instead would have turned any genuine failure -- a prior with
+                # a broken MGF, a wrong argument type -- into a zero at every
+                # node, and the quadrature would have returned a confident
+                # answer built entirely out of them.
                 return mpf(0.0)
 
         a = -pi / 2 + margin
@@ -167,11 +175,14 @@ def fractionalDeriv_numeric_mpmath_tan(
         try:
             integral = quad(integrand_theta, (a, b), method='tanh-sinh')
         except Exception as e:
-            print(f"mpmath tan‑transform integration failed for t={t_val}, u={u_val}: {e}")
-            if return_log:
-                return float('nan'), 1
-            else:
-                return float('nan')
+            # This used to print and return NaN. A NaN is not an error: it
+            # compares False against everything, so downstream branches take
+            # their `else` and the failure surfaces somewhere else entirely,
+            # if at all.
+            raise RuntimeError(
+                f"mpmath tan-transform quadrature failed at t={t_val}, "
+                f"u={u_val}, order={order}, dps={mp.dps}."
+            ) from e
 
         if return_log:
             if integral == 0:
