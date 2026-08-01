@@ -69,6 +69,13 @@ jobs:
         if: matrix.slow
         run: pytest -v --cov=jumufraktiv --cov-report=term-missing
 
+      # The docstring examples are executed, not merely rendered. They printed
+      # invented numbers for several releases -- `1.234567e+00` among them --
+      # because nothing ran them.
+      - name: Run the docstring examples
+        if: matrix.slow
+        run: pytest -v --doctest-modules jumufraktiv/MGFDerivative_class.py jumufraktiv/mitMGFprior_class.py
+
       - name: Run the quick pass
         if: ${{ !matrix.slow }}
         run: pytest -v -m "not slow"
@@ -99,3 +106,16 @@ jobs:
           python -m venv /tmp/fresh
           /tmp/fresh/bin/pip install dist/*.whl
           /tmp/fresh/bin/python -c "import jumufraktiv; print(jumufraktiv.__version__)"
+
+      # `twine check` renders the README; it does not run it. The quick start
+      # raised TypeError on the installed package while this job was green,
+      # because nothing executed the one example a new user meets first.
+      #
+      # The examples run in a subprocess from an empty temporary directory, so
+      # they import the wheel installed above rather than the source tree this
+      # job is checked out into. `not slow` drops the one test that re-runs the
+      # docstring examples; those belong to the test job.
+      - name: Run the README quick start against the installed wheel
+        run: |
+          /tmp/fresh/bin/pip install pytest docutils
+          /tmp/fresh/bin/python -m pytest tests/test_documentation_runs.py -q -m "not slow"

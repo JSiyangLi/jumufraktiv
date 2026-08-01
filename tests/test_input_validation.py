@@ -14,9 +14,9 @@ therefore checked where both the order and the prior are visible.
 
 import numpy as np
 import pytest
-from conftest import POISSON_DATA
 from test_likelihood_stats import COUNTS, DATA, LIKELIHOOD_KWARGS
 
+from conftest import POISSON_DATA
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import LIKELIHOOD_REGISTRY, MGFDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
@@ -304,3 +304,100 @@ def test_registry_priors_all_declare_a_moment_domain(name):
         f"use float('inf') if all moments exist."
     )
     assert float(spec["max_finite_moment"]) >= 0.0
+
+
+# ==========================================================================
+# Refusals the docstrings advertise
+# ==========================================================================
+# Both of these were documented as capabilities the code does not have. A
+# docstring that promises a return where the code raises is a defect in one of
+# the two; these tests fix which one.
+def test_a_symbolic_observation_is_refused_by_name():
+    """`post_predictive` cannot take a symbol for the observation.
+
+    The predictive density differentiates the posterior MGF `a(y_new)` times,
+    so a symbolic `y_new` makes the differentiation *order* symbolic, which
+    `sp.diff` cannot use. No backend avoids that, so the refusal belongs at the
+    entry point, and it must name the argument the caller passed rather than an
+    internal symbol standing in for a statistic.
+    """
+    import sympy as sp
+
+    registry.initialize()
+    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        deriv.post_predictive(sp.Symbol("y_new", real=True))
+
+    message = str(excinfo.value)
+    assert "y_new" in message
+    assert "a_new" not in message, "the message names an internal symbol"
+
+
+def test_the_first_central_moment_is_zero_not_the_mean():
+    """`E[Theta - E[Theta]]` is zero by construction.
+
+    Worth asserting because the docstring called order 1 "the mean" for several
+    releases, which is the raw moment. A caller who believed it got 0.0 and no
+    error.
+    """
+    registry.initialize()
+    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
+
+    assert float(deriv.post_central_moment(order=1, log=False)) == 0.0
+
+    log_abs, sign = deriv.post_central_moment(order=1, log=True)
+    assert float(log_abs) == -np.inf
+    assert sign == 1
+
+    # The posterior mean is the *raw* first moment: Gamma(8, 6) has mean 8/6.
+    assert float(deriv.post_raw_moment(1, log=False)) == pytest.approx(
+        8.0 / 6.0, rel=1e-10
+    )
+
+
+def test_a_symbolic_path_does_not_mask_a_deliberate_refusal():
+    """The refusal must reach the caller with its own type and message.
+
+    Each symbolic path ends in `except Exception: raise RuntimeError(...)`, to
+    say which quantity was being built when SymPy failed unexpectedly. That is
+    useful for an unexpected failure and destructive for a deliberate one: it
+    costs the caller the type they would catch and buries the message that says
+    what to do instead. A symbolic moment order is the reachable example --
+    `sp.diff` needs a concrete number of times to differentiate, so the order
+    is refused, and the refusal names the free symbol.
+
+    Only `NotImplementedError` is let through. SymPy's own `ValueError` and
+    `TypeError` still get the wrapper, because those are the unexpected
+    failures it exists to label -- so the second half of this test pins the
+    boundary rather than only the repair.
+    """
+    import sympy as sp
+
+    from jumufraktiv.symbols import param, t, theta
+
+    # A free shape leaves the posterior symbolic, which is what routes the call
+    # into the symbolic branch that carries the wrapper.
+    alpha = param("alpha")
+    free_prior = mitMGFprior(
+        name="gamma_free_shape",
+        mgf_sym=(3 / (3 - t)) ** alpha,
+        pdf_sym=3**alpha * theta ** (alpha - 1) * sp.exp(-3 * theta) / sp.gamma(alpha),
+        params={},
+    ).as_mitMGFprior()
+    deriv = MGFDerivative(
+        free_prior,
+        data=POISSON_DATA,
+        likelihood="poisson",
+        scale=1.0,
+        method="symbolic",
+    )
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        deriv.post_raw_moment(sp.Symbol("q", real=True), log=False)
+
+    message = str(excinfo.value)
+    assert "q" in message, "the refusal does not name the free symbol"
+    assert "computation failed" not in message, "the refusal was wrapped"

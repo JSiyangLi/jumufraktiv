@@ -458,7 +458,40 @@ pytest -m "not slow" -x -q       # quick pass, for the iteration loop
 ruff check .                     # lint
 ruff format --check tests/       # formatting (tests/ only, see below)
 sphinx-build -b html docs docs/_build/html   # documentation
+
+# The docstring examples. Run from the repository root: the fixture supplying
+# `deriv` and `prior` lives in the root conftest.py precisely because this
+# command collects from jumufraktiv/ and never loads tests/conftest.py.
+pytest --doctest-modules jumufraktiv/MGFDerivative_class.py \
+                         jumufraktiv/mitMGFprior_class.py
 ```
+
+**The notebooks are run by hand, not by the suite.** `pytest` checks them
+statically — every code cell parses, none carries stored output, none uses a
+retired spelling — because executing `ParetoPumpFailureExample.ipynb` takes
+tens of minutes: the Pareto MGF is written with `expint`, which no compiled
+backend provides, so it stays on the exact symbolic path over grids of several
+hundred points. Execute both before changing anything they exercise:
+
+```bash
+python -c "
+import nbformat, pathlib
+from nbclient import NotebookClient
+for path in sorted(pathlib.Path('notebooks').glob('*.ipynb')):
+    nb = nbformat.read(path, as_version=4)
+    NotebookClient(nb, timeout=1800, allow_errors=True,
+                   resources={'metadata': {'path': 'notebooks/'}}).execute()
+    bad = [(i, o['ename']) for i, c in enumerate(nb.cells)
+           for o in c.get('outputs', []) if o.get('output_type') == 'error']
+    print(path.name, bad)
+"
+```
+
+`allow_errors=True` is deliberate: without it the run stops at the first bad
+cell and reports nothing about the rest. Two cells raise *on purpose* — a
+symbolic moment order and an out-of-range negative one — and both catch and
+print the refusal rather than letting it stop the notebook, so a clean run
+reports no error cells at all.
 
 **Timings live outside the suite.** `tests/benchmarks/bench_vectorisation.py`
 measures cost per evaluation point and cost per density call, and pytest does
@@ -502,8 +535,20 @@ exposes those references (`gamma_mgf_derivative_log`, `poisson_log_evidence`)
 and most of the suite compares against them. A test that merely pins today's
 number cannot tell a refactor from a regression.
 
+**There are two conftests, and which one a fixture belongs in is decided by
+what collects it.** `pytest --doctest-modules jumufraktiv/...` collects from
+the package directory, so it never loads `tests/conftest.py` — a fixture the
+docstring examples need is therefore invisible to them from there, and the
+examples fail with `NameError` while the whole suite stays green. The
+repository-root `conftest.py` is an ancestor of both trees and holds the
+doctest namespace for that reason; `tests/canonical.py` holds the Gamma/Poisson
+problem both conftests build on, so there is one copy rather than two that
+agree by inspection.
+
 | File | Covers |
 |------|--------|
+| `conftest.py` (root) | the doctest namespace, for `--doctest-modules` |
+| `tests/canonical.py` | the Gamma/Poisson problem, shared by both conftests |
 | `conftest.py` | fixtures and closed-form references |
 | `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
 | `test_design_principles.py` | the three normative principles, with Hypothesis |
@@ -519,6 +564,7 @@ number cannot tell a refactor from a regression.
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 | `test_no_unreachable_code.py` | that no module-level function is unreachable |
 | `test_diagnostics_policy.py` | no `print`, and no `__main__` block, in library code |
+| `test_documentation_runs.py` | the README executes and renders, the notebooks parse and carry no stored output, and the docstring examples run as CI invokes them |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
 Each test asserts the *correct* behaviour and is marked `xfail(strict=True)`,
@@ -585,9 +631,72 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 3 | 8 | Module layout, dead code, and the diagnostics policy | **merged** |
 | 4 | 9 | Vectorisation, and the cost of a density call | **merged** |
 | 4 | 10 | Caching and dispatch | **merged** |
-| 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **in review** |
-| 6 | 13 | Documentation infrastructure | planned |
-| 6 | 14 | `ruff format` over the library | planned |
+| 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **merged** |
+| 5 | 12b | The moment domain at `t = 0`: the analytic tail | **merged** |
+| 6 | 13a | The front door: README, notebooks, and the docstring examples | **in review** |
+| 6 | 13b | Quantities that come back wrong without saying so | planned |
+| 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | planned |
+| 6 | 13d | Packaging: what the sdist and wheel actually contain | planned |
+| 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
+
+**Wave 6 is split by *who notices the defect*, which is a different axis from
+the earlier waves.** They were split by blast radius — does this change numbers
+that currently look right? Nothing in wave 6 changes a number that is correct
+today, so that question does not separate them. What does is the reader each
+defect reaches:
+
+- **13a** is everything a new user meets before they write any code of their
+  own: the README, the two example notebooks, and the `Examples` section of
+  every public method. These are the claims most likely to be read and least
+  likely to be run, so they were the ones stating things the code does not do.
+- **13b** is the opposite: quantities a user gets *without* an error, which are
+  wrong. They cannot be found by reading, only by computing a reference.
+- **13c** and **13d** are read by contributors and by packaging tools rather
+  than by callers.
+
+**13a's charter is that a claim nobody runs is indistinguishable from a claim
+that is false**, and the defect that motivated it proves the point: the README
+quick start — the PyPI landing page, the Sphinx front page, the first six lines
+of code anyone runs — raised `TypeError` for a release, because `evidence()`
+changed shape and the README did not. `twine check` renders a README; it never
+executes one, so CI was green throughout. `tests/test_documentation_runs.py`
+now executes the README's code blocks, renders it the way PyPI does, checks its
+likelihood table against `LIKELIHOOD_REGISTRY`, and runs the docstring examples
+the way CI invokes them.
+
+**Reading the prose against the code turned up two defects in the code, and
+running a notebook turned up a third — the same pattern PR 12 recorded.**
+
+The third has the widest reach. All four symbolic paths — density, MGF, raw
+moment, predictive — ended in `except Exception: raise RuntimeError(f"Symbolic
+computation failed: {e}")`, which is right for an unexpected SymPy failure and
+destructive for a deliberate refusal: the caller loses the type they would
+catch, and the message saying what to do instead becomes a suffix. They now let
+`NotImplementedError` through unchanged, and **only** that type — `ValueError`
+and `TypeError` are what SymPy raises for its own conversion failures ("Cannot
+convert expression to float" is a `TypeError`), so those still get the wrapper.
+Letting all four through was tried first and the test caught it, turning a
+labelled failure into a bare SymPy traceback. One wrapper also said "Falling
+back to numeric." after a failure where nothing falls back.
+
+`post_predictive` documented a route for
+a symbolic *observation*; the branch existed and could never succeed, because
+`a(y_new)` is the differentiation order and a symbolic order is refused
+package-wide. It is now an explicit `NotImplementedError` at the entry point
+rather than a refusal several frames down naming an internal symbol the caller
+never supplied. And `post_central_moment` called order 1 "the mean" when it is
+`E[Θ − E[Θ]] = 0`; the value was right and the summary was not.
+
+The API reference's own numbers are worth recording as a measurement rather
+than an anecdote. Twelve worked examples carried an expected value and ten did
+not match the code: four were placeholders (`1.234567e+00` twice, `0.01234`,
+`0.1234`), and six were plausible numbers — `0.8574` for a posterior CDF, a
+Gamma(2,3) MGF at `t = −1` given as `0.8888888889` where `(3/4)² = 0.5625` in
+three places, and `1.7777777778` where the answer is `0.4444444444` in two. An
+eleventh printed a right value in a form NumPy 2 does not produce (`1.0` for
+what renders as `np.float64(1.0)`). Every replacement is checked against a
+closed form (SciPy's `gamma` and `nbinom`, or mpmath quadrature with the
+density written out separately), never against the package.
 
 **PR 12 grew well past its charter, and the growth was not scope creep but
 consequence.** It was scoped as five recorded interface defects. Two things

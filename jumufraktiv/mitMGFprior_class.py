@@ -27,12 +27,14 @@ Examples
 >>> # Build from registry
 >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
 >>> gamma_prior.mgf(-1.0)  # numeric MGF
-0.8888888889
+0.5625
 
 >>> # Manual construction with symbolic expressions
 >>> from jumufraktiv.symbols import t, theta
 >>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta*sp.exp(-theta))
->>> prior.as_mitMGFprior()
+>>> prior = prior.as_mitMGFprior()
+>>> float(prior.mgf(-0.5))
+0.4444444444444444
 """
 
 from collections.abc import Callable
@@ -112,14 +114,14 @@ class mitMGFprior:
     >>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta * sp.exp(-theta))
     >>> prior = prior.as_mitMGFprior()
     >>> prior.mgf(-0.5)
-    1.7777777778
+    0.4444444444444444
 
     >>> # Registry-based prior
     >>> gamma_prior = mitMGFprior.from_registry(
     ...     'gamma', params={'alpha':2.0, 'beta':3.0}
     ... )
     >>> gamma_prior.mgf(-1.0)
-    0.8888888889
+    0.5625
     """
     name: str = "custom"
 
@@ -216,7 +218,7 @@ class mitMGFprior:
         ... )
         >>> prior = prior.as_mitMGFprior()
         >>> prior.mgf(-0.5)
-        1.7777777778
+        0.4444444444444444
 
         >>> # Backend mode
         >>> def mgf_backend(x, xp, **params):
@@ -225,7 +227,7 @@ class mitMGFprior:
         ...     return xp.exp(-x)
         >>> prior = mitMGFprior(mgf_backend=mgf_backend, pdf_backend=pdf_backend)
         >>> prior = prior.as_mitMGFprior()
-        >>> prior.mgf(0.0)
+        >>> float(prior.mgf(0.0))
         1.0
         """
         # ----------------------------------------------------
@@ -338,7 +340,7 @@ class mitMGFprior:
         ...     'gamma', params={'alpha':2.0, 'beta':3.0}
         ... )
         >>> gamma_prior.mgf(-1.0)
-        0.8888888889
+        0.5625
 
         >>> # With symbolic simplification
         >>> prior = mitMGFprior.from_registry(
@@ -374,6 +376,27 @@ class mitMGFprior:
                     f"so priors they define are missing from that list: {details}"
                 )
             raise ValueError(message) from exc
+
+        # Every registry factory freezes a SciPy distribution and evaluates its
+        # density numerically, so the hyperparameters must be numbers. A SymPy
+        # symbol reaches `float()` several frames down and raises
+        # "Cannot convert expression to float", which names neither the
+        # argument at fault nor the supported route.
+        symbolic = sorted(
+            name for name, value in params.items() if isinstance(value, sp.Basic)
+        )
+        if symbolic:
+            raise TypeError(
+                f"from_registry() needs numeric hyperparameters; "
+                f"{', '.join(symbolic)} "
+                f"{'is' if len(symbolic) == 1 else 'are'} symbolic. Registry "
+                "priors compile a numeric density, which a symbol cannot "
+                "supply. For a prior whose hyperparameters stay free, build it "
+                "directly -- mitMGFprior(mgf_sym=..., pdf_sym=..., "
+                "params={}).as_mitMGFprior() -- and substitute the values "
+                "later, or pass them through `params` to have them resolved."
+            )
+
         spec = factory(params)  # <-- this is the make_prior_spec dict
 
         # ---------------------------------------------------------
