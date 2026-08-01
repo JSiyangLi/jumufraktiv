@@ -263,8 +263,14 @@ def mgfDerivative_integer(
         # ---- Prepare result arrays ----
         results_log_abs = np.full(n_points, -np.inf, dtype=float)
         results_sign = np.ones(n_points, dtype=int)
-        # Also store symbolic results if any free symbols remain
+        # Also store symbolic results if any free symbols remain. The flag is
+        # tracked rather than rediscovered: `all(r is None for r in
+        # results_expr)` is a Python loop over the whole batch, and the batch
+        # here is (n_nodes x n_points) -- 50,244 iterations for a 20-point
+        # request through the fixed-grid kernel, to learn something the loop
+        # below already knew.
         results_expr = [None] * n_points
+        any_symbolic = False
 
         # ---- Build substitution dictionaries for each point ----
         subs_list = []
@@ -322,6 +328,7 @@ def mgfDerivative_integer(
             if val_expr.free_symbols:
                 # If any free symbols remain, we keep the expression
                 results_expr[idx] = val_expr
+                any_symbolic = True
             else:
                 evaluated = val_expr.evalf()
                 val = float(evaluated)
@@ -350,7 +357,7 @@ def mgfDerivative_integer(
 
         # ---- Decide return type ----
         # If all results are numeric, return numeric arrays (or scalars)
-        if all(r is None for r in results_expr):
+        if not any_symbolic:
             # Reshape to batch_shape
             log_abs_reshaped = results_log_abs.reshape(batch_shape)
             sign_reshaped = results_sign.reshape(batch_shape)
