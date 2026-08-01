@@ -134,17 +134,15 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 
 
 # ==========================================================================
-# Unscheduled — the Pareto prior's numeric incomplete MGF
+# The Pareto prior's numeric incomplete MGF — repaired in PR 12
 # ==========================================================================
-# Found while clearing PR 8's lint baseline. `F841` flagged a `sign` computed
-# and discarded in `pareto_logimgf`; the discarded sign turned out to be the
-# least of it. Both numeric routes are unusable and the two fail differently,
-# while the symbolic route is exact -- so this is a defect in the numeric
-# implementations, not in the mathematics.
+# Both numeric routes were unusable and failed differently, while the symbolic
+# route was exact, so the defect was in the implementations rather than in the
+# expression. The SciPy side now computes it to 2.1e-15 of direct quadrature;
+# the JAX side refuses, because JAX has no real-order exponential integral.
 #
-# It is recorded rather than repaired because it is a numerical fix needing its
-# own verification, and PR 8 is a module-layout and dead-code pass. No PR owns
-# it yet; see "Known-broken" in CLAUDE.md.
+# The tests stay here rather than moving out, since this file is where the
+# defect was reproduced and the assertions were already the right ones.
 def _pareto_prior():
     from jumufraktiv import registry
     from jumufraktiv.mitMGFprior_class import mitMGFprior
@@ -158,30 +156,65 @@ def _pareto_prior():
 PARETO_IMGF_AT_MINUS_ONE = 0.24880390851855957
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="unscheduled: pareto_imgf calls scipy's gammaincc(a, z) with "
-    "a = -alpha < 0, which is outside its domain, so it returns NaN at every "
-    "argument",
-)
 def test_pareto_numeric_incomplete_mgf_is_finite():
+    """It returned `nan` at every argument, from `gammaincc(-alpha, z)`.
+
+    `scipy.special.gammaincc` is the regularised upper incomplete gamma and
+    needs a positive first argument. The value comes instead from the
+    generalised exponential integral, `Gamma(a, z) = z**a E_{1-a}(z)`, which
+    holds for every real `a`.
+    """
     value = _pareto_prior().imgf(-1.0, 2.0)
 
     assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AttributeError,
-    reason="unscheduled: pareto_imgf_jax calls jnp.gamma, which does not "
-    "exist in jax.numpy, so it raises before reaching the gammaincc domain "
-    "error its scipy twin hits",
+@pytest.mark.parametrize(
+    ("alpha", "t_value", "u_value"),
+    [
+        (0.5, -0.1, 1.5),
+        (2.0, -1.0, 2.0),
+        (3.0, -5.0, 10.0),
+        (5.5, -1.0, 10.0),
+    ],
 )
-def test_pareto_jax_incomplete_mgf_is_finite():
-    value = float(_pareto_prior().imgf_jax(-1.0, 2.0))
+def test_pareto_numeric_incomplete_mgf_matches_quadrature(alpha, t_value, u_value):
+    """Against direct quadrature of the density at 40 digits, not against the
+    package's own symbolic route.
 
-    assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
+    A fractional and an integer `alpha` are both covered, because the obvious
+    float64 alternatives fail on exactly one of the two: a downward recurrence
+    on the incomplete gamma divides by zero at integer `alpha`, and
+    `scipy.special.expn` truncates a real order to an integer, so it answers a
+    different question for fractional `alpha` with only a `RuntimeWarning`.
+    """
+    import mpmath as mp
+
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    mp.mp.dps = 40
+
+    def density(theta):
+        return mp.e ** (mp.mpf(t_value) * theta) * mp.mpf(alpha) / theta ** (alpha + 1)
+
+    expected = float(mp.quad(density, [1.0, u_value]))
+    prior = mitMGFprior.from_registry("pareto", params={"alpha": alpha, "xi": 1.0})
+
+    assert prior.imgf(t_value, u_value) == pytest.approx(expected, rel=1e-12)
+
+
+def test_pareto_jax_incomplete_mgf_refuses_clearly():
+    """JAX cannot express this, and now says so instead of failing obscurely.
+
+    It needs `E_{1+alpha}` at real order; `jax.scipy.special` has `expn` at
+    integer order only and `gammaincc` for a positive first argument only. The
+    old body called `jnp.gamma`, which does not exist, so it raised
+    `AttributeError` from inside a traced computation -- naming a missing
+    attribute rather than a missing capability.
+    """
+    for method in ("imgf_jax", "logimgf_jax"):
+        with pytest.raises(NotImplementedError, match="integer order only"):
+            getattr(_pareto_prior(), method)(-1.0, 2.0)
 
 
 def test_pareto_symbolic_incomplete_mgf_is_correct():

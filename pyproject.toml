@@ -197,13 +197,15 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # package-wide, because they find defects rather than style. As of PR 8 they
 # have no per-file exemptions either, so both block everywhere.
 # ---------------------------------------------------------------------------
+#
+# PR 12 also removed F841. Its one remaining site was `pareto_logimgf`'s
+# discarded `sign`, and the discarded sign was the least of what was wrong with
+# that function -- it returned NaN at every argument. Repairing the function
+# cleared the rule, which is the order these two things belong in: the lint was
+# the symptom.
+# ---------------------------------------------------------------------------
 "jumufraktiv/**" = [
     "E501",   # line-too-long                          -> PR 14 (docstring sweep)
-    # The one remaining F841 is `pareto_logimgf`'s discarded `sign`, inside a
-    # function that returns NaN at every argument. Recorded under
-    # "Known-broken" in CLAUDE.md; unscheduled, because it is a numerical
-    # repair rather than a lint fix.
-    "F841",   # unused-variable                        -> unscheduled
     "RUF001", # ambiguous-unicode-character-string     -> PR 14
     "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
     "RUF003", # ambiguous-unicode-character-comment    -> PR 14
