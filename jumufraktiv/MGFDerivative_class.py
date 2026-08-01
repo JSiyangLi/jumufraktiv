@@ -1617,11 +1617,14 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior MGF is computed as::
+        The posterior MGF is the same derivative of the prior MGF evaluated at
+        two points, and divided::
 
-            M_{post}(r) = D^a M(t) / D^a M(t) |_{t = r - b}  /  (t = -b)
+            M_post(r) = D^a M(r - b) / D^a M(-b)
 
-        where `D^a M` is the fractional derivative of the prior MGF.
+        where `D^a M` is the fractional derivative of the prior MGF, `a` and
+        `b` are the likelihood statistics, and the denominator is the evidence
+        up to `c(y)`. Setting `r = 0` gives 1, as it must.
 
         Examples
         --------

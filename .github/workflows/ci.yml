@@ -107,6 +107,9 @@ jobs:
       # baseline once the remaining warnings are cleared.
       - name: Build the documentation
         run: |
+          # The runner's default shell is `bash -e`, without `pipefail`, so a
+          # pipeline reports `tee`'s status and a Sphinx failure would pass.
+          set -o pipefail
           pip install -e ".[docs]"
           python -m sphinx -b html docs /tmp/docbuild 2>&1 | tee /tmp/sphinx.log
           count=$(grep -cE "WARNING|ERROR" /tmp/sphinx.log || true)
