@@ -586,14 +586,47 @@ answers while fifteen per-point Python loops ran underneath. Worth stating
 plainly, because a principle the code satisfies only in its return type is
 one the tests will keep confirming while the behaviour is absent.
 
-Two causes, and the smaller-looking one was the larger. Three of the four
-priors wrote `pdf_func=lambda x: stats.<dist>(params).pdf(x)`, which builds a
-frozen SciPy distribution — and formats its docstring — on **every call**, in
-the innermost function in the package: 79% of the route's runtime was inside
-`rv_frozen.__init__`. Hoisting it out of the lambda was 9.2× on its own.
-Batching the quadrature took the rest, to 5.5 ms per point at a hundred
-points. Accuracy improved at the same time, from a recorded worst case of
-1.17e-11 to 7.85e-15.
+Three causes, and the two that looked smallest were the largest.
+
+*Priors rebuilt a SciPy distribution per call.* Three of the four wrote
+`pdf_func=lambda x: stats.<dist>(params).pdf(x)`, which builds a frozen
+distribution — and formats its docstring — on **every call**, in the innermost
+function in the package: 79% of the route's runtime was inside
+`rv_frozen.__init__`. Hoisting it was 9.2× on its own.
+
+*The symbolic backend substituted point by point.* `sp.subs` was 97.6% of the
+`scipy` route. Compiling with `lambdify` instead — the remedy this document
+had recorded and nobody had applied — took that route from 2054 ms per point
+to 2.0. See "Numerical policy" for the part of the recorded advice that turned
+out to be incomplete.
+
+*The quadrature ran once per point.* Batching it onto a common interval took
+the default route to 5.5 ms per point at a hundred points.
+
+Accuracy improved throughout, from a recorded worst case of 1.17e-11 to
+7.85e-15. Measured per-point cost, before and after, at a batch of eight:
+
+| route | before | after |
+|-------|--------|-------|
+| `scipy` (fixed grid) | 2054.5 ms | 2.0 ms |
+| `symbolic` (integer) | 1.1 ms | 0.02 ms |
+| `auto` (fractional) | 255.9 ms | 9.7 ms |
+| `jax` (integer) | 657.7 ms | 66.6 ms |
+| `bell` (integer) | 8.5 ms | 1.7 ms |
+| `auto` (integer) | 24.0 ms | 7.8 ms |
+| array-valued order | 37.0 ms | 38.1 ms — **still flat** |
+
+The full test suite went from 623 s to 67 s.
+
+**What is left.** The array-valued-order path still dispatches each element
+separately, and it is the hard one: different orders may resolve to different
+backends, so they cannot share a call. The Pareto prior stays on the exact
+symbolic path because its MGF uses `expint`; that is correct but ~1590 ms per
+point. And `uniform` and `heaviside` route their far-tail nodes to the exact
+path because those underflow to zero in float64 — skipping them is very
+probably safe, since a node that underflows contributes nothing to a log-space
+accumulation, but "very probably" is not a verification and the check was not
+done.
 
 **A bloat-and-simplification audit ran after wave 1 and is folded into the
 table above rather than kept as a separate stream.** Most of what it found
@@ -1019,6 +1052,29 @@ Measured speedup over `subs().evalf()` in a loop: ~6400×, at a cost of ~3 ulp.
 `"numpy"` alone *fails* on `lowergamma`, `uppergamma`, `polygamma` and `Ei`,
 all of which appear in this package's priors. Cache the compiled function on a
 structural key and pass hyperparameters as arguments rather than substituting.
+
+**Applied in PR 9, and the list above turned out to be incomplete.** The
+`scipy` fractional route spent 97.6% of its time in `sp.subs` — 5,024
+substitutions for two evaluation points, because the fixed-grid kernel hands
+`mgfDerivative_integer` an `(n_nodes × n_points)` array and it took the
+elements one at a time. Compiling instead took that route from 2054 ms per
+evaluation point to 2.0.
+
+But `modules=["scipy", "numpy"]` is necessary and *not sufficient*: the Pareto
+prior's MGF is written with `expint`, the generalised exponential integral,
+which **neither** module provides. SymPy compiles it without complaint and the
+result raises `NameError` on the first call. So a compiled function must be
+**probed** — called once, at setup, on a value the caller knows is in domain —
+and the expression evaluated symbolically if the probe fails. `cached_lambdify`
+returns `None` for such an expression and caches that verdict, so the failure
+is paid once rather than per evaluation.
+
+Two other things the compiled path must not do. It works in float64, so it
+cannot represent `M^(301)`; elements that overflow, underflow or return NaN
+fall through to the exact symbolic path, which is why the fast path may only
+*skip* work and never change an answer. And Pareto consequently stays on the
+exact path entirely — correct, and still about 1590 ms per point, which is
+where the remaining headroom is.
 
 **Invert the CDF in log space.** Solve `log F(x) = log p`, switching to the
 complement above the median. `F(x) − p` is identically zero wherever `F`

@@ -84,6 +84,84 @@ def cached_diff(expr, symbol, order):
     return result
 
 
+#: Maps ``(expression, argument symbols)`` to a compiled numeric function, or
+#: to ``_UNCOMPILABLE`` for an expression SymPy compiles but cannot run.
+_LAMBDIFY_CACHE: dict = {}
+
+#: Recorded for an expression whose compiled form raises. Cached like a hit, so
+#: the failure is paid once rather than on every evaluation.
+_UNCOMPILABLE = object()
+
+
+def cached_lambdify(expr, args, probe=None):
+    """Compile ``expr`` to a NumPy function of ``args``, or return ``None``.
+
+    Parameters
+    ----------
+    expr : sympy.Expr
+        Expression to compile. Must have no free symbols beyond ``args``.
+    args : tuple of sympy.Symbol
+        The compiled function's parameters, in order.
+    probe : tuple, optional
+        One in-domain argument value per entry of ``args``. When given, the
+        compiled function is called on it once and ``None`` is returned if that
+        raises. Without a probe the compiled function is returned unchecked.
+
+    Returns
+    -------
+    callable or None
+        ``None`` means "this expression has no working compiled form"; the
+        caller should evaluate it symbolically instead.
+
+    Notes
+    -----
+    **The modules argument is not a preference, and it is not sufficient
+    either.** ``modules=["scipy", "numpy"]`` is required because ``"numpy"``
+    alone has no ``lowergamma``, ``uppergamma``, ``polygamma`` or ``Ei``, all
+    of which appear in this package's priors. :file:`CLAUDE.md` recorded that
+    much and stopped there, and the list turned out to be incomplete: the
+    Pareto prior's MGF is written with ``expint``, the generalised exponential
+    integral, which **neither** module provides. SymPy compiles it happily and
+    the result raises ``NameError`` on the first call.
+
+    That is why the probe exists. A compiled function that cannot run is not a
+    performance question but a correctness one, and the only safe way to find
+    out is to call it -- once, on a value the caller knows is in domain, at
+    setup rather than from inside a quadrature.
+
+    Returning ``None`` rather than raising is deliberate. The symbolic path
+    computes the same quantity, exactly; a prior whose expression will not
+    compile should be slower, not broken.
+    """
+    key = (expr, args)
+    try:
+        hit = _LAMBDIFY_CACHE.get(key)
+    except TypeError:
+        return None
+
+    if hit is _UNCOMPILABLE:
+        return None
+    if hit is not None:
+        return hit
+
+    try:
+        compiled = sp.lambdify(args, expr, modules=["scipy", "numpy"])
+        if probe is not None:
+            compiled(*probe)
+    except Exception:
+        # Deliberately broad, and deliberately not an error. The question being
+        # asked is "does a compiled form of this expression work?", and every
+        # answer other than yes means the same thing: use the symbolic path.
+        # Nothing is swallowed -- the exact computation still runs.
+        _LAMBDIFY_CACHE[key] = _UNCOMPILABLE
+        return None
+
+    if len(_LAMBDIFY_CACHE) >= _DERIV_CACHE_MAX:
+        _LAMBDIFY_CACHE.clear()
+    _LAMBDIFY_CACHE[key] = compiled
+    return compiled
+
+
 def clear_derivative_cache() -> None:
     """Empty the cache.
 
@@ -93,6 +171,7 @@ def clear_derivative_cache() -> None:
     state, and so that a long-lived process can release the memory.
     """
     _DERIV_CACHE.clear()
+    _LAMBDIFY_CACHE.clear()
 
 
 def derivative_cache_size() -> int:
