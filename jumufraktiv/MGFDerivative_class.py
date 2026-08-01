@@ -43,7 +43,12 @@ from jumufraktiv.derivativeDispatch import (
 )
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.numeric_expectation import expectation_is_available
-from jumufraktiv.symbols import t, theta, r, u, q
+# `q` is deliberately absent. The moment methods take a parameter named `q`
+# that may itself be the canonical symbol -- the caller imports it and passes
+# it in -- so every `q` in this file is that parameter. Importing the symbol
+# here as well bound a module-level name nothing read, and left every moment
+# method's signature shadowing it.
+from jumufraktiv.symbols import t, theta, r, u
 from jumufraktiv.root_finding import solve_root
 
 # ============================================================
@@ -2296,4 +2301,3 @@ class MGFDerivative:
             log=log, # new object's requested state
             **kwargs
         )
-

@@ -548,5 +548,3 @@ def fractionalDeriv_numeric_mpmath(
             return float(val_vals.item())
         else:
             return val_vals
-
-# ===== Example usage =====

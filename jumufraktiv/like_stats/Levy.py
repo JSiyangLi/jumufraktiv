@@ -187,6 +187,3 @@ def cLevy() -> sp.Expr:
     const = (2 * sp.pi) ** (-n / 2)
     prod = sp.Product((y[i] - mu[i]) ** (-sp.Rational(3, 2)), (i, 1, n))
     return const * prod
-
-
-# ===== Example usage =====

@@ -137,6 +137,3 @@ def cHalfNormal() -> sp.Expr:
     n = sp.Symbol('n', integer=True, positive=True)
     const = sp.sqrt(2 / sp.pi)
     return const ** n
-
-
-# ===== Example usage =====

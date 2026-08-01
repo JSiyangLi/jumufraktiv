@@ -193,6 +193,3 @@ def cWeibull() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(rho[i] * y[i]**(rho[i] - 1), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

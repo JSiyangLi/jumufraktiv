@@ -146,6 +146,3 @@ def cMaxwellBoltzmann() -> sp.Expr:
     const = 4 / sp.sqrt(sp.pi)
     expr = sp.Product(const * y[i]**2, (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

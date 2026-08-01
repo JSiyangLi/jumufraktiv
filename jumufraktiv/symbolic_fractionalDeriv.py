@@ -239,6 +239,3 @@ def fractionalDeriv_symbolic(
         frac_expr = _guarded(lambda: sp.simplify(frac_expr))
 
     return frac_expr
-
-
-# ===== Example usage =====

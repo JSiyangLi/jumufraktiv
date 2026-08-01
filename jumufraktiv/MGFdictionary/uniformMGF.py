@@ -38,46 +38,6 @@ b = param("b")
 
 
 # ============================================================
-# Symbolic expressions
-# ============================================================
-
-def uniform_mgf_symbolic():
-    """
-    Symbolic MGF for the uniform prior.
-
-    Returns
-    -------
-    sympy.Expr
-        M(t) = (exp(t*b) - exp(t*a)) / (t*(b-a))
-    """
-    return (sp.exp(t * b) - sp.exp(t * a)) / (t * (b - a))
-
-
-def uniform_cgf_symbolic():
-    """
-    Symbolic CGF for the uniform prior.
-
-    Returns
-    -------
-    sympy.Expr
-        K(t) = log( (exp(t*b) - exp(t*a)) / (t*(b-a)) )
-    """
-    return sp.log(uniform_mgf_symbolic())
-
-
-def uniform_pdf_symbolic():
-    """
-    Symbolic PDF for the uniform prior.
-
-    Returns
-    -------
-    sympy.Expr
-        Piecewise((1/(b-a), theta in [a,b]), (0, True))
-    """
-    return sp.Piecewise((1 / (b - a), (theta >= a) & (theta <= b)), (0, True))
-
-
-# ============================================================
 # Numeric CGF / MGF
 # ============================================================
 

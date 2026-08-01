@@ -185,6 +185,3 @@ def cInverseGamma() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(y[i]**(-alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

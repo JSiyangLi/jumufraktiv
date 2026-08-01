@@ -198,6 +198,3 @@ def cBurrXII() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(known_shape[i] * y[i]**(known_shape[i] - 1) / (1 + y[i]**known_shape[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

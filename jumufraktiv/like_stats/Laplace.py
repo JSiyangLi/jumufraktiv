@@ -169,6 +169,3 @@ def cLaplace() -> sp.Expr:
     """
     n = sp.Symbol('n', integer=True, positive=True)
     return (sp.Rational(1, 2)) ** n
-
-
-# ===== Example usage =====

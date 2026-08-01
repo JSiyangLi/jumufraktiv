@@ -206,7 +206,3 @@ def cPoisson() -> sp.Expr:
     # Expression: ∏_{i=1}^{n} s_i^{y_i} / y_i!
     expr = sp.Product(s[i]**y[i] / sp.factorial(y[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
-    # Optional: show that it can be substituted later

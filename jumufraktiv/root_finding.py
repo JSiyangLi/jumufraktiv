@@ -463,7 +463,3 @@ def solve_root(
                 print(f"Method {method_name} failed, trying next.")
 
     raise RuntimeError("All auto methods failed.")
-
-# ======================================================================
-# Example usage (run only when script is executed directly)
-# ======================================================================

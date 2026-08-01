@@ -42,46 +42,6 @@ xi = param("xi")
 
 
 # ============================================================
-# Symbolic expressions
-# ============================================================
-
-def pareto_mgf_symbolic():
-    """
-    Symbolic MGF for the Pareto distribution.
-
-    Returns
-    -------
-    sympy.Expr
-        M(t) = alpha * E_{alpha+1}(-xi*t), for t <= 0.
-    """
-    return alpha * expint(alpha + 1, -xi * t)
-
-
-def pareto_cgf_symbolic():
-    """
-    Symbolic CGF for the Pareto distribution.
-
-    Returns
-    -------
-    sympy.Expr
-        K(t) = log(alpha) + log(E_{alpha+1}(-xi*t)).
-    """
-    return sp.log(alpha) + sp.log(expint(alpha + 1, -xi * t))
-
-
-def pareto_pdf_symbolic():
-    """
-    Symbolic PDF for the Pareto distribution.
-
-    Returns
-    -------
-    sympy.Expr
-        p(theta) = alpha * xi^alpha / theta^(alpha+1), theta >= xi.
-    """
-    return alpha * xi**alpha / theta**(alpha + 1)
-
-
-# ============================================================
 # Numeric CGF / MGF (using scipy)
 # ============================================================
 
@@ -275,23 +235,6 @@ def pareto_imgf_symbolic(u_sym):
     return alpha * (s * xi)**alpha * (
         sp.uppergamma(-alpha, s * xi) - sp.uppergamma(-alpha, s * u_sym)
     )
-
-
-def pareto_logimgf_symbolic(u_sym):
-    """
-    Symbolic log‑incomplete MGF for the Pareto distribution.
-
-    Parameters
-    ----------
-    u_sym : sympy.Symbol
-        Upper truncation point.
-
-    Returns
-    -------
-    sympy.Expr
-        log of the incomplete MGF.
-    """
-    return sp.log(pareto_imgf_symbolic(u_sym))
 
 
 def pareto_imgf(t_val, alpha_val, xi_val, u_val):

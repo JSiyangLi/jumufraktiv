@@ -150,8 +150,3 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
         derivative = sp.simplify(derivative)
 
     return derivative
-
-
-# ----------------------------------------------------------------------
-# Test: simplified derivatives, orders 0–3, and high-order check
-# ----------------------------------------------------------------------

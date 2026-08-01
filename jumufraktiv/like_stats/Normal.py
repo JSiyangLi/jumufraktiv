@@ -171,6 +171,3 @@ def cNormal() -> sp.Expr:
     """
     n = sp.Symbol('n', integer=True, positive=True)
     return (1 / sp.sqrt(2 * sp.pi)) ** n
-
-
-# ===== Example usage =====

@@ -191,6 +191,3 @@ def cGamma() -> sp.Expr:
     # Expression: ∏_{i=1}^{n} y_i^{α_i-1} / Γ(α_i)
     expr = sp.Product(y[i]**(alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

@@ -189,6 +189,3 @@ def cGompertz() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(beta[i] * sp.exp(beta[i] * y[i]), (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

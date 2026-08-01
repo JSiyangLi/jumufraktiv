@@ -186,6 +186,3 @@ def cPareto() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(1 / y[i], (i, 1, n))
     return expr
-
-
-# ===== Example usage =====

@@ -225,6 +225,3 @@ def cDagum() -> sp.Expr:
         (i, 1, n)
     )
     return expr
-
-
-# ===== Example usage =====

@@ -28,46 +28,6 @@ k = param("k")
 
 
 # ============================================================
-# Symbolic expressions
-# ============================================================
-
-def heaviside_mgf_symbolic():
-    """
-    Symbolic expression for the Heaviside MGF.
-
-    Returns
-    -------
-    sympy.Expr
-        M(t) = -exp(k*t)/t, for t < 0.
-    """
-    return -sp.exp(k * t) / t
-
-
-def heaviside_cgf_symbolic():
-    """
-    Symbolic expression for the Heaviside CGF.
-
-    Returns
-    -------
-    sympy.Expr
-        K(t) = log(-1/t) + k*t, for t < 0.
-    """
-    return sp.log(-1 / t) + k * t
-
-
-def heaviside_pdf_symbolic():
-    """
-    Symbolic expression for the Heaviside PDF.
-
-    Returns
-    -------
-    sympy.Expr
-        Piecewise((1, theta >= k), (0, True)).
-    """
-    return sp.Piecewise((1, theta >= k), (0, True))
-
-
-# ============================================================
 # Numeric CGF / MGF (log-space stable core)
 # ============================================================
 

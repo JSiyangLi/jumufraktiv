@@ -146,6 +146,3 @@ def cRayleigh() -> sp.Expr:
     y = sp.IndexedBase('y')
     expr = sp.Product(y[i], (i, 1, n))
     return expr
-
-
-# ===== Example usage =====
