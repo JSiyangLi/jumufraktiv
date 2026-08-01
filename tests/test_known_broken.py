@@ -350,15 +350,23 @@ def test_moment_methods_share_a_return_convention(poisson_posterior):
     assert type(raw) is type(central)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=TypeError,
-    reason="PR 12: post_sample calls the unseeded legacy np.random.rand and "
-    "takes no rng argument, so results are not reproducible",
-)
 def test_post_sample_is_reproducible(poisson_posterior):
-    """Two draws under the same seed must agree."""
+    """Two draws under the same seed must agree.
+
+    `post_sample` used to call `np.random.rand`, the legacy global generator,
+    and took no seed, so no draw from it could be reproduced. An integer seed
+    must work as well as a `Generator`, since that is how most callers reach
+    for one.
+    """
     first = poisson_posterior.post_sample(8, rng=np.random.default_rng(0))
     second = poisson_posterior.post_sample(8, rng=np.random.default_rng(0))
-
     assert np.array_equal(first, second)
+
+    assert np.array_equal(
+        poisson_posterior.post_sample(8, rng=0),
+        poisson_posterior.post_sample(8, rng=0),
+    )
+
+    # And a different seed must give a different draw, or the test above would
+    # also pass for a method that ignored `rng` and returned a constant.
+    assert not np.array_equal(first, poisson_posterior.post_sample(8, rng=1))

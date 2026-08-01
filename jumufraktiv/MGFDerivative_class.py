@@ -2044,7 +2044,7 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR SAMPLE
     # ========================================================     
-    def post_sample(self, n: int | None = None, u: np.ndarray | None = None, root_method: str = "auto", **kwargs) -> np.ndarray:
+    def post_sample(self, n: int | None = None, u: np.ndarray | None = None, root_method: str = "auto", rng=None, **kwargs) -> np.ndarray:
         """
         Generate posterior samples using inverse transform sampling.
 
@@ -2062,6 +2062,11 @@ class MGFDerivative:
         root_method : str, optional
             Root‑finding method passed to `post_quantile`. See
             `post_quantile` and `solve_root` for options.
+        rng : numpy.random.Generator, int, or None, optional
+            Source of the uniform variates when `u` is not supplied. Pass a
+            `Generator` or an integer seed for a reproducible draw; `None`
+            (the default) draws fresh entropy. Ignored when `u` is given,
+            since then the caller supplies the randomness.
         **kwargs : additional keyword arguments passed to `post_quantile`
             (e.g., `maxiter`, `tol`, `lower`, `upper`).
 
@@ -2077,15 +2082,25 @@ class MGFDerivative:
             X = F^{-1}(U), where U ~ Uniform(0, 1).
         This is exact up to the numerical accuracy of the quantile computation.
 
+        This used to call `np.random.rand`, the legacy global generator, and
+        took no seed, so **no draw from it could be reproduced** -- not by the
+        caller and not by a test. Passing `u` was the documented workaround,
+        which meant reproducibility cost the caller the inverse-transform step
+        this method exists to perform.
+
         Examples
         --------
         >>> # Generate 1000 posterior samples
         >>> samples = deriv.post_sample(n=1000)
 
-        >>> # Use custom uniform variates for reproducibility
-        >>> rng = np.random.default_rng(42)
-        >>> u = rng.random(500)
-        >>> samples = deriv.post_sample(u=u)
+        >>> # A reproducible draw
+        >>> first = deriv.post_sample(n=500, rng=np.random.default_rng(42))
+        >>> second = deriv.post_sample(n=500, rng=np.random.default_rng(42))
+        >>> np.array_equal(first, second)
+        True
+
+        >>> # Or supply the variates directly
+        >>> samples = deriv.post_sample(u=np.random.default_rng(42).random(500))
 
         >>> # Control the root‑finding method and tolerance
         >>> samples = deriv.post_sample(n=100, root_method='bisection-np', tol=1e-10)
@@ -2093,7 +2108,22 @@ class MGFDerivative:
         if u is None:
             if n is None:
                 raise ValueError("Either n or u must be provided.")
-            u = np.random.rand(n)
+
+            # `np.random.default_rng(generator)` returns the generator unchanged
+            # only from NumPy 1.25, and this package supports 1.24.
+            generator = (
+                rng
+                if isinstance(rng, np.random.Generator)
+                else np.random.default_rng(rng)
+            )
+            u = generator.random(n)
+
+            # `Generator.random` draws from [0, 1), and the branch below rejects
+            # 0 because `post_quantile(0)` has no finite answer. Nudging the
+            # (vanishingly rare) exact zeros keeps the two paths under one rule,
+            # rather than leaving the caller's variates held to a standard the
+            # method's own draw is not.
+            u = np.where(u == 0.0, np.finfo(float).tiny, u)
         else:
             u = np.asarray(u)
             if np.any((u <= 0) | (u >= 1)):
