@@ -50,7 +50,7 @@ def bisection_np(
     maxiter : int, optional
         Maximum number of iterations.
     tol : float, optional
-        Absolute tolerance for |f(x)|.
+        Absolute tolerance for ``|f(x)|``.
 
     Returns
     -------
@@ -100,7 +100,7 @@ def newton_np(
     maxiter : int, optional
         Maximum number of iterations.
     tol : float, optional
-        Absolute tolerance for |f(x)|.
+        Absolute tolerance for ``|f(x)|``.
     rel_tol : float, optional
         Relative tolerance for change in x.
 
@@ -165,7 +165,7 @@ def bisectioned_newton_np(
     maxiter : int, optional
         Maximum number of iterations.
     tol : float, optional
-        Absolute tolerance for |f(x)|.
+        Absolute tolerance for ``|f(x)|``.
     rel_tol : float, optional
         Relative tolerance for change in x.
 
@@ -374,7 +374,7 @@ def solve_root(
     maxiter : int, optional
         Maximum iterations.
     tol : float, optional
-        Absolute tolerance for |f(x)|.
+        Absolute tolerance for ``|f(x)|``.
     rel_tol : float, optional
         Relative tolerance (Newton only).
     verbose : bool, optional

@@ -124,7 +124,7 @@ def _cgf_derivatives_jax_scalar(cgf_func, t, order, cgf_mode):
 # ======================================================================
 def bell_polynomial_log_batched(logv, vsign):
     """
-    Compute log |B_n| and sign for a batch of cumulant derivative vectors.
+    Compute ``log |B_n|`` and sign for a batch of cumulant derivative vectors.
 
     Parameters
     ----------
@@ -136,7 +136,7 @@ def bell_polynomial_log_batched(logv, vsign):
     Returns
     -------
     log_abs : np.ndarray, shape (batch_size,)
-        log |B_n| for each batch element.
+        ``log |B_n|`` for each batch element.
     sign : np.ndarray, shape (batch_size,)
         sign of B_n for each batch element.
     """

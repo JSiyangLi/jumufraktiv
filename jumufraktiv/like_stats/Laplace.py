@@ -6,16 +6,16 @@ Functions for preparing Laplace likelihood statistics for MGF marginalisation.
 For a Laplace distribution with known mean μ and scale parameter θ,
 the likelihood in terms of the rate parameter λ = 1/θ is:
 
-    L(λ; y) = (λ/2) * exp(-λ |y - μ|) = c(y) * λ^{a(y)} * exp(-b(y) λ)
+    L(λ; y) = (λ/2) * exp(-λ ``|y - μ|``) = c(y) * λ^{a(y)} * exp(-b(y) λ)
 
-with a(y) = 1, b(y) = |y - μ|, c(y) = 1/2.
+with a(y) = 1, b(y) = ``|y - μ|``, c(y) = 1/2.
 
 For a sample of size n, the joint likelihood is:
-    L(λ; y) = (1/2)^n * λ^n * exp(-λ Σ |y_i - μ|)
+    L(λ; y) = (1/2)^n * λ^n * exp(-λ Σ ``|y_i - μ|``)
 
 Thus:
     a = n
-    b = Σ |y_i - μ|
+    b = Σ ``|y_i - μ|``
     log_c = n * log(1/2)
 """
 
@@ -37,11 +37,11 @@ def readyLaplace(
     Compute sufficient statistics for a Laplace likelihood with known mean.
 
     The likelihood (in terms of rate parameter λ = 1/θ) is:
-        L(λ; y) = (λ/2) * exp(-λ |y - μ|)
+        L(λ; y) = (λ/2) * exp(-λ ``|y - μ|``)
 
     For a sample of size n:
         a = n
-        b = Σ |y_i - μ|
+        b = Σ ``|y_i - μ|``
         log_c = n * log(1/2)
 
     Parameters
@@ -104,7 +104,7 @@ def bereitLaplace(
 
     For each observation y_i and known mean μ_i:
         a_i = 1
-        b_i = |y_i - μ_i|
+        b_i = ``|y_i - μ_i|``
         log_c_i = log(1/2) = -log(2)
 
     Parameters
