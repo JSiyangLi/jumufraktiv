@@ -127,7 +127,18 @@ def _vectorise(density):
 
     def elementwise(theta):
         values = np.asarray(theta, dtype=float)
-        flat = [float(np.ravel(density(float(x)))[0]) for x in values.ravel()]
+        flat = []
+        for x in values.ravel():
+            one = np.ravel(np.asarray(density(float(x)), dtype=float))
+            if one.size != 1:
+                # Taking `one[0]` here would integrate a density that is
+                # answering a different question, and say nothing about it.
+                raise ValueError(
+                    "A density called with a single theta returned "
+                    f"{one.size} values. It must return exactly one; the "
+                    "elementwise adapter cannot guess which is meant."
+                )
+            flat.append(float(one[0]))
         return np.asarray(flat, dtype=float).reshape(values.shape)
 
     # Confirm the adapter works before promising that it does. If the density
@@ -357,7 +368,18 @@ def expectationDeriv(
 
         def batched(s):
             theta = lows + s * widths
-            with np.errstate(divide="ignore", invalid="ignore", under="ignore"):
+            # `over` is in the list for a reason `CLAUDE.md` records under its
+            # testing hazards: `pyproject.toml` sets `filterwarnings =
+            # ["error"]`, so NumPy's "overflow encountered in exp" is an
+            # exception under pytest and a warning everywhere else. A path
+            # that behaves differently in the suite than in a user's session
+            # is one the suite cannot vouch for. Overflow here needs an
+            # underestimated offset -- a multimodal caller-supplied density
+            # whose global peak the bounded search missed -- and it surfaces
+            # as `inf`, loudly, rather than as a plausible number.
+            with np.errstate(
+                divide="ignore", invalid="ignore", under="ignore", over="ignore"
+            ):
                 exponent = (
                     order * np.log(theta) + t_live * theta + log_density(theta)
                 )

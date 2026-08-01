@@ -390,3 +390,61 @@ def test_a_broken_density_raises_rather_than_returning_minus_infinity():
 
     with pytest.raises(RuntimeError, match="has a bug"):
         expectationDeriv(1.5, _custom_prior(broken), t=-1.0, log=True)
+
+
+def test_a_density_returning_two_values_for_one_theta_is_refused():
+    """The elementwise adapter must not pick one and carry on.
+
+    `np.ravel(...)[0]` would integrate a density that is answering a different
+    question, and say nothing about it. The density here refuses arrays, so the
+    elementwise path is the one chosen, and then returns two values for a
+    single theta.
+    """
+    import sympy as sp
+
+    from jumufraktiv.numeric_expectation import expectationDeriv
+    from jumufraktiv.symbols import theta
+
+    def two_values(x):
+        if isinstance(x, np.ndarray) and x.size > 1:
+            raise TypeError("this density is scalar-only")
+        return np.array([-1.0, -2.0])
+
+    prior = mitMGFprior(
+        name="two-valued",
+        pdf_sym=sp.exp(-theta),
+        logpdf_func=two_values,
+        pdf_func=lambda x: np.exp(two_values(x)),
+        params={},
+    )
+
+    with pytest.raises(ValueError, match="returned 2 values"):
+        expectationDeriv(1.5, prior, t=-1.0, log=True)
+
+
+def test_the_batched_quadrature_does_not_depend_on_the_warning_filter(gamma_prior):
+    """`filterwarnings = ["error"]` must not change what the code computes.
+
+    `CLAUDE.md` records this as a hazard the repository has already hit:
+    NumPy's "overflow encountered in exp" is an exception under pytest and a
+    warning everywhere else, so a path that overflows takes one branch in the
+    suite and another in a user's session. The suite got the right answer and
+    users got a wrong one.
+
+    `batched()` calls `np.exp(exponent - offsets)`, which can overflow when the
+    peak search underestimates the offset. Asserting the two filters agree is
+    what makes the suite's verdict transferable.
+    """
+    from jumufraktiv.numeric_expectation import expectationDeriv
+
+    points = np.linspace(-1.0, -8.0, 6)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        strict, _ = expectationDeriv(2.5, gamma_prior, t=points, log=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        lenient, _ = expectationDeriv(2.5, gamma_prior, t=points, log=True)
+
+    assert np.array_equal(strict, lenient)

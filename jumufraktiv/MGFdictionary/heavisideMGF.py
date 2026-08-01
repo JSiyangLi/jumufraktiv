@@ -116,21 +116,21 @@ def heaviside_mgf_jax(t_val, k_val):
 # SciPy PDF / logPDF (not available for improper Heaviside)
 # ============================================================
 
-def heaviside_pdf(theta_val: float, k_val: float) -> float:
+def heaviside_pdf(theta_val, k_val: float):
     """
     Numeric PDF for the Heaviside prior.
 
     Parameters
     ----------
-    theta_val : float
-        Evaluation point.
+    theta_val : float or array-like
+        Evaluation point(s).
     k_val : float
         Threshold parameter.
 
     Returns
     -------
-    float
-        1.0 if theta >= k, else 0.0.
+    float or numpy.ndarray
+        1.0 where theta >= k, else 0.0, with the shape of ``theta_val``.
     """
     # `np.where`, not a Python conditional. The improper Heaviside prior's
     # density is trivial, and that is exactly why it was written as
@@ -142,21 +142,21 @@ def heaviside_pdf(theta_val: float, k_val: float) -> float:
     return np.where(np.asarray(theta_val) >= k_val, 1.0, 0.0)
 
 
-def heaviside_logpdf(theta_val: float, k_val: float) -> float:
+def heaviside_logpdf(theta_val, k_val: float):
     """
     Numeric log‑PDF for the Heaviside prior.
 
     Parameters
     ----------
-    theta_val : float
-        Evaluation point.
+    theta_val : float or array-like
+        Evaluation point(s).
     k_val : float
         Threshold parameter.
 
     Returns
     -------
-    float
-        0.0 if theta >= k, else -inf.
+    float or numpy.ndarray
+        0.0 where theta >= k, else -inf, with the shape of ``theta_val``.
     """
     return np.where(np.asarray(theta_val) >= k_val, 0.0, -np.inf)
 
