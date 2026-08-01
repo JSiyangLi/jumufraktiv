@@ -116,42 +116,49 @@ def heaviside_mgf_jax(t_val, k_val):
 # SciPy PDF / logPDF (not available for improper Heaviside)
 # ============================================================
 
-def heaviside_pdf(theta_val: float, k_val: float) -> float:
+def heaviside_pdf(theta_val, k_val: float):
     """
     Numeric PDF for the Heaviside prior.
 
     Parameters
     ----------
-    theta_val : float
-        Evaluation point.
+    theta_val : float or array-like
+        Evaluation point(s).
     k_val : float
         Threshold parameter.
 
     Returns
     -------
-    float
-        1.0 if theta >= k, else 0.0.
+    float or numpy.ndarray
+        1.0 where theta >= k, else 0.0, with the shape of ``theta_val``.
     """
-    return 1.0 if theta_val >= k_val else 0.0
+    # `np.where`, not a Python conditional. The improper Heaviside prior's
+    # density is trivial, and that is exactly why it was written as
+    # `1.0 if theta_val >= k_val else 0.0` -- which raises "truth value of an
+    # array with more than one element is ambiguous" for any array of length
+    # above one. It survived only because every caller evaluated one point at
+    # a time; the moment the integrand is handed a vector of theta it fails,
+    # and it also failed for anyone calling `prior.pdf_func` on an array.
+    return np.where(np.asarray(theta_val) >= k_val, 1.0, 0.0)
 
 
-def heaviside_logpdf(theta_val: float, k_val: float) -> float:
+def heaviside_logpdf(theta_val, k_val: float):
     """
     Numeric log‑PDF for the Heaviside prior.
 
     Parameters
     ----------
-    theta_val : float
-        Evaluation point.
+    theta_val : float or array-like
+        Evaluation point(s).
     k_val : float
         Threshold parameter.
 
     Returns
     -------
-    float
-        0.0 if theta >= k, else -inf.
+    float or numpy.ndarray
+        0.0 where theta >= k, else -inf, with the shape of ``theta_val``.
     """
-    return 0.0 if theta_val >= k_val else -np.inf
+    return np.where(np.asarray(theta_val) >= k_val, 0.0, -np.inf)
 
 
 # ============================================================

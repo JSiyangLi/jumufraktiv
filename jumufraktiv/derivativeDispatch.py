@@ -56,6 +56,7 @@ import sympy as sp
 from jumufraktiv.numeric_expectation import expectation_is_available
 from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
 from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+from jumufraktiv.symbolic_cache import cached_lambdify
 from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
 from jumufraktiv.symbols import t as t_sym  # <-- import canonical u
 from jumufraktiv.symbols import u as u_sym
@@ -262,8 +263,14 @@ def mgfDerivative_integer(
         # ---- Prepare result arrays ----
         results_log_abs = np.full(n_points, -np.inf, dtype=float)
         results_sign = np.ones(n_points, dtype=int)
-        # Also store symbolic results if any free symbols remain
+        # Also store symbolic results if any free symbols remain. The flag is
+        # tracked rather than rediscovered: `all(r is None for r in
+        # results_expr)` is a Python loop over the whole batch, and the batch
+        # here is (n_nodes x n_points) -- 50,244 iterations for a 20-point
+        # request through the fixed-grid kernel, to learn something the loop
+        # below already knew.
         results_expr = [None] * n_points
+        any_symbolic = False
 
         # ---- Build substitution dictionaries for each point ----
         subs_list = []
@@ -273,12 +280,55 @@ def mgfDerivative_integer(
                 subs_local[u_sym] = u_flat[idx]
             subs_list.append(subs_local)
 
-        # ---- Evaluate at each point ----
-        for idx in range(n_points):
+        # ---- Fast path: compile once, evaluate the whole batch -----------
+        #
+        # `expr.subs(...).evalf()` per point was 97.6% of the runtime of the
+        # `scipy` fractional route -- 5,024 SymPy substitutions for two
+        # evaluation points, because the fixed-grid kernel hands this function
+        # an (n_nodes x n_points) array of shifted points and it took them one
+        # at a time. `CLAUDE.md` recorded the remedy under "Numerical policy",
+        # measured at ~6400x, and it had never been applied here.
+        #
+        # `lambdify` compiles the derivative to a NumPy function evaluated on
+        # the whole array at once. It works in float64, so it cannot represent
+        # `M^(301)`; the exact path below still runs, but only for the elements
+        # where float64 overflowed, underflowed, or produced a NaN. Those are
+        # rare, so the loop survives for correctness at the extremes while the
+        # ordinary case never enters it.
+        pending = list(range(n_points))
+        symbols_left = expr.free_symbols - ({t_sym} if complete else {t_sym, u_sym})
+        if not symbols_left and n_points:
+            arg_symbols = (t_sym,) if complete else (t_sym, u_sym)
+            # Probe with the caller's own first point, which is in domain by
+            # construction. Some priors compile to something that raises --
+            # Pareto's MGF uses `expint`, which neither scipy nor numpy
+            # provides -- and the only way to find that out is to call it.
+            first = (t_flat[:1],) if complete else (t_flat[:1], u_flat[:1])
+            compiled = cached_lambdify(expr, arg_symbols, probe=first)
+            values = None
+            if compiled is not None:
+                with np.errstate(all="ignore"):
+                    raw = compiled(t_flat) if complete else compiled(t_flat, u_flat)
+                values = np.asarray(raw, dtype=float).reshape(n_points)
+
+            if values is not None:
+                exact = ~np.isfinite(values) | (values == 0.0)
+                finite = ~exact
+                with np.errstate(divide="ignore"):
+                    results_log_abs[finite] = np.log(np.abs(values[finite]))
+                results_sign[finite] = np.where(values[finite] >= 0, 1, -1)
+                # A value that underflowed to zero is not necessarily zero, and
+                # one that overflowed to inf is not necessarily infinite. Only
+                # those go on to the exact path.
+                pending = list(np.flatnonzero(exact))
+
+        # ---- Exact path: whatever float64 could not represent -------------
+        for idx in pending:
             val_expr = expr.subs(subs_list[idx])
             if val_expr.free_symbols:
                 # If any free symbols remain, we keep the expression
                 results_expr[idx] = val_expr
+                any_symbolic = True
             else:
                 evaluated = val_expr.evalf()
                 val = float(evaluated)
@@ -307,7 +357,7 @@ def mgfDerivative_integer(
 
         # ---- Decide return type ----
         # If all results are numeric, return numeric arrays (or scalars)
-        if all(r is None for r in results_expr):
+        if not any_symbolic:
             # Reshape to batch_shape
             log_abs_reshaped = results_log_abs.reshape(batch_shape)
             sign_reshaped = results_sign.reshape(batch_shape)
@@ -1025,7 +1075,10 @@ def mgfDerivative(
                 u=uu,
                 **kwargs,
             )
-            for o, tt, uu in zip(order_arr.flat, t_arr.flat, u_flat)
+            # strict=True is safe and worth having: all three come from the
+            # same `np.broadcast_arrays` call above, so unequal lengths
+            # would mean the broadcast itself had gone wrong.
+            for o, tt, uu in zip(order_arr.flat, t_arr.flat, u_flat, strict=True)
         ]
 
         # A symbolic element makes the whole result symbolic: the
@@ -1123,7 +1176,11 @@ def mgfDerivative(
         )
 
     elif order_type == "integer":
-        int_order = int(round(order))
+        # `int(...)` is NOT redundant here, whatever RUF046 says: for a
+        # SymPy order `round()` returns a `sympy.Integer`, and
+        # `mgfDerivative_integer` needs a Python `int`. PR 5 made
+        # `sp.Integer(2)` behave like `2`; dropping this cast undoes it.
+        int_order = int(round(order))  # noqa: RUF046
         return mgfDerivative_integer(
             order=int_order,
             prior=prior,

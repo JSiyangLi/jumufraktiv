@@ -70,10 +70,15 @@ def expectation_is_available(prior) -> bool:
 
 
 def _log_density(prior):
-    """Return a callable giving ``log p(theta)``, preferring the log form."""
+    """Return a callable giving ``log p(theta)``, preferring the log form.
+
+    The result is guaranteed to accept an array of ``theta`` and return one
+    value per element -- see :func:`_vectorise`, which every caller goes
+    through. Downstream code may assume that without checking.
+    """
     log_pdf = getattr(prior, "logpdf_func", None)
     if log_pdf is not None:
-        return lambda theta: np.asarray(log_pdf(theta), dtype=float)
+        return _vectorise(lambda theta: np.asarray(log_pdf(theta), dtype=float))
 
     pdf = prior.pdf_func
 
@@ -81,7 +86,67 @@ def _log_density(prior):
         with np.errstate(divide="ignore"):
             return np.log(np.asarray(pdf(theta), dtype=float))
 
-    return from_pdf
+    return _vectorise(from_pdf)
+
+
+def _vectorise(density):
+    """Return ``density`` if it takes an array, else an elementwise adapter.
+
+    Decided **once**, by probing with a two-element array, rather than guarded
+    at each call site. That matters for more than tidiness.
+
+    The registry's priors all take arrays. A caller-supplied one need not: a
+    density written as ``0.0 if theta >= k else -inf`` accepts a one-element
+    array and raises on anything longer, and one written with ``math`` accepts
+    no array at all. Handling that per call site produced two failure modes,
+    both measured on the Gamma-style prior below:
+
+    * **The answer depended on the batch size.** A Python-conditional density
+      returned ``0.28379634`` for one evaluation point and raised
+      ``ValueError`` for three, because a one-element array happens to satisfy
+      ``if``.
+    * **A real failure became a plausible number.** A genuinely scalar-only
+      density returned ``-inf`` where its vectorised twin returns
+      ``-1.4481850809269488``, because the per-call fallback caught the
+      ``TypeError`` and substituted ``-inf`` -- turning "this density cannot be
+      called that way" into "the integrand has no mass here".
+
+    Probing once removes both: the adapter is chosen before any evaluation, so
+    every point sees the same function, and a density that works under neither
+    calling convention raises **the caller's own exception** instead of being
+    converted into a number.
+    """
+    probe = np.array([1.0, 2.0])
+    try:
+        probed = np.asarray(density(probe), dtype=float)
+        if probed.shape == probe.shape:
+            return density
+    except (ValueError, TypeError, FloatingPointError, ZeroDivisionError):
+        # Not a failure: the answer to "does this take an array?" is no.
+        pass
+
+    def elementwise(theta):
+        values = np.asarray(theta, dtype=float)
+        flat = []
+        for x in values.ravel():
+            one = np.ravel(np.asarray(density(float(x)), dtype=float))
+            if one.size != 1:
+                # Taking `one[0]` here would integrate a density that is
+                # answering a different question, and say nothing about it.
+                raise ValueError(
+                    "A density called with a single theta returned "
+                    f"{one.size} values. It must return exactly one; the "
+                    "elementwise adapter cannot guess which is meant."
+                )
+            flat.append(float(one[0]))
+        return np.asarray(flat, dtype=float).reshape(values.shape)
+
+    # Confirm the adapter works before promising that it does. If the density
+    # cannot be called elementwise either, this raises the caller's exception,
+    # which is the honest outcome -- and it happens once, at setup, rather than
+    # from inside a quadrature where the traceback says nothing useful.
+    elementwise(probe)
+    return elementwise
 
 
 def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
@@ -104,16 +169,27 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     The bracket is taken where the log integrand has fallen 700 below its peak,
     which is where its contribution passes under double precision's floor.
     """
-    def value_at(theta):
-        try:
-            out = float(log_integrand(np.array([theta]), t_value)[0])
-        except (ValueError, FloatingPointError, ZeroDivisionError):
-            return -np.inf
-        return out if math.isfinite(out) else -np.inf
+    def values_at(thetas):
+        """Log integrand at every theta in one call, non-finite mapped to -inf.
+
+        `log_integrand` is elementwise in theta, so the 121-point scan below
+        and the two bisections are each one call rather than one call per
+        point -- 241 calls saved per evaluation point, each of which reaches
+        the prior's density.
+
+        There is deliberately no exception handling here. The density arrives
+        already able to take an array, because :func:`_vectorise` settled that
+        once at setup; a density that can be called neither way raised there.
+        Catching here as well would put back exactly what that removed -- a
+        failure quietly becoming ``-inf``, which reads as "no mass at this
+        theta" rather than "this call did not work".
+        """
+        out = np.asarray(log_integrand(np.asarray(thetas, dtype=float), t_value))
+        return np.where(np.isfinite(out), out, -np.inf)
 
     # Find any point with mass, scanning geometrically.
     grid = np.geomspace(lower_hint, upper_hint, 121)
-    values = np.array([value_at(theta) for theta in grid])
+    values = values_at(grid)
     if not np.any(np.isfinite(values)):
         return None
     peak_index = int(np.argmax(values))
@@ -124,25 +200,28 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     low = grid[max(inside[0] - 1, 0)]
     high = grid[min(inside[-1] + 1, len(grid) - 1)]
 
-    # Refine each endpoint by bisection. The coarse grid is enough to *find*
-    # the mass but not to bound it: for a Uniform prior the density is
-    # discontinuous at its edges, and integrating across a discontinuity costs
-    # `quad` several orders of accuracy. Measured on Uniform(0.5, 2), tightening
-    # the endpoints onto the support took the relative error from 2.0e-09 to
-    # the 1e-13 range.
-    def refine(inside_point, outside_point):
-        for _ in range(60):
-            middle = 0.5 * (inside_point + outside_point)
-            if middle in (inside_point, outside_point):
-                break
-            if value_at(middle) > below:
-                inside_point = middle
-            else:
-                outside_point = middle
-        return outside_point
-
-    low = refine(grid[inside[0]], low)
-    high = refine(grid[inside[-1]], high)
+    # Refine both endpoints by bisection, together. The coarse grid is enough
+    # to *find* the mass but not to bound it: for a Uniform prior the density
+    # is discontinuous at its edges, and integrating across a discontinuity
+    # costs `quad` several orders of accuracy. Measured on Uniform(0.5, 2),
+    # tightening the endpoints onto the support took the relative error from
+    # 2.0e-09 to the 1e-13 range.
+    #
+    # The `stuck` mask is what makes doing both at once equivalent to doing
+    # each alone: the scalar version broke out of its loop once the midpoint
+    # stopped moving, and an element that has stopped moving here simply stops
+    # being updated while the other continues.
+    interior = np.array([grid[inside[0]], grid[inside[-1]]], dtype=float)
+    exterior = np.array([low, high], dtype=float)
+    for _ in range(60):
+        middle = 0.5 * (interior + exterior)
+        stuck = (middle == interior) | (middle == exterior)
+        if np.all(stuck):
+            break
+        keep = values_at(middle) > below
+        interior = np.where(stuck | ~keep, interior, middle)
+        exterior = np.where(stuck | keep, exterior, middle)
+    low, high = float(exterior[0]), float(exterior[1])
     return low, high, grid[peak_index]
 
 
@@ -218,19 +297,25 @@ def expectationDeriv(
         with np.errstate(divide="ignore", invalid="ignore"):
             return order * np.log(theta) + t_value * theta + log_density(theta)
 
-    results = np.empty(t_arr.shape, dtype=float)
-    for index, (t_value, u_value) in enumerate(
-        zip(t_arr.ravel(), u_arr.ravel(), strict=True)
-    ):
+    # ---- Per point: locate the mass and its peak -------------------------
+    #
+    # This part stays a loop, and cheaply so: bracketing is now two vectorised
+    # calls per point rather than 241 scalar ones, and the peak search is a
+    # handful more. What used to dominate was the quadrature below, which is
+    # the part that batches.
+    t_flat = t_arr.ravel()
+    u_flat = u_arr.ravel()
+    results = np.full(t_flat.shape, -np.inf, dtype=float)
+
+    live, lows, highs, offsets = [], [], [], []
+    for index, (t_value, u_value) in enumerate(zip(t_flat, u_flat, strict=True)):
         found = _bracket(log_integrand, t_value)
         if found is None:
-            results.ravel()[index] = -np.inf
             continue
         low, high, peak_guess = found
         if np.isfinite(u_value):
             high = min(high, u_value)
         if high <= low:
-            results.ravel()[index] = -np.inf
             continue
 
         # Scale by the integrand's peak before integrating. Without this,
@@ -243,17 +328,71 @@ def expectationDeriv(
             bounds=(low, high),
             method="bounded",
         )
-        offset = max(-float(peak.fun), float(log_integrand(np.array([peak_guess]), t_value)[0]))
+        offset = max(
+            -float(peak.fun),
+            float(log_integrand(np.array([peak_guess]), t_value)[0]),
+        )
         if not math.isfinite(offset):
-            results.ravel()[index] = -np.inf
             continue
 
-        def scaled(theta, tv=t_value, off=offset):
-            with np.errstate(under="ignore"):
-                return float(np.exp(log_integrand(np.array([theta]), tv)[0] - off))
+        live.append(index)
+        lows.append(low)
+        highs.append(high)
+        offsets.append(offset)
 
-        value, _ = integrate.quad(scaled, low, high, limit=200)
-        results.ravel()[index] = -np.inf if value <= 0 else math.log(value) + offset
+    # ---- All points at once: one adaptive quadrature ---------------------
+    #
+    # Each point has its own interval, so they are mapped to a common [0, 1]
+    # by theta_i(s) = low_i + s * width_i, which turns N integrals over N
+    # intervals into one integral of an N-vector:
+    #
+    #     int_{low_i}^{high_i} f_i(theta) dtheta
+    #         = width_i * int_0^1 f_i(low_i + s width_i) ds
+    #
+    # `quad_vec` then runs ONE adaptive subdivision for the whole batch,
+    # evaluating every point's integrand at each node, where `quad` ran a
+    # separate subdivision per point and evaluated a scalar at each of its
+    # nodes -- 399 Python calls per evaluation point, each wrapping a float in
+    # a one-element array to hand to the prior's density.
+    #
+    # Sharing the subdivision is safe here *because* of the peak scaling
+    # above: every component is O(1) at its own peak, so no component is
+    # negligible against the others and the error norm cannot be dominated by
+    # one point while another is left inaccurate. Without that scaling this
+    # would be a real hazard rather than a bookkeeping detail.
+    if live:
+        lows = np.asarray(lows, dtype=float)
+        widths = np.asarray(highs, dtype=float) - lows
+        offsets = np.asarray(offsets, dtype=float)
+        t_live = t_flat[live]
+
+        def batched(s):
+            theta = lows + s * widths
+            # `over` is in the list for a reason `CLAUDE.md` records under its
+            # testing hazards: `pyproject.toml` sets `filterwarnings =
+            # ["error"]`, so NumPy's "overflow encountered in exp" is an
+            # exception under pytest and a warning everywhere else. A path
+            # that behaves differently in the suite than in a user's session
+            # is one the suite cannot vouch for. Overflow here needs an
+            # underestimated offset -- a multimodal caller-supplied density
+            # whose global peak the bounded search missed -- and it surfaces
+            # as `inf`, loudly, rather than as a plausible number.
+            with np.errstate(
+                divide="ignore", invalid="ignore", under="ignore", over="ignore"
+            ):
+                exponent = (
+                    order * np.log(theta) + t_live * theta + log_density(theta)
+                )
+                return np.exp(exponent - offsets) * widths
+
+        values, _ = integrate.quad_vec(batched, 0.0, 1.0, epsrel=1e-10)
+        values = np.atleast_1d(np.asarray(values, dtype=float))
+        with np.errstate(divide="ignore"):
+            results[live] = np.where(
+                values > 0, np.log(np.where(values > 0, values, 1.0)) + offsets, -np.inf
+            )
+
+    results = results.reshape(t_arr.shape)
 
     signs = np.ones(results.shape, dtype=int)
     if scalar_input:

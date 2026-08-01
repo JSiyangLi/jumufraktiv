@@ -251,7 +251,7 @@ def fractionalDeriv_grid(
     # ---- Fixed grid, with the right endpoint found by decay probing -----
     u_min, u_max = _integration_range(gamma_val, tol)
     while True:
-        n_nodes = max(int(math.ceil((u_max - u_min) * _NODES_PER_UNIT)) + 1, 33)
+        n_nodes = max(math.ceil((u_max - u_min) * _NODES_PER_UNIT) + 1, 33)
         nodes, step = np.linspace(u_min, u_max, n_nodes, retstep=True)
         decayed, log_edge, log_peak = _tail_has_decayed(
             nodes, gamma_val, t_arr, u_arr, integer_derivative, tol

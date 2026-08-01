@@ -70,7 +70,9 @@ def cgf_derivatives_grad(cgf_func, t, order):
     signs = []
     f = cgf_func
     eps = sys.float_info.epsilon
-    for k in range(1, order + 1):
+    for _ in range(1, order + 1):
+        # Only the iteration count matters: each pass differentiates `f` once
+        # more, so the k-th cumulant is the k-th nested gradient.
         f = grad(f)
         val = f(t)
         is_zero = jnp.abs(val) < eps

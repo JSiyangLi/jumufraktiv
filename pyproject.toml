@@ -173,6 +173,13 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # deletions happened to clear. All three per-file exemptions went too, one of
 # them for a module that no longer exists.
 #
+# PR 9 removed B007, B905 and RUF046. The last of those is worth a note: one
+# of its two sites was a FALSE positive. `int(round(order))` looks redundant
+# and is not, because `round()` returns a `sympy.Integer` for a SymPy order
+# while `mgfDerivative_integer` needs a Python `int` -- dropping the cast
+# would have undone the repair PR 5 made for `sp.Integer(2)`. That line
+# carries a `noqa` with the reason; the genuinely redundant one is gone.
+#
 # F821 (undefined-name) and F811 (redefined-while-unused) were never exempted
 # package-wide, because they find defects rather than style. As of PR 8 they
 # have no per-file exemptions either, so both block everywhere.
@@ -184,12 +191,6 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
     # "Known-broken" in CLAUDE.md; unscheduled, because it is a numerical
     # repair rather than a lint fix.
     "F841",   # unused-variable                        -> unscheduled
-    "B007",   # unused-loop-control-variable           -> PR 9  (vectorisation)
-    "B905",   # zip-without-explicit-strict            -> PR 9
-    # Both RUF046 instances are an `int(...)` around an already-integral
-    # expression, in the vectorised paths PR 9 rewrites. Moved from PR 4,
-    # which merged without reaching them.
-    "RUF046", # unnecessary-cast-to-int                -> PR 9
     "UP006",  # non-pep585-annotation                  -> PR 12 (API surface)
     "UP007",  # non-pep604-annotation-union            -> PR 12
     "UP035",  # deprecated-import                      -> PR 12
