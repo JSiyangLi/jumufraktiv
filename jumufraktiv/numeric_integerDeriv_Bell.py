@@ -104,14 +104,19 @@ def _cgf_derivatives_jax_scalar(cgf_func, t, order, cgf_mode):
             return cgf_derivatives_jet(cgf_func, t, order)
         except Exception as e:
             msg = str(e).lower()
-            if any(key in msg for key in ("jet", "primitive", "not implemented", "igamma")):
+            if any(
+                key in msg
+                for key in ("jet", "primitive", "not implemented", "igamma")
+            ):
                 logger.debug(
                     "jet() failed (%s: %s); using nested grad() instead. "
                     "Both compute the same derivatives.", type(e).__name__, e)
                 return cgf_derivatives_grad(cgf_func, t, order)
             raise
     else:
-        raise ValueError(f"Unknown cgf_mode='{cgf_mode}'. Expected 'jet', 'grad', or 'auto'.")
+        raise ValueError(
+            f"Unknown cgf_mode='{cgf_mode}'. Expected 'jet', 'grad', or 'auto'."
+        )
 
 
 # ======================================================================
@@ -307,7 +312,9 @@ def integerDeriv_numeric_bell(
         if complete:
             cgf_vals = np.array([cgf_func(t_flat[i]) for i in range(n_points)])
         else:
-            cgf_vals = np.array([cgf_func(t_flat[i], u_flat[i]) for i in range(n_points)])
+            cgf_vals = np.array(
+                [cgf_func(t_flat[i], u_flat[i]) for i in range(n_points)]
+            )
         cgf_vals = cgf_vals.reshape(batch_shape)
         if scalar_input:
             return float(cgf_vals.item()), 1
@@ -389,7 +396,10 @@ def integerDeriv_numeric_bell(
             for idx in range(n_points):
                 val_sub = deriv_expr.subs(subs_list[idx]).evalf()
                 if val_sub.free_symbols:
-                    raise ValueError(f"Free symbols remain for point {idx}: {val_sub.free_symbols}")
+                    raise ValueError(
+                        f"Free symbols remain for point {idx}: "
+                        f"{val_sub.free_symbols}"
+                    )
                 vals_k[idx] = float(val_sub)
 
             abs_vals = np.abs(vals_k)
@@ -457,7 +467,9 @@ def integerDeriv_numeric_bell(
         vsign = jnp.transpose(vsign)
 
         # Batched Bell
-        log_abs_B, sign_B = bell_polynomial_log_batched(np.asarray(logv), np.asarray(vsign))
+        log_abs_B, sign_B = bell_polynomial_log_batched(
+            np.asarray(logv), np.asarray(vsign)
+        )
 
         # Compute CGF values via vmap (no Python loop)
         if complete:

@@ -170,7 +170,24 @@ satisfy them; tests should assert them.
 
 2. **Log principle.** In the numeric state, whether a function returns
    `(log_abs, sign)` or a plain scalar depends only on the `log` argument.
-   Nothing else may change it.
+   Nothing else may change it — not which backend ran, not whether the input
+   was scalar or an array. Those are what the principle was written against,
+   and they are invisible to a caller.
+
+   *Which* of the two shapes a given quantity uses is fixed by whether that
+   quantity can be negative, and is stated in its docstring. Every quantity
+   this package returns is non-negative by construction — `θ > 0`, so
+   `Dᵃ M(t) = E[θᵃe^{tθ}] > 0`, and the evidence, density, CDF, MGF, predictive
+   and raw moment inherit it — *except* a central moment of odd order, which
+   genuinely is signed: a Uniform(0.5, 2) prior with Poisson counts pushes the
+   posterior against the upper endpoint and gives `μ₃ = −0.0219`, where a Gamma
+   prior gives `+0.0741`.
+
+   So `post_central_moment` returns a pair and everything else returns the log
+   alone, which is the convention of `numpy.linalg.slogdet` and of
+   `scipy.special.logsumexp(return_sign=True)`. A negative value anywhere else
+   is a numerical failure rather than an answer, and is **raised** rather than
+   reported through a sign the caller must remember to check.
 
 3. **Tuple-vectorisation principle.** Evaluation points are the *pair* `(t, u)`.
    Both are broadcast to a common shape and evaluated as one batch. A function
@@ -510,31 +527,32 @@ one, the test XPASSes and *fails* the build. That forces the fix to be recorded
 both there and in the "Known-broken" list below. When you repair something,
 expect a red build and remove the marker; do not weaken the assertion.
 
-**Lint debt.** `pyproject.toml` carries an itemised `per-file-ignores` baseline
-for the pre-audit library code — one entry per rule, each annotated with the PR
-that removes it. It is a shrinking list, not a blanket suppression. `tests/`
-has no exemptions.
+**Lint debt: there is none.** `pyproject.toml`'s `per-file-ignores` for
+`jumufraktiv/**` is now an empty list, so the library is held to exactly the
+rules `tests/` is. An entry added there from now on is a *new* exemption rather
+than an inherited one, and should be argued for.
 
-PR 8 removed thirteen rules (`E402`, `E713`, `E731`, `F401`, `F541`, `I001`,
-`B028`, `B904` and the five `SIM` codes), plus `RUF059` and `W292`, which its
-deletions happened to clear. **`F821` and `F811` now have no exemptions at
-all**, package-wide or per-file, which is the state they were always meant to
-reach: they are blocking because they find defects rather than style issues,
-and an exemption for them is a contradiction carried on sufferance.
+Two of the codes cleared last were filed as cosmetic and were not, which is the
+part worth remembering:
 
-PR 9 removed `B007`, `B905` and `RUF046`. One of `RUF046`'s two sites was a
-**false positive**, which is worth recording because acting on it would have
-caused a regression: `int(round(order))` looks redundant and is not, since
-`round()` returns a `sympy.Integer` for a SymPy order while
-`mgfDerivative_integer` needs a Python `int`. Removing the cast would have
-undone PR 5's repair of `sp.Integer(2)`. That line carries a `noqa` naming the
-reason.
+- **`RUF001-003` (ambiguous unicode) hid a real defect for the whole audit.**
+  Of 520 flagged characters, 336 were `‑` U+2011 NON-BREAKING HYPHEN standing in
+  for `-`, and **41 of those sat inside error messages**, where a look-alike
+  hyphen silently defeats a grep or a copy-paste search for the message text.
+  The rest are Greek letters carrying the mathematics. Blanket suppression
+  could not tell the two apart; `lint.allowed-confusables` names the Greek
+  letters and the minus sign, so the rule can stay on.
 
-What remains is eleven rules, and all eleven are cosmetic and belong to the
-documentation waves (`E501`, the three `RUF00x` ambiguous-unicode codes,
-`W291`, `W293`, and the four `UP` annotation codes) — except one. The single
-`F841` is not a lint issue at all but the visible end of the Pareto
-incomplete-MGF defect recorded under "Known-broken".
+- **`E501` was deferred on a reason that was wrong twice.** It said fixing the
+  99 over-length lines meant running `ruff format` over the library, and that
+  this would bury the real diffs. The second half is true, which is why the
+  formatter is still its own scheduled change. The first half is not — the
+  lines were rewrapped directly — and `ruff format` would not have fixed them
+  anyway: it leaves 40 of the 99, because it does not reflow strings,
+  docstrings or comments, which is where 68 of them lived.
+
+The general lesson is the one this audit keeps relearning: **a suppression
+records that nobody has looked, not that there is nothing to find.**
 
 `ruff format` currently runs over `tests/` only. Reformatting 13k lines of
 library code would bury the audit's real diffs; that lands as its own PR in
@@ -565,11 +583,32 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 2 | 6c | mpmath precision, the expectation route, sequential update | **merged** |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
 | 3 | 8 | Module layout, dead code, and the diagnostics policy | **merged** |
-| 4 | 9 | Vectorisation, and the cost of a density call | **in review** |
+| 4 | 9 | Vectorisation, and the cost of a density call | **merged** |
 | 4 | 10 | Caching and dispatch | **merged** |
-| 5 | 12 | Public API surface (less what 12a already took) | planned |
+| 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **in review** |
 | 6 | 13 | Documentation infrastructure | planned |
-| 6 | 14 | Docstring sweep | planned |
+| 6 | 14 | `ruff format` over the library | planned |
+
+**PR 12 grew well past its charter, and the growth was not scope creep but
+consequence.** It was scoped as five recorded interface defects. Two things
+enlarged it, both worth recording because neither was on any list.
+
+The first was an owner instruction: docstrings and comments had been
+accumulating this repository's own history, which belongs in commit messages.
+Sweeping that out is prose work, but reviewing the sweep meant reading every
+rewritten passage against the code, and **three of the findings were defects in
+the code rather than in the prose** — a sentence stops matching what it
+describes when either one is wrong. `pareto_cgf` and `pareto_mgf` returned
+`nan` at every argument; the dispatcher's speed claim was backwards; and
+`post_predictive(individual=False)` had never worked on a symbolic posterior.
+
+The second was measurement. Explaining the sign convention to the owner needed
+a worked example, and the example raised `ValueError` where it should have
+returned a number — which is how the `auto` routing defect below was found.
+
+The pattern is the same both times: **prose that had to be justified, and a
+number that had to be produced, each turned up a defect that reading the code
+alone had not.**
 
 **PR 6 is split into 6a, 6b and 6c by blast radius, not by defect type**, on
 the owner's decision. The question that governs verification cost is "does this
@@ -762,76 +801,29 @@ where noted as "no runtime repro".
   the deferred "replace `(log_abs, sign)` with a small result type" decision
   rather than a numerical repair. Recorded here so the two are not confused.
   *(deferred — see "Deferred decisions")*
-- **Every tuning option is inert on the default path, and `tol` is the one
-  that shows it.** Since PR 6c made the direct-expectation route the default
-  for numeric evaluation, `method="auto"` with a concrete `t` calls
-  `expectationDeriv`, which has **no tuning parameters at all**. So `tol`,
-  `dps`, `use_tan`, `cgf_method`, `symbolic_timeout`, `timeout_seconds` and
-  `integer_method` are accepted and discarded — every accepted option except
-  `int_tol`, which `resolve_backend` consumes before the branch is chosen.
-  Measured for Gamma(2, 3) at order 1.5, `t = −1`:
+- **Accuracy at `t = 0` collapses as the order approaches the prior's
+  `max_finite_moment`.** The guard says an order strictly below the bound is
+  admissible, which is true of the mathematics and not of the quadrature: at
+  the origin the integrand `θ^a p(θ)` decays only polynomially, like
+  `θ^{a−α−1}`, and the closer `a` gets to `α` the slower. Measured for
+  Pareto(α=2, ξ=1) against the exact `E[Θ^a] = 2/(2−a)`:
 
-  | call | log of the derivative |
-  |------|----------------------|
-  | `auto`, `tol=1e-14` | −1.4538320842478814 |
-  | `auto`, `tol=1e-1` | −1.4538320842478814 |
-  | `scipy`, `tol=1e-14` | −1.4538320842363235 |
-  | `scipy`, `tol=1e-1` | −1.4542925617536986 |
+  | order | exact | `scipy` grid | `auto` (expectation) |
+  |---|---|---|---|
+  | 0.5 | 1.333 | 4.3e-13 | 2.5e-16 |
+  | 1.0 | 2.000 | 1.4e-17 | 1.4e-12 |
+  | 1.5 | 4.000 | 2.0e-04 | 7.2e-07 |
+  | 1.9 | 20.000 | 8.2e-02 | 2.2e-02 |
+  | 1.99 | 200.000 | 6.1e-01 | **2.7e-01** |
 
-  The option is real — it moves the answer by 4.6e−4 through `scipy` — and
-  simply unreachable through `auto`. This is not a defect in the expectation
-  route, which is more accurate and 5–8× faster; it is a defect in an
-  interface that accepts options the chosen route cannot use. The honest
-  resolutions are to refuse them, to warn, or to let a tuning option select a
-  route that can honour it. *(PR 12)*
+  It is a `t = 0` defect specifically, not a heavy-tail defect in general: at
+  `t = −0.01` the same three near-boundary orders are accurate to 1.2e-16,
+  because the exponential restores geometric decay. Found while making the
+  moment guard reachable from all three public entry points — the guard admits
+  these orders, so it promises something the kernel cannot deliver.
+  *(unscheduled — tail handling in the quadrature, needing its own
+  verification)*
 
-- **The two public fractional entry points name the same option differently.**
-  `mgfDerivative` calls it `integer_method`; `mgfDerivative_fractional` calls
-  it `integerDeriv_method`. Passing the sibling's spelling is accepted and
-  dropped, and **no unknown-option guard can catch it**, because both names are
-  valid somewhere in the layer. Measured:
-  `mgfDerivative_fractional(1.5, prior, method="scipy", t=−1, integer_method="bell")`
-  reaches the kernel with `integer_method="symbolic"`, the default. *(PR 12)*
-
-- **`post_predictive` does not validate its keyword arguments**, though the
-  constructor one call away does. `MGFDerivative(..., likelihood="weibull",
-  rh=2.0)` raises `TypeError: ... did you mean 'rho'?`; the same typo in
-  `post.post_predictive([2.0], rh=9.0)` returns `−1.1053356325054668`, exactly
-  the default's value, where `rho=9.0` gives `−14.108023936618837`. **A
-  misspelling costs 13.003 nats, silently.** PR 12a repaired the neighbouring
-  half — `post_predictive` used to ignore the parameters stored at
-  construction — by fixing `_likelihood_arguments`; the validation was not
-  carried across. *(PR 12)*
-
-  The three above share a shape, and it is the one PR 8 kept meeting: **a check
-  that exists in one place and not in the neighbouring one.** The constructor
-  has rejected unknown options since PR 3b, with a "did you mean" suggestion,
-  and the `mgfDerivative*` functions never did — so for the whole audit the
-  same name raised through one door and vanished through the other. PR 8 closed
-  that particular gap: names reaching **no** backend, misspellings included,
-  now raise from all three entry layers, and the constructor's list of valid
-  names is the dispatcher's object rather than a second copy of it. What
-  remains above is a genuine interface decision rather than an oversight.
-- **The Pareto prior's numeric incomplete MGF returns NaN at every argument,
-  and its JAX twin raises.** `pareto_imgf` and `pareto_logimgf` call SciPy's
-  `gammaincc(a, z)` with `a = −α < 0`, which is outside its domain, so both
-  return `nan` — measured at `α=3, ξ=1, t=−1, u=2`, where direct quadrature of
-  the density at 40 digits gives `0.24880390851855957`. `pareto_imgf_jax` calls
-  `jnp.gamma`, which does not exist in `jax.numpy`, so it raises
-  `AttributeError` before it can reach the same domain error.
-
-  **The symbolic route is exact**, matching that reference to 1e-16, so this is
-  a defect in the two numeric implementations rather than in the expression
-  they implement — which also means a repair should start from `imgf_sym`.
-  The consequence for a user is that `post_cdf` and `post_quantile`, which go
-  through the incomplete MGF, work for a Pareto prior only on the symbolic
-  path.
-
-  Found while clearing PR 8's lint baseline: `F841` flagged a `sign` computed
-  and discarded in `pareto_logimgf`, and the discarded sign turned out to be
-  the least of it. That one `F841` is the only reason the code remains in the
-  baseline. *(unscheduled — a numerical repair needing its own verification,
-  so it is recorded rather than folded into a module-layout PR)*
 - **The incomplete-MGF derivative is wrong, not merely small, below
   `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
   canonical test problem, its log comes out as `−65.17` at `u = 1e-6` where the
@@ -846,12 +838,6 @@ where noted as "no runtime repro".
   `1e-6`, but the inaccuracy itself is untouched and belongs to the kernel
   work. It bounds how far into the lower tail any CDF-based method can be
   trusted. *(PR 6b)*
-- **`post_raw_moment` and `post_central_moment` disagree on return shape.** With
-  the same `log=True`, one returns a bare scalar and the other `(log_abs,
-  sign)` — a direct violation of the log principle. *(PR 12)*
-- **`post_sample` is not reproducible** — unseeded `np.random.rand`, no `rng`
-  argument. *(PR 12)*
-
 ### Verified correct
 
 Worth recording, because it bounds where the bugs are. Against closed-form
@@ -875,6 +861,32 @@ orders 0.5, 1.5, 1.9 and 2.5 and over point sets of two, three and five widely
 spread `t`. Removing that mask also made the path *faster* — the suite's batch
 tests run in 178 s against 475 s — because the mask was what prevented
 convergence, so `L` had been doubling far past the integrand's support.
+
+**`MGFDerivative(method="auto")` now reaches the same backend as
+`mgfDerivative(method="auto")`.** It did not.
+`_build_derivative` consults `resolve_backend`, which encodes the backend
+matrix and answers `symbolic` for `auto` at an integer order. But
+`mgfDerivative` applies a *second* rule that `resolve_backend` does not
+model — with a concrete `t`, prefer the expectation route — so the class held
+a symbolic expression and substituted into it, evaluating exactly the route
+PR 6c demoted. Measured against mpmath at 50 digits, Uniform(0.5, 2) with
+Poisson data:
+
+| data | `a` | `mgfDerivative(auto)` | `MGFDerivative(auto)` |
+|---|---|---|---|
+| [1, 2, 3] | 6 | 1.3e-16 | 1.3e-16 |
+| [8, 9, 10] | 27 | 7.9e-16 | **5.4e-07** |
+| [20, 20, 20] | 60 | 2.4e-16 | **`ValueError`, would not construct** |
+
+The last row is the sharpest: the class could not build a posterior the
+dispatcher computes to sixteen digits, because `_store_result` correctly
+refuses a negative evidence and the substituted route produced one.
+
+Invisible for the whole audit because **every class-level test uses a Gamma
+prior**, whose MGF derivatives have one-signed terms and therefore cannot
+cancel — the same hazard recorded below under a different name. The 240-case
+sweep that established the default measured the *dispatcher*; the class was
+assumed to inherit it.
 
 **Dimensionality is now checked in one place.** The `ndim != 1` guard lives
 inside the shared `like_stats/_common.py::_extract_1d`, which every entry point
@@ -959,10 +971,35 @@ Its worst case — 1.17e-11, Gamma at half-integer orders — is about 100× wor
 than the differentiated route's worst *non-uniform* case. What it is is never
 catastrophic, which is the property a default needs.
 
-Two consequences beyond accuracy. The route needs only `p(θ)`, never the MGF,
-which is what makes sequential updating work for numeric backends: the prior
+One consequence beyond accuracy: the route needs only `p(θ)`, never the MGF,
+which is what makes sequential updating work for numeric backends. The prior
 `to_prior_object` builds carries a density and no `mgf_sym`, so no
-differentiating backend could consume it. And it is 5–8× faster.
+differentiating backend could consume it.
+
+**The route is slower, not faster, and the entry that used to say otherwise
+was stale rather than wrong when written.** The `cost, order 1.5` row above
+was measured before PR 9, which took the fixed-grid kernel from 2054 ms per
+evaluation point to 2.0 and inverted the comparison. Nobody re-measured, so
+`5–8× faster` survived in this document, in the dispatcher's own comment and
+in a docstring, all sourced from the same superseded run. Re-measured against
+`method="scipy"` on the current tree, Gamma(2, 3) at order 1.5:
+
+| evaluation points | `auto` (expectation) | `scipy` (fixed grid) | ratio |
+|---|---|---|---|
+| 1 | 53.98 ms | 2.24 ms | 24.1× slower |
+| 8 | 14.68 ms/pt | 3.61 ms/pt | 4.1× slower |
+| 20 | 11.32 ms/pt | 3.21 ms/pt | 3.5× slower |
+
+Accuracy is therefore the whole of the case for the default, and it is bought
+with time. That is still the right trade for a default — never catastrophically
+wrong beats fast — but a caller who knows their prior's CGF has one-signed
+derivatives, as gamma and exponential do, can ask for `scipy` and keep the
+speed. The gap narrows as the batch grows, so it is worst for a single point.
+
+The general lesson is worth more than the number: **a measured comparison
+becomes a claim about two moving things, and speeding one of them up
+invalidates it silently.** Nothing failed when PR 9 inverted this; the sentence
+simply went on being read.
 
 ---
 
@@ -1125,5 +1162,13 @@ uniform, where double precision degrades from order ~12.
 
 - Make `jax` and `pandas` optional rather than import-time-required.
 - Replace the `(log_abs, sign)` return convention with a small result type.
-- Remove the `sys.modules["mgf2post"]` alias in `__init__.py`.
+  Now needed in one place rather than several: only `post_central_moment`
+  returns the pair, since it is the only quantity that can be negative.
 - Anglicise internal naming.
+
+The `sys.modules["mgf2post"]` alias is **removed**, and it was more than a
+tidiness item. Assigning into `sys.modules` claimed a name this project does
+not own: importing `jumufraktiv` made `import mgf2post` return this package
+process-wide, shadowing any genuinely different distribution of that name. For
+a package heading to public PyPI that is a hazard rather than a courtesy, and
+nothing in the package or the suite used it.

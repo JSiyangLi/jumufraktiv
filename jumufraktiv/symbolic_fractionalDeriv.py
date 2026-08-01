@@ -136,7 +136,9 @@ def fractionalDeriv_symbolic(
         expr = prior.mgf_sym
     else:
         if not hasattr(prior, "imgf_sym") or prior.imgf_sym is None:
-            raise ValueError("Prior does not provide a symbolic incomplete MGF (imgf_sym).")
+            raise ValueError(
+                "Prior does not provide a symbolic incomplete MGF (imgf_sym)."
+            )
         expr = prior.imgf_sym
 
     # If it's a callable, call it to get the expression

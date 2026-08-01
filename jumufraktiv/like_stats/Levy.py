@@ -51,8 +51,8 @@ def readyLevy(
     data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
     location : numeric scalar or 1-column pandas DataFrame/Series/array-like
-        Known location parameter(s) μ. If scalar, it is recycled to match length of data.
-        If vector, must have same length as data.
+        Known location parameter(s) μ. If scalar, it is recycled to match
+        length of data. If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
 
     Returns
@@ -86,7 +86,9 @@ def readyLevy(
     # ---- 3. Check support ----
     diff = data_vals - loc_vals
     if np.any(diff <= 0):
-        raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
+        raise ValueError(
+            "data values must be strictly greater than location for Lévy likelihood."
+        )
 
     # ---- 4. Compute sufficient statistics ----
     a = n / 2.0
@@ -118,7 +120,8 @@ def bereitLevy(
     data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
     location : numeric scalar or 1-column pandas DataFrame/Series/array-like
-        Known location parameter(s) μ. If scalar, recycled; if vector, same length as data.
+        Known location parameter(s) μ. If scalar, recycled; if vector, same
+        length as data.
     **kwargs : additional arguments (ignored).
 
     Returns
@@ -146,7 +149,9 @@ def bereitLevy(
     # ---- Check support ----
     diff = data_vals - loc_vals
     if np.any(diff <= 0):
-        raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
+        raise ValueError(
+            "data values must be strictly greater than location for Lévy likelihood."
+        )
 
     # ---- Per-element statistics ----
     a_vals = np.full(n, 0.5)

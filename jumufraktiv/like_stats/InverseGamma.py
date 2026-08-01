@@ -3,8 +3,8 @@ InverseGamma.py
 
 Functions for preparing Inverse-Gamma likelihood statistics for MGF marginalisation.
 
-For an Inverse-Gamma distribution with known shape α (scalar or vector) and unknown rate β,
-the density for y > 0 is:
+For an Inverse-Gamma distribution with known shape α (scalar or vector) and
+unknown rate β, the density for y > 0 is:
 
     f(y; α, β) = β^α / Γ(α) * y^{-α-1} * exp(-β / y)
 

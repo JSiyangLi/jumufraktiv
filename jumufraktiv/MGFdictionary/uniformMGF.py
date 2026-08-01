@@ -11,9 +11,14 @@ For t < 0, the MGF is finite and positive. The CGF is defined as log M(t).
 
 Numerical stability notes:
 - The expressions involve differences of exponentials (exp(t*b) - exp(t*a)),
-  which can suffer from cancellation when t is small or when a and b are close.
-- The log-space CGF uses `log(exp(t*b) - exp(t*a))`, which is stable for
-  moderate values but may overflow for very large |t|.
+  which cancel when t is small or when a and b are close. `uniform_cgf` forms
+  that difference with `logminus`, the log of a difference, rather than
+  subtracting two logs.
+- Neither factor of M(t) is positive on its own below the origin: exp(t*b) is
+  then the smaller exponential and t is negative. The signs cancel in the
+  ratio, so the numerator must be ordered by the sign of t. `uniform_cgf_jax`
+  sidesteps this by dividing before taking the log, which is why the two
+  implementations differ in shape.
 - For t=0, the CGF is defined as 0 (and the MGF as 1) by continuity.
 
 Symbolic, numeric (SciPy), and JAX backends are supported.
@@ -26,6 +31,7 @@ import jax.numpy as jnp
 import scipy.stats as stats
 import sympy as sp
 
+from jumufraktiv.logsum import logminus
 from jumufraktiv.registry import make_prior_spec, register_prior
 from jumufraktiv.symbols import param, t, theta
 
@@ -61,10 +67,28 @@ def uniform_cgf(t_val: float, a_val: float, b_val: float) -> float:
     Notes
     -----
     For t=0, returns 0.0 by continuity.
+
+    ``M(t) = (e^{bt} - e^{at}) / (t (b - a))`` is positive for every non-zero
+    ``t``, but neither of its two factors is: below the origin ``e^{bt}`` is
+    the *smaller* exponential and ``t`` is negative, so taking the log of each
+    separately asks for the log of a negative number twice. The two signs
+    cancel in the ratio and not before it, which is why the numerator is
+    ordered by sign here and ``abs`` is taken of the denominator.
+
+    ``t < 0`` is the whole of this package's operating range -- the posterior
+    is evaluated at ``t = -b`` -- so the sign convention is not an edge case.
     """
     if t_val == 0.0:
         return 0.0
-    return math.log(math.exp(t_val * b_val) - math.exp(t_val * a_val)) - math.log(t_val * (b_val - a_val))
+
+    # `logminus(x, y)` is log(e^x - e^y) and needs x > y, so the larger
+    # exponent leads. Above the origin that is b*t, below it a*t.
+    if t_val > 0:
+        log_numerator = logminus(t_val * b_val, t_val * a_val)
+    else:
+        log_numerator = logminus(t_val * a_val, t_val * b_val)
+
+    return log_numerator - math.log(abs(t_val) * (b_val - a_val))
 
 
 def uniform_mgf(t_val: float, a_val: float, b_val: float) -> float:
@@ -110,7 +134,9 @@ def uniform_cgf_jax(t_val, a_val, b_val):
     JAX array
         log M(t).
     """
-    return jnp.log((jnp.exp(t_val * b_val) - jnp.exp(t_val * a_val)) / (t_val * (b_val - a_val)))
+    return jnp.log(
+        (jnp.exp(t_val * b_val) - jnp.exp(t_val * a_val)) / (t_val * (b_val - a_val))
+    )
 
 
 def uniform_mgf_jax(t_val, a_val, b_val):

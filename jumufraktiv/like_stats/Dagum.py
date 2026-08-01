@@ -3,8 +3,8 @@ Dagum.py
 
 Functions for preparing Dagum likelihood statistics for MGF marginalisation.
 
-For a Dagum distribution with known shape r (scalar or vector) and known scale s (scalar or vector),
-and unknown shape q, the density for y > 0 is:
+For a Dagum distribution with known shape r (scalar or vector) and known
+scale s (scalar or vector), and unknown shape q, the density for y > 0 is:
 
     f(y; r, s, q) = (r * q / y) * (y/s)^(r*q) / ( (y/s)^r + 1 )^(q+1)
 

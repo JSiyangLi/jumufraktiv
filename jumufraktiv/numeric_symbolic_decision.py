@@ -22,7 +22,14 @@ from jumufraktiv.symbolic_cache import cached_diff
 
 logger = logging.getLogger(__name__)
 
-def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.0, return_decision=False):
+def suggest_method_integerDeriv(
+    expr,
+    symbol,
+    order,
+    test_order=None,
+    timeout=1.0,
+    return_decision=False,
+):
     """
     Suggest symbolic vs numeric for integer derivatives.
 
@@ -62,7 +69,10 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
             msg = "Symbolic is possible but may be heavy at higher orders."
         else:
             recommend = False
-            msg = "Symbolic not recommended: the test derivative is already slow or large. Use the numeric (JAX) path."
+            msg = (
+                "Symbolic not recommended: the test derivative is already "
+                "slow or large. Use the numeric (JAX) path."
+            )
     except Exception as e:
         logger.debug("Symbolic test failed (%s); recommending the numeric path.", e)
         recommend = False

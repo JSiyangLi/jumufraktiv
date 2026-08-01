@@ -491,7 +491,9 @@ def pareto_factory(params):
         max_finite_moment=float(alpha_val),
 
         imgf_jax=lambda t_val, u_val: pareto_imgf_jax(t_val, alpha_val, xi_val, u_val),
-        logimgf_jax=lambda t_val, u_val: pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val),
+        logimgf_jax=lambda t_val, u_val: pareto_logimgf_jax(
+            t_val, alpha_val, xi_val, u_val
+        ),
 
         params=params,
     )

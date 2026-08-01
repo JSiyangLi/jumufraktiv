@@ -97,7 +97,12 @@ def _as_integer_order(order):
     )
 
 
-def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False, complete: bool = True):
+def integerDeriv_symbolic(
+    order: int,
+    prior: mitMGFprior,
+    simplify: bool = False,
+    complete: bool = True,
+):
     """
     Returns the symbolic derivative of order `order` of the MGF (or incomplete MGF)
     with respect to t.
@@ -143,7 +148,9 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     else:
         expr = getattr(prior, "imgf_sym", None)
         if expr is None:
-            raise ValueError("Prior does not provide a symbolic incomplete MGF (imgf_sym).")
+            raise ValueError(
+                "Prior does not provide a symbolic incomplete MGF (imgf_sym)."
+            )
 
     if t not in expr.free_symbols:
         raise RuntimeError("Symbol 't' not found in the chosen expression.")

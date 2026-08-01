@@ -3,8 +3,8 @@ Gompertz.py
 
 Functions for preparing Gompertz likelihood statistics for MGF marginalisation.
 
-For a Gompertz distribution with known scale parameter β (scalar or vector) and unknown shape θ,
-the density for y > 0 is:
+For a Gompertz distribution with known scale parameter β (scalar or vector)
+and unknown shape θ, the density for y > 0 is:
 
     f(y; θ, β) = β * exp(β*y) * θ * exp(-θ * (exp(β*y) - 1))
 

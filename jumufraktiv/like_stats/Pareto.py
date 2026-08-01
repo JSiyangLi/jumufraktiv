@@ -3,8 +3,8 @@ Pareto.py
 
 Functions for preparing Pareto likelihood statistics for MGF marginalisation.
 
-For a Pareto distribution with known scale parameter σ (scalar or vector) and unknown shape θ,
-the density for y ≥ σ is:
+For a Pareto distribution with known scale parameter σ (scalar or vector) and
+unknown shape θ, the density for y ≥ σ is:
 
     f(y; θ, σ) = θ * σ^θ / y^(θ+1) = θ * (σ/y)^θ * (1/y)
 

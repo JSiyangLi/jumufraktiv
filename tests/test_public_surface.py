@@ -227,3 +227,73 @@ def test_every_likelihood_still_reaches_the_jax_slots(gamma_prior, name):
     post = _posterior(gamma_prior, name)
 
     assert np.isfinite(post.evidence())
+
+
+# ==========================================================================
+# What the package exports
+# ==========================================================================
+def test_every_exported_name_exists_and_is_reachable():
+    """`__all__` must not promise a name the package does not bind."""
+    import jumufraktiv
+
+    for name in jumufraktiv.__all__:
+        assert hasattr(jumufraktiv, name), f"__all__ names '{name}', which is absent"
+
+
+def test_the_documented_workflows_reach_the_top_level():
+    """Each name here is one a documented workflow needs.
+
+    Registering a prior and discovering what is registered are described in
+    `CLAUDE.md` as the way to extend the package, and both required a deep
+    import into `jumufraktiv.registry` before PR 12. A documented workflow that
+    only works through a private path is not really public.
+    """
+    import jumufraktiv
+
+    expected = {
+        "MGFDerivative",  # build a posterior
+        "mitMGFprior",  # build a prior
+        "mgfDerivative",  # one derivative, no posterior
+        "mgfDerivative_integer",
+        "mgfDerivative_fractional",
+        "register_prior",  # add a prior
+        "make_prior_spec",
+        "list_priors",  # discover priors
+        "failed_prior_modules",  # find out why one is missing
+        "__version__",
+    }
+
+    assert expected <= set(jumufraktiv.__all__)
+
+
+def test_the_canonical_symbols_are_importable_from_their_own_module():
+    """They are deliberately not re-exported at package level.
+
+    `t` as a bare top-level name would collide with the `t` a caller is
+    overwhelmingly likely to have bound already. The module path is the point:
+    the symbols must be imported from here rather than redefined, since two
+    symbols that print alike but were constructed separately do not substitute
+    for each other.
+    """
+    from jumufraktiv.symbols import param, q, r, t, theta, u
+
+    assert {s.name for s in (t, theta, r, u, q)} == {"t", "theta", "r", "u", "q"}
+    assert param("alpha").is_positive
+
+
+def test_the_former_package_name_no_longer_hijacks_sys_modules():
+    """`sys.modules["mgf2post"] = ...` claimed a name this package does not own.
+
+    Importing `jumufraktiv` installed that alias process-wide, so `import
+    mgf2post` returned this package even where a genuinely different
+    distribution of that name was installed. Nothing in the package or the
+    suite used it.
+    """
+    import sys
+
+    import jumufraktiv  # noqa: F401  -- the import is what used to set the alias
+
+    assert "mgf2post" not in sys.modules
+
+    with pytest.raises(ImportError):
+        import mgf2post  # noqa: F401

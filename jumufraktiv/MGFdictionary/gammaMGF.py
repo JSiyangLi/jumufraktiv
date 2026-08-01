@@ -199,7 +199,9 @@ def gamma_factory(params):
     # Build symbolic expressions using the global symbols
     mgf_sym = (beta / (beta - t)) ** alpha
     cgf_sym = alpha * (sp.log(beta) - sp.log(beta - t))
-    pdf_sym = (beta**alpha / sp.gamma(alpha)) * theta**(alpha - 1) * sp.exp(-beta * theta)
+    pdf_sym = (
+        (beta**alpha / sp.gamma(alpha)) * theta**(alpha - 1) * sp.exp(-beta * theta)
+    )
     imgf_sym = gamma_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
@@ -232,7 +234,9 @@ def gamma_factory(params):
         cgf=lambda t_val: alpha_val * (np.log(beta_val) - np.log(beta_val - t_val)),
 
         mgf_jax=lambda t_val: (beta_val / (beta_val - t_val)) ** alpha_val,
-        cgf_jax=lambda t_val: alpha_val * (jnp.log(beta_val) - jnp.log(beta_val - t_val)),
+        cgf_jax=lambda t_val: (
+            alpha_val * (jnp.log(beta_val) - jnp.log(beta_val - t_val))
+        ),
 
         pdf_func=frozen.pdf,
         logpdf_func=frozen.logpdf,
@@ -243,7 +247,9 @@ def gamma_factory(params):
         imgf=lambda t_val, u_val: gamma_imgf(t_val, alpha_val, beta_val, u_val),
         logimgf=lambda t_val, u_val: gamma_logimgf(t_val, alpha_val, beta_val, u_val),
         imgf_jax=lambda t_val, u_val: gamma_imgf_jax(t_val, alpha_val, beta_val, u_val),
-        logimgf_jax=lambda t_val, u_val: gamma_logimgf_jax(t_val, alpha_val, beta_val, u_val),
+        logimgf_jax=lambda t_val, u_val: gamma_logimgf_jax(
+            t_val, alpha_val, beta_val, u_val
+        ),
 
         params=params,
     )

@@ -94,7 +94,9 @@ LIKELIHOOD_REGISTRY = {
     'laplace': (readyLaplace, cLaplace, bereitLaplace),
     'normal': (readyNormal, cNormal, bereitNormal),
     'rayleigh': (readyRayleigh, cRayleigh, bereitRayleigh),
-    'maxwell-boltzmann': (readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann),
+    'maxwell-boltzmann': (
+        readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann
+    ),
     'inverse gamma': (readyInverseGamma, cInverseGamma, bereitInverseGamma),
     'levy': (readyLevy, cLevy, bereitLevy),
     'weibull': (readyWeibull, cWeibull, bereitWeibull),
@@ -333,8 +335,10 @@ class MGFDerivative:
     --------
     >>> from jumufraktiv.mitMGFprior_class import mitMGFprior
     >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
-    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
-    >>> deriv = MGFDerivative(gamma_prior, data=[1.0, 2.0], likelihood='poisson', scale=1.0)
+    >>> gamma_params = {'alpha':2.0, 'beta':3.0}
+    >>> gamma_prior = mitMGFprior.from_registry('gamma', params=gamma_params)
+    >>> data = [1.0, 2.0]
+    >>> deriv = MGFDerivative(gamma_prior, data=data, likelihood='poisson', scale=1.0)
     >>> log_evidence = deriv.evidence()
     >>> print(log_evidence)
     """
@@ -372,7 +376,9 @@ class MGFDerivative:
         if self.likelihood not in LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unknown likelihood: {likelihood}")
 
-        self.ready_func, self.c_func, self.bereit_func = LIKELIHOOD_REGISTRY[self.likelihood]
+        self.ready_func, self.c_func, self.bereit_func = (
+            LIKELIHOOD_REGISTRY[self.likelihood]
+        )
 
         # ----------------------------------------------------
         # Separate kwargs for ready vs derivative
@@ -761,9 +767,9 @@ class MGFDerivative:
         This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain, not on the path taken.
 
-        - If `theta_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.theta`),
-        or if the derivative expression still contains free symbols, a symbolic
-        expression is returned.
+        - If `theta_val` is a SymPy symbol (canonically
+        :data:`jumufraktiv.symbols.theta`), or if the derivative expression
+        still contains free symbols, a symbolic expression is returned.
         - If `theta_val` is numeric (scalar or array), the expression is evaluated
         numerically, respecting vectorisation.
 
@@ -781,7 +787,8 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
             - NumPy array for array-like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -808,7 +815,9 @@ class MGFDerivative:
         >>> expr = deriv.post_density(theta, log=False)  # SymPy expression
         """
         # ---- Symbolic path ----
-        if self._deriv_is_symbolic and (theta_val is None or isinstance(theta_val, sp.Symbol)):
+        if self._deriv_is_symbolic and (
+            theta_val is None or isinstance(theta_val, sp.Symbol)
+        ):
             try:
                 denom_expr = self._deriv.subs(t, -self.b)
 
@@ -852,7 +861,8 @@ class MGFDerivative:
 
                     # Pre-allocate results
                     results_log = np.zeros(batch)
-                    results_sym = [None] * batch  # store expressions if any remain symbolic
+                    # store expressions if any remain symbolic
+                    results_sym = [None] * batch
 
                     for idx, t_val in enumerate(theta_arr):
                         evaluated = log_post.subs(theta_sym, t_val).evalf()
@@ -862,7 +872,8 @@ class MGFDerivative:
                             if batch == 1:
                                 return evaluated if log else sp.exp(evaluated)
                             else:
-                                # Store expression and continue; later we may raise or return mixed.
+                                # Store expression and continue; later we may
+                                # raise or return mixed.
                                 results_sym[idx] = evaluated
                         else:
                             results_log[idx] = float(evaluated)
@@ -870,8 +881,9 @@ class MGFDerivative:
 
                     # Check if any symbolic results remain
                     if any(r is not None for r in results_sym):
-                        # For array input with mixed symbolic/numeric, we cannot return a uniform array.
-                        # We'll raise an error to avoid confusion.
+                        # For array input with mixed symbolic/numeric, we
+                        # cannot return a uniform array. We'll raise an error
+                        # to avoid confusion.
                         raise ValueError(
                             "Vectorized symbolic evaluation failed: some theta values "
                             "still have free symbols. Use scalar symbolic input."
@@ -888,7 +900,9 @@ class MGFDerivative:
                     return log_post if log else sp.exp(log_post)
 
             except Exception as e:
-                raise RuntimeError(f"Symbolic posterior density computation failed: {e}") from e
+                raise RuntimeError(
+                    f"Symbolic posterior density computation failed: {e}"
+                ) from e
 
         # ---- Numeric path (vectorized) ----
         if theta_val is None:
@@ -976,7 +990,8 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
             - NumPy array for array-like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Raises
         ------
@@ -1201,7 +1216,9 @@ class MGFDerivative:
             )
 
             if isinstance(num, tuple):
-                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+                raise RuntimeError(
+                    "Symbolic predictive unexpectedly received numeric derivative."
+                )
 
             denom = self._evaluate_derivative(-self.b)
 
@@ -1209,7 +1226,9 @@ class MGFDerivative:
 
             if self.params is not None:
                 log_pred = log_pred.subs(
-                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
+                    {sym: self.params[sym.name]
+                     for sym in log_pred.free_symbols
+                     if sym.name in self.params}
                 )
 
             if log_pred.free_symbols:
@@ -1242,13 +1261,15 @@ class MGFDerivative:
         ----------
         new_data : scalar, array-like, or sympy.Symbol
             New observation(s). If array-like, each element is treated separately.
-            If a SymPy symbol, the posterior must be symbolic (`self._is_symbolic` is True).
+            If a SymPy symbol, the posterior must be symbolic
+            (`self._is_symbolic` is True).
         log : bool, optional
             If True, return log-density; otherwise ordinary density.
         individual : bool, optional
             If True (default), return an array of densities for each new data point.
             If False, return the joint density (product of individual densities).
-        **kwargs : additional arguments passed to the likelihood's `ready_func` or `bereit_func`.
+        **kwargs : additional arguments passed to the likelihood's
+            `ready_func` or `bereit_func`.
             For example, `scale` for Poisson or `shape` for Gamma.
 
         Returns
@@ -1282,7 +1303,9 @@ class MGFDerivative:
         >>> pred_masses = np.exp(log_pred)  # array of masses
 
         >>> # Joint predictive density for two new observations
-        >>> joint_log = deriv.post_predictive([14, 15], scale=125.76, log=True, individual=False)
+        >>> joint_log = deriv.post_predictive(
+        ...     [14, 15], scale=125.76, log=True, individual=False
+        ... )
 
         >>> # Symbolic predictive mass for a new observation
         >>> from sympy import Symbol
@@ -1292,8 +1315,12 @@ class MGFDerivative:
         # ---- Symbolic new_data (single symbol) ----
         if isinstance(new_data, sp.Symbol):
             if not self._is_symbolic:
-                raise ValueError("Cannot compute predictive density symbolically with a numeric posterior.")
-            # Directly build symbolic expression for the joint density (same as helper, but with symbolic stats)
+                raise ValueError(
+                    "Cannot compute predictive density symbolically with a "
+                    "numeric posterior."
+                )
+            # Directly build symbolic expression for the joint density
+            # (same as helper, but with symbolic stats)
             a_new = sp.Symbol('a_new', real=True)
             b_new = sp.Symbol('b_new', real=True)
             log_c_new = sp.Symbol('log_c_new', real=True)
@@ -1309,12 +1336,16 @@ class MGFDerivative:
                 log=True
             )
             if isinstance(num, tuple):
-                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+                raise RuntimeError(
+                    "Symbolic predictive unexpectedly received numeric derivative."
+                )
             denom = self._evaluate_derivative(-self.b)
             log_pred = log_c_new + sp.log(num) - sp.log(denom)
             if self.params is not None:
                 log_pred = log_pred.subs(
-                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
+                    {sym: self.params[sym.name]
+                     for sym in log_pred.free_symbols
+                     if sym.name in self.params}
                 )
             if log_pred.free_symbols:
                 return log_pred if log else sp.exp(log_pred)
@@ -1380,8 +1411,13 @@ class MGFDerivative:
                 if log:
                     return float(log_pred_vals[0])
                 else:
-                    sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
-                    return 0.0 if log_pred_vals[0] == -np.inf else sign_pred * np.exp(log_pred_vals[0])
+                    sign_pred = sign_num[0] * (
+                        self._sign if self._sign is not None else 1
+                    )
+                    return (
+                        0.0 if log_pred_vals[0] == -np.inf
+                        else sign_pred * np.exp(log_pred_vals[0])
+                    )
             else:
                 if log:
                     return log_pred_vals
@@ -1397,7 +1433,10 @@ class MGFDerivative:
             else:
                 sign_prod = np.prod(sign_num) if not scalar_input else sign_num[0]
                 sign_prod *= (self._sign if self._sign is not None else 1)
-                return 0.0 if log_pred_joint == -np.inf else sign_prod * np.exp(log_pred_joint)
+                return (
+                    0.0 if log_pred_joint == -np.inf
+                    else sign_prod * np.exp(log_pred_joint)
+                )
 
     # ========================================================
     # POSTERIOR MGF
@@ -1429,7 +1468,8 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
             - NumPy array for array-like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -1507,7 +1547,10 @@ class MGFDerivative:
                     if all(isinstance(v, (float, int, np.floating)) for v in results):
                         val = np.array(results, dtype=float).reshape(orig_shape)
                         if scalar_input:
-                            return float(val.item()) if log else np.exp(float(val.item()))
+                            return (
+                                float(val.item()) if log
+                                else np.exp(float(val.item()))
+                            )
                         else:
                             return val if log else np.exp(val)
                     else:
@@ -1518,10 +1561,16 @@ class MGFDerivative:
                         else:
                             # If log=False, exponentiate symbolic expressions
                             if log:
-                                out = np.array(results, dtype=object).reshape(orig_shape)
+                                out = np.array(
+                                    results, dtype=object
+                                ).reshape(orig_shape)
                                 return out
                             else:
-                                out = [sp.exp(res) if isinstance(res, sp.Expr) else np.exp(res) for res in results]
+                                out = [
+                                    sp.exp(res) if isinstance(res, sp.Expr)
+                                    else np.exp(res)
+                                    for res in results
+                                ]
                                 return np.array(out, dtype=object).reshape(orig_shape)
 
                 # Case 3: r_val is scalar numeric (int, float, or None)
@@ -1609,7 +1658,8 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
             - NumPy array for array-like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -1717,7 +1767,9 @@ class MGFDerivative:
                     return val if log else np.exp(val)
 
             except Exception as e:
-                raise RuntimeError(f"Symbolic computation failed: {e}. Falling back to numeric.") from e
+                raise RuntimeError(
+                    f"Symbolic computation failed: {e}. Falling back to numeric."
+                ) from e
 
         # ---- Numeric path (vectorized) ----
         orders = self.a + q_arr if is_array else self.a + q
@@ -1829,7 +1881,9 @@ class MGFDerivative:
         max_order = max(orders)
         # We need raw moments up to max_order (including 0)
         q_all = list(range(0, max_order + 1))   # e.g., [0,1,2,3,4]
-        raw_all = self.post_raw_moment(q_all, log=False, numerator_method=numerator_method)
+        raw_all = self.post_raw_moment(
+            q_all, log=False, numerator_method=numerator_method
+        )
         # raw_all is an array or list of raw moments for orders 0..max_order.
         # Ensure it's a list for indexing.
         if not isinstance(raw_all, (list, np.ndarray)):
@@ -1868,7 +1922,9 @@ class MGFDerivative:
                     else:
                         result = (sp.log(sp.Abs(central)), sp.sign(central))
                 else:
-                    raise TypeError(f"Unexpected type for central moment: {type(central)}")
+                    raise TypeError(
+                        f"Unexpected type for central moment: {type(central)}"
+                    )
             else:
                 result = central
 
@@ -1965,7 +2021,9 @@ class MGFDerivative:
         >>> print(quantiles)  # array of three quantiles
 
         >>> # Using a specific root method and providing a bracket
-        >>> q = deriv.post_quantile(0.5, root_method='bisection-np', lower=0.0, upper=1.0)
+        >>> q = deriv.post_quantile(
+        ...     0.5, root_method='bisection-np', lower=0.0, upper=1.0
+        ... )
         """
 
         p_arr = np.asarray(p)
@@ -2061,13 +2119,22 @@ class MGFDerivative:
             if not np.any(need_lower | need_upper):
                 break
         if np.any(f(lower) >= 0) or np.any(f(upper) <= 0):
-            raise RuntimeError("Could not find valid brackets; provide explicit lower/upper.")
+            raise RuntimeError(
+                "Could not find valid brackets; provide explicit lower/upper."
+            )
         return lower, upper
 
     # ========================================================
     # POSTERIOR SAMPLE
     # ========================================================
-    def post_sample(self, n: int | None = None, u: np.ndarray | None = None, root_method: str = "auto", rng=None, **kwargs) -> np.ndarray:
+    def post_sample(
+        self,
+        n: int | None = None,
+        u: np.ndarray | None = None,
+        root_method: str = "auto",
+        rng=None,
+        **kwargs
+    ) -> np.ndarray:
         """
         Generate posterior samples using inverse transform sampling.
 
@@ -2277,7 +2344,8 @@ class MGFDerivative:
             # would hand back a silently different kind of prior in place of
             # reporting the bug.
             mgf_sym_expr = self.post_mgf(r, log=False)
-            mgf_sym_expr = mgf_sym_expr.subs(r, t)  # posterior MGF of r becomes the prior MGF of t
+            # posterior MGF of r becomes the prior MGF of t
+            mgf_sym_expr = mgf_sym_expr.subs(r, t)
             pdf_sym_expr = self.post_density(theta, log=False)  # use canonical theta
 
             if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):

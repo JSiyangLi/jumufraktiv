@@ -234,7 +234,8 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
     if np.ndim(order) != 0:
         raise ValueError(
             "integerDeriv_numeric_jax only accepts a scalar order. "
-            "Vectorisation over derivative orders is handled by mgfDerivative_integer()."
+            "Vectorisation over derivative orders is handled by "
+            "mgfDerivative_integer()."
         )
 
     # ---- Complete MGF: evaluation point is (t) ----

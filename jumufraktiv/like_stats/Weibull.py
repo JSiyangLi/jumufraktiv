@@ -3,8 +3,8 @@ Weibull.py
 
 Functions for preparing Weibull likelihood statistics for MGF marginalisation.
 
-For a Weibull distribution with known shape parameter ρ (scalar or vector) and unknown rate λ,
-the density for y > 0 is:
+For a Weibull distribution with known shape parameter ρ (scalar or vector) and
+unknown rate λ, the density for y > 0 is:
 
     f(y; λ, ρ) = ρ λ y^{ρ-1} exp(-λ y^ρ)
 

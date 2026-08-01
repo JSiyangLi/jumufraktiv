@@ -594,3 +594,34 @@ def test_symbolic_joint_predictive_accepts_an_array():
     joint_numeric = posterior(numeric).post_predictive([2.0, 3.0], individual=False)
 
     assert float(joint_symbolic) == pytest.approx(float(joint_numeric), rel=1e-10)
+
+
+def test_uniform_cgf_works_below_the_origin():
+    """It raised `ValueError: math domain error` for every `t < 0`.
+
+    `M(t) = (e^{bt} - e^{at}) / (t (b - a))` is positive throughout, but below
+    the origin neither factor is: `e^{bt}` is the smaller exponential and `t`
+    is negative. Taking the log of each separately asked for the log of a
+    negative number twice, so the CGF failed across the whole of this
+    package's operating range -- the posterior sits at `t = -b` -- while
+    working above the origin, where it is never evaluated.
+    """
+    import mpmath as mp
+
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    mp.mp.dps = 40
+    prior = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+
+    for t_value in (-50.0, -5.0, -1.0, -0.5):
+        reference = float(
+            mp.log(
+                mp.quad(
+                    lambda th, tv=t_value: mp.e ** (mp.mpf(tv) * th) / mp.mpf("1.5"),
+                    [0.5, 2],
+                )
+            )
+        )
+        assert prior.cgf(t_value) == pytest.approx(reference, rel=1e-12)
+
+    assert prior.cgf(0.0) == 0.0

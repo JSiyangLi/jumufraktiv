@@ -115,7 +115,9 @@ class mitMGFprior:
     1.7777777778
 
     >>> # Registry-based prior
-    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+    >>> gamma_prior = mitMGFprior.from_registry(
+    ...     'gamma', params={'alpha':2.0, 'beta':3.0}
+    ... )
     >>> gamma_prior.mgf(-1.0)
     0.8888888889
     """
@@ -283,7 +285,9 @@ class mitMGFprior:
         if self.pdf_backend is not None and self.mgf_backend is None:
             raise ValueError("Backend mode requires both mgf_backend and pdf_backend.")
 
-        raise ValueError("Must provide either (mgf_sym, pdf_sym) or (mgf_backend, pdf_backend).")
+        raise ValueError(
+            "Must provide either (mgf_sym, pdf_sym) or (mgf_backend, pdf_backend)."
+        )
 
     # ============================================================
     # REGISTRY ROUTE: automatic construction
@@ -330,12 +334,16 @@ class mitMGFprior:
 
         Examples
         --------
-        >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+        >>> gamma_prior = mitMGFprior.from_registry(
+        ...     'gamma', params={'alpha':2.0, 'beta':3.0}
+        ... )
         >>> gamma_prior.mgf(-1.0)
         0.8888888889
 
         >>> # With symbolic simplification
-        >>> prior = mitMGFprior.from_registry('pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True)
+        >>> prior = mitMGFprior.from_registry(
+        ...     'pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True
+        ... )
         """
         from jumufraktiv.registry import failed_prior_modules
 
@@ -352,7 +360,9 @@ class mitMGFprior:
         try:
             factory = get_prior(prior_name)
         except KeyError as exc:
-            message = f"Unknown prior '{prior_name}'. Available: {sorted(PRIOR_REGISTRY)}"
+            message = (
+                f"Unknown prior '{prior_name}'. Available: {sorted(PRIOR_REGISTRY)}"
+            )
             failed = failed_prior_modules()
             if failed:
                 details = "; ".join(
@@ -402,7 +412,9 @@ class mitMGFprior:
         logimgf_jax = spec.get("logimgf_jax")
 
         if mgf_math is None or cgf_math is None or pdf_math is None:
-            raise ValueError("Registry must provide numeric MGF, CGF, and PDF functions.")
+            raise ValueError(
+                "Registry must provide numeric MGF, CGF, and PDF functions."
+            )
 
         # ---------------------------------------------------------
         # Build the object using the existing class

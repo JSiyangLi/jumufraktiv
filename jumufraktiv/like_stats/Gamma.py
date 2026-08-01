@@ -26,7 +26,8 @@ The user-facing argument is `shape`, which corresponds to the known shape parame
 
 This module provides two statistics functions:
 - `readyGamma` : aggregated sufficient statistics (scalars) for the whole sample.
-- `bereitGamma` : per-element sufficient statistics (arrays) for vectorised predictive evaluation.
+- `bereitGamma` : per-element sufficient statistics (arrays) for vectorised
+  predictive evaluation.
 
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
@@ -91,7 +92,9 @@ def readyGamma(
     if np.any(shape_vals <= 0):
         raise ValueError("shape values must be positive")
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive (Gamma likelihood requires y > 0)")
+        raise ValueError(
+            "data values must be positive (Gamma likelihood requires y > 0)"
+        )
 
     # ---- Vectorized sums ----
     a = np.sum(shape_vals)
@@ -151,7 +154,9 @@ def bereitGamma(
     if np.any(shape_vals <= 0):
         raise ValueError("shape values must be positive")
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive (Gamma likelihood requires y > 0)")
+        raise ValueError(
+            "data values must be positive (Gamma likelihood requires y > 0)"
+        )
 
     # ---- Per-element statistics ----
     a_vals = shape_vals

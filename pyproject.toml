@@ -225,11 +225,18 @@ allowed-confusables = ["α", "ρ", "σ", "γ", "−"]
 # above now permits by name. Blanket suppression could not tell the two apart,
 # which is why it hid the first group for the whole audit.
 #
-# What remains is one code. E501 is left because fixing it properly means
-# running `ruff format` over the library, and that is deliberately its own
-# change: reformatting 13k lines would bury the real diffs of any PR it rode
-# along with. It is the last entry in this list.
+# E501 went too, and the reason it had survived is worth recording because it
+# was wrong twice. The entry said that fixing it meant running `ruff format`
+# over the library, and that this would bury the real diffs of whatever PR
+# carried it. The second half is true and is why the formatter is still its own
+# scheduled change. The first half is not: the 99 over-length lines were
+# rewrapped directly, in a diff that touches only those lines. And `ruff
+# format` would not have fixed them anyway -- it leaves 40 of the 99, because
+# it does not reflow strings, docstrings or comments, which is where 68 of them
+# lived.
+#
+# THE LIST IS NOW EMPTY, and that is the point: the library is held to the same
+# rules as `tests/`. An entry added here from now on is a new exemption, not an
+# inherited one, and should be argued for rather than assumed.
 # ---------------------------------------------------------------------------
-"jumufraktiv/**" = [
-    "E501",   # line-too-long   -> lands with `ruff format` over the library
-]
+"jumufraktiv/**" = []

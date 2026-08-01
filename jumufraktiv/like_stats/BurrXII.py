@@ -3,8 +3,8 @@ BurrXII.py
 
 Functions for preparing Burr Type XII likelihood statistics for MGF marginalisation.
 
-For a Burr Type XII distribution with known shape parameter c (scalar or vector) and unknown shape k,
-the density for y > 0 is:
+For a Burr Type XII distribution with known shape parameter c (scalar or
+vector) and unknown shape k, the density for y > 0 is:
 
     f(y; c, k) = c * k * y^{c-1} / (1 + y^c)^{k+1}
 
@@ -22,7 +22,8 @@ For a sample of size n:
 
 If c is a scalar, it is recycled. If c is a vector, it must have length n.
 
-The user-facing argument is `known_shape`, which corresponds to the known shape parameter c.
+The user-facing argument is `known_shape`, which corresponds to the known
+shape parameter c.
 """
 
 
@@ -100,7 +101,11 @@ def readyBurrXII(
     log_term = np.log(1 + data_vals ** c_vals)
     b = np.sum(log_term)
     # log_C = Σ log(c_i) + Σ (c_i-1) log(y_i) - Σ log(1 + y_i^c)
-    log_c = np.sum(np.log(c_vals)) + np.sum((c_vals - 1.0) * np.log(data_vals)) - np.sum(log_term)
+    log_c = (
+        np.sum(np.log(c_vals))
+        + np.sum((c_vals - 1.0) * np.log(data_vals))
+        - np.sum(log_term)
+    )
 
     return {
         'a': a,
@@ -176,7 +181,8 @@ def cBurrXII() -> sp.Expr:
     """
     Return a symbolic expression for the Burr XII normalising constant:
 
-        ∏_{i=1}^{n} ( known_shape_i * y_i^{known_shape_i-1} / (1 + y_i^{known_shape_i}) )
+        ∏_{i=1}^{n} ( known_shape_i * y_i^{known_shape_i-1}
+                      / (1 + y_i^{known_shape_i}) )
 
     where n, known_shape_i, and y_i are symbolic.
 
@@ -189,5 +195,8 @@ def cBurrXII() -> sp.Expr:
     known_shape = sp.IndexedBase('known_shape')
     i = sp.Idx('i')
     y = sp.IndexedBase('y')
-    expr = sp.Product(known_shape[i] * y[i]**(known_shape[i] - 1) / (1 + y[i]**known_shape[i]), (i, 1, n))
+    expr = sp.Product(
+        known_shape[i] * y[i]**(known_shape[i] - 1) / (1 + y[i]**known_shape[i]),
+        (i, 1, n),
+    )
     return expr

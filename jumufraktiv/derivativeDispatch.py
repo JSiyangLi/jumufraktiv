@@ -310,7 +310,8 @@ def mgfDerivative_integer(
     >>> # Complete MGF, 2nd derivative, symbolic expression
     >>> expr = mgfDerivative_integer(2, prior, method='symbolic')
     >>> # Evaluate at t = -1.0
-    >>> log_abs, sign = mgfDerivative_integer(2, prior, method='symbolic', t=-1.0, log=True)
+    >>> log_abs, sign = mgfDerivative_integer(2, prior, method='symbolic',
+    ...                                       t=-1.0, log=True)
 
     >>> # Incomplete MGF derivative for multiple t and u
     >>> t_vals = np.linspace(-1.0, 1.0, 10)
@@ -485,13 +486,15 @@ def mgfDerivative_integer(
         else:
             # If any free symbols remain, we cannot return a uniform numeric array.
             # For scalar input, return the expression (first element)
-            # For array input, return a list of expressions (some may be numeric, some symbolic)
+            # For array input, return a list of expressions (some may be
+            # numeric, some symbolic)
             # We'll return a list with mixed types.
             if scalar_input:
                 return results_expr[0] if log else sp.exp(results_expr[0])
             else:
                 # Return list of results (could be mixed numeric/expr)
-                # But we want to respect log flag: if log=True, return log_abs or expression; else exponentiate.
+                # But we want to respect log flag: if log=True, return log_abs
+                # or expression; else exponentiate.
                 if log:
                     # For numeric points, we have log_abs; for symbolic, we have expr.
                     # We'll return a list of the appropriate items.
@@ -501,7 +504,11 @@ def mgfDerivative_integer(
                             out.append(results_log_abs[idx])
                         else:
                             out.append(results_expr[idx])
-                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
+                    return (
+                        np.array(out).reshape(batch_shape)
+                        if all(isinstance(x, (int, float)) for x in out)
+                        else out
+                    )
                 else:
                     out = []
                     for idx in range(n_points):
@@ -510,7 +517,11 @@ def mgfDerivative_integer(
                             out.append(val)
                         else:
                             out.append(sp.exp(results_expr[idx]))
-                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
+                    return (
+                        np.array(out).reshape(batch_shape)
+                        if all(isinstance(x, (int, float)) for x in out)
+                        else out
+                    )
 
     # ---------------------------------------------------------
     # Bell polynomial backend (vectorized)
@@ -638,11 +649,13 @@ def mgfDerivative_fractional(
     Examples
     --------
     >>> # Fractional derivative of order 1.5 at t = -1.0 (scipy)
-    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=-1.0, log=True)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy',
+    ...                                          t=-1.0, log=True)
 
     >>> # Vectorised evaluation at multiple t values
     >>> t_vals = np.linspace(-2.0, 0.0, 10)
-    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=t_vals, log=True)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy',
+    ...                                          t=t_vals, log=True)
 
     >>> # Incomplete MGF derivative (complete=False)
     >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='mpmath',
@@ -736,7 +749,8 @@ def mgfDerivative_fractional(
             if expr_sub.free_symbols:
                 if n_points > 1:
                     raise ValueError(
-                        f"Symbolic expression still has free symbols at point {idx}: {expr_sub.free_symbols}. "
+                        f"Symbolic expression still has free symbols at point "
+                        f"{idx}: {expr_sub.free_symbols}. "
                         "Cannot vectorize symbolic evaluation."
                     )
                 # Scalar input: return expression
@@ -808,7 +822,9 @@ def mgfDerivative_fractional(
             **kwargs
         )
 
-    raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
+    raise ValueError(
+        f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'."
+    )
 
 def _check_moment_exists_at_origin(order, prior, t) -> None:
     """
@@ -1175,7 +1191,9 @@ def mgfDerivative(
         if complete:
             if u is not None:
                 raise ValueError("u must be None when complete=True")
-            order_arr, t_arr = np.broadcast_arrays(order_arr, np.asarray(t, dtype=object))
+            order_arr, t_arr = np.broadcast_arrays(
+                order_arr, np.asarray(t, dtype=object)
+            )
             u_flat = [None] * order_arr.size
         else:
             if u is None:

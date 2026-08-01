@@ -71,13 +71,18 @@ def readyMaxwellBoltzmann(
 
     # ---- 2. Check positivity ----
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Maxwell-Boltzmann likelihood.")
+        raise ValueError(
+            "data values must be positive for Maxwell-Boltzmann likelihood."
+        )
 
     # ---- 3. Compute sufficient statistics ----
     a = 1.5 * n
     b = np.sum(data_vals ** 2)
     # log_c = n * (log(4) - 0.5 * log(π)) + 2 * Σ log(y_i)
-    log_c = n * (math.log(4.0) - 0.5 * math.log(math.pi)) + 2.0 * np.sum(np.log(data_vals))
+    log_c = (
+        n * (math.log(4.0) - 0.5 * math.log(math.pi))
+        + 2.0 * np.sum(np.log(data_vals))
+    )
 
     return {
         'a': a,
@@ -114,7 +119,9 @@ def bereitMaxwellBoltzmann(
         raise ValueError("data must be non-empty")
 
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Maxwell-Boltzmann likelihood.")
+        raise ValueError(
+            "data values must be positive for Maxwell-Boltzmann likelihood."
+        )
 
     a_vals = np.full(n, 1.5)
     b_vals = data_vals ** 2
