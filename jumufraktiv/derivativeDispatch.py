@@ -1025,7 +1025,10 @@ def mgfDerivative(
                 u=uu,
                 **kwargs,
             )
-            for o, tt, uu in zip(order_arr.flat, t_arr.flat, u_flat)
+            # strict=True is safe and worth having: all three come from the
+            # same `np.broadcast_arrays` call above, so unequal lengths
+            # would mean the broadcast itself had gone wrong.
+            for o, tt, uu in zip(order_arr.flat, t_arr.flat, u_flat, strict=True)
         ]
 
         # A symbolic element makes the whole result symbolic: the
@@ -1123,7 +1126,11 @@ def mgfDerivative(
         )
 
     elif order_type == "integer":
-        int_order = int(round(order))
+        # `int(...)` is NOT redundant here, whatever RUF046 says: for a
+        # SymPy order `round()` returns a `sympy.Integer`, and
+        # `mgfDerivative_integer` needs a Python `int`. PR 5 made
+        # `sp.Integer(2)` behave like `2`; dropping this cast undoes it.
+        int_order = int(round(order))  # noqa: RUF046
         return mgfDerivative_integer(
             order=int_order,
             prior=prior,

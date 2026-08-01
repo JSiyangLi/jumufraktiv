@@ -176,6 +176,14 @@ satisfy them; tests should assert them.
    Both are broadcast to a common shape and evaluated as one batch. A function
    that accepts array `t` must accept array `u` and broadcast the two.
 
+   *"As one batch" is a claim about cost, not only about shape.* Until PR 9 the
+   package satisfied the shape half and not the cost half — correct answers,
+   one adaptive quadrature per point — and no test could tell, because every
+   test asserted values. `tests/test_batch_evaluation.py` now counts calls to
+   the prior's density instead: a loop makes twenty times as many for twenty
+   points, and the guard allows four. Wall-clock would have been the obvious
+   assertion and a bad one, being either flaky or too loose to mean anything.
+
 ---
 
 ## Canonical symbols
@@ -404,6 +412,20 @@ ruff format --check tests/       # formatting (tests/ only, see below)
 sphinx-build -b html docs docs/_build/html   # documentation
 ```
 
+**Timings live outside the suite.** `tests/benchmarks/bench_vectorisation.py`
+measures cost per evaluation point and cost per density call, and pytest does
+not collect it — the filename does not match `test_*.py`. Run it directly:
+
+```bash
+python tests/benchmarks/bench_vectorisation.py
+```
+
+A wall-clock assertion inside the suite would vary with the machine, so it
+would be either flaky or so loose as to assert nothing. Where a cost property
+*must* be asserted, assert it structurally — the vectorisation guard counts
+calls to the prior's density, which is a property of the algorithm rather than
+of the box it runs on.
+
 **The quick pass is what you run while working; the full suite is what you run
 before committing.** A test earns the `slow` marker by costing more than about
 three seconds, which in this package always means real quadrature. Marking is
@@ -469,11 +491,18 @@ all**, package-wide or per-file, which is the state they were always meant to
 reach: they are blocking because they find defects rather than style issues,
 and an exemption for them is a contradiction carried on sufferance.
 
-What remains is fourteen rules, and the split is worth knowing: eleven are
-cosmetic and belong to the documentation waves (`E501`, the three `RUF00x`
-ambiguous-unicode codes, `W291`, `W293`, and the four `UP` annotation codes),
-while three sit on real work — `B007` and `B905` on the vectorisation PR, and a
-single `F841` that is not a lint issue at all but the visible end of the Pareto
+PR 9 removed `B007`, `B905` and `RUF046`. One of `RUF046`'s two sites was a
+**false positive**, which is worth recording because acting on it would have
+caused a regression: `int(round(order))` looks redundant and is not, since
+`round()` returns a `sympy.Integer` for a SymPy order while
+`mgfDerivative_integer` needs a Python `int`. Removing the cast would have
+undone PR 5's repair of `sp.Integer(2)`. That line carries a `noqa` naming the
+reason.
+
+What remains is eleven rules, and all eleven are cosmetic and belong to the
+documentation waves (`E501`, the three `RUF00x` ambiguous-unicode codes,
+`W291`, `W293`, and the four `UP` annotation codes) — except one. The single
+`F841` is not a lint issue at all but the visible end of the Pareto
 incomplete-MGF defect recorded under "Known-broken".
 
 `ruff format` currently runs over `tests/` only. Reformatting 13k lines of
@@ -504,8 +533,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 2 | 6b | The fixed-grid quadrature kernel | **merged** |
 | 2 | 6c | mpmath precision, the expectation route, sequential update | **merged** |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
-| 3 | 8 | Module layout, dead code, and the diagnostics policy | **in review** |
-| 4 | 9 | Vectorisation | planned |
+| 3 | 8 | Module layout, dead code, and the diagnostics policy | **merged** |
+| 4 | 9 | Vectorisation, and the cost of a density call | **in review** |
 | 4 | 10 | Caching and dispatch | **merged** |
 | 5 | 12 | Public API surface (less what 12a already took) | planned |
 | 6 | 13 | Documentation infrastructure | planned |
@@ -543,6 +572,28 @@ fourteen likelihoods, and the advertised `torch` extra installed a dependency
 that no code path reached. Both are of a piece with wave 1's work on making
 declared capability actually reachable, and neither is worth leaving in place
 for four more waves.
+
+**Wave 4's row was one line and should not have been.** "Vectorisation" was
+recorded with no itemised findings, and measurement found the largest
+user-visible defect left in the package. The default route cost the same per
+evaluation point no matter how many were asked for — 255.9 ms at one point,
+254.9 ms each at twenty — so a hundred-point posterior density curve, the most
+obvious thing anyone does with this package, took 26 seconds.
+
+The **tuple-vectorisation principle** was honoured in *shape* and not in
+*cost*: array `t`, array `u` and broadcasting all returned correctly shaped
+answers while fifteen per-point Python loops ran underneath. Worth stating
+plainly, because a principle the code satisfies only in its return type is
+one the tests will keep confirming while the behaviour is absent.
+
+Two causes, and the smaller-looking one was the larger. Three of the four
+priors wrote `pdf_func=lambda x: stats.<dist>(params).pdf(x)`, which builds a
+frozen SciPy distribution — and formats its docstring — on **every call**, in
+the innermost function in the package: 79% of the route's runtime was inside
+`rv_frozen.__init__`. Hoisting it out of the lambda was 9.2× on its own.
+Batching the quadrature took the rest, to 5.5 ms per point at a hundred
+points. Accuracy improved at the same time, from a recorded worst case of
+1.17e-11 to 7.85e-15.
 
 **A bloat-and-simplification audit ran after wave 1 and is folded into the
 table above rather than kept as a separate stream.** Most of what it found
