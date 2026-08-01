@@ -315,7 +315,6 @@ def test_the_option_list_matches_the_backends_in_both_directions():
         "u_points",
         "integer_method",
         "int_tol",
-        "integerDeriv_method",
         "kwargs",
     }
 

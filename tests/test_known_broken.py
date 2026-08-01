@@ -237,23 +237,19 @@ def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 12: the two public fractional entry points name the same option "
-    "differently -- mgfDerivative calls it integer_method, "
-    "mgfDerivative_fractional calls it integerDeriv_method -- so the sibling's "
-    "spelling is accepted and dropped",
-)
 def test_the_two_fractional_entry_points_name_options_alike():
-    """Both spellings are valid layer options, so no guard can catch the mix-up.
+    """Both spellings were valid layer options, so no guard could catch the mix-up.
 
-    `mgfDerivative_fractional(..., integer_method="bell")` reaches the kernel
-    with `integer_method="symbolic"`, the default. The value is discarded
-    because the parameter is spelled `integerDeriv_method` here, and
-    `integer_method` is a perfectly good name elsewhere in the layer -- so it
-    passes the unknown-option guard and lands in `**kwargs`, where nothing
-    reads it.
+    `mgfDerivative_fractional(..., integer_method="bell")` used to reach the
+    kernel with `integer_method="symbolic"`, the default. The value was
+    discarded because the parameter was spelled `integerDeriv_method` here,
+    while `integer_method` was a perfectly good name elsewhere in the layer --
+    so it passed the unknown-option guard and landed in `**kwargs`, where
+    nothing read it.
+
+    The old spelling now raises, which is the second half of the repair: a
+    caller who was using it must see an error rather than a silently different
+    backend.
     """
     import inspect
 
@@ -266,6 +262,21 @@ def test_the_two_fractional_entry_points_name_options_alike():
     fractional = set(inspect.signature(mgfDerivative_fractional).parameters)
 
     assert "integer_method" in unified and "integer_method" in fractional
+    assert "integerDeriv_method" not in fractional
+
+
+def test_the_retired_spelling_raises(gamma_prior):
+    """`integerDeriv_method` must not fall through to `**kwargs` unread."""
+    from jumufraktiv.derivativeDispatch import mgfDerivative_fractional
+
+    with pytest.raises(TypeError, match="integer_method"):
+        mgfDerivative_fractional(
+            1.5,
+            gamma_prior,
+            method="scipy",
+            t=-1.0,
+            integerDeriv_method="bell",
+        )
 
 
 @pytest.mark.xfail(

@@ -446,7 +446,7 @@ def mgfDerivative_fractional(
     simplify: bool = False,
     complete: bool = True,
     log: bool = True,
-    integerDeriv_method: str = "symbolic",
+    integer_method: str = "symbolic",
     u: float | np.ndarray | list | None = None,
     **kwargs
 ):
@@ -489,9 +489,10 @@ def mgfDerivative_fractional(
         If True, numeric output is `(log_abs, sign)` where `log_abs` is the
         natural logarithm of the absolute derivative and `sign` is ±1.
         If False, return the ordinary derivative as a float.
-    integerDeriv_method : str, default 'symbolic'
+    integer_method : str, default 'symbolic'
         Method for integer derivatives inside the fractional integrator:
-        `'symbolic'`, `'bell'`, or `'jax'`.
+        `'symbolic'`, `'bell'`, or `'jax'`. Spelled `integerDeriv_method` until
+        PR 12 — see the note below.
     u : float or array-like, optional
         Truncation point(s) for the incomplete MGF (used when `complete=False`).
         If array‑like, it is broadcast with `t` to form a batch of evaluation
@@ -519,6 +520,19 @@ def mgfDerivative_fractional(
     - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
       substitution, with the range derived from `gamma = floor(order)+1-order`;
       the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
+
+    **This parameter was called** ``integerDeriv_method`` **until PR 12**, while
+    :func:`mgfDerivative` -- the other public entry point to the same
+    computation -- called the same thing ``integer_method``. Passing the
+    sibling's spelling was accepted and dropped:
+    ``mgfDerivative_fractional(1.5, prior, method="scipy", t=-1,
+    integer_method="bell")`` reached the kernel with ``"symbolic"``, the
+    default. No unknown-option guard could catch it, because both names were
+    valid somewhere in this layer.
+
+    They are now one name. The old spelling raises, with
+    ``_reject_unknown_options`` suggesting the new one, so a caller who was
+    using it sees an error rather than a silently different backend.
 
     Examples
     --------
@@ -662,7 +676,7 @@ def mgfDerivative_fractional(
             t_points=t,
             u_points=u,
             complete=complete,
-            integer_method=integerDeriv_method,
+            integer_method=integer_method,
             log=log,
             **{k: v for k, v in kwargs.items() if k in grid_keys},
         )
@@ -676,7 +690,7 @@ def mgfDerivative_fractional(
             order=order,
             prior=prior,
             t=t,
-            method=integerDeriv_method,
+            method=integer_method,
             simplify=simplify,
             return_log=log,
             complete=complete,
@@ -1235,7 +1249,7 @@ def mgfDerivative(
             simplify=simplify,
             complete=complete,
             log=log,
-            integerDeriv_method=integer_method,
+            integer_method=integer_method,
             u=u,
             **kwargs
         )
