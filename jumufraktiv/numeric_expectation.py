@@ -104,16 +104,38 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     The bracket is taken where the log integrand has fallen 700 below its peak,
     which is where its contribution passes under double precision's floor.
     """
-    def value_at(theta):
+    def values_at(thetas):
+        """Log integrand at every theta in one call, non-finite mapped to -inf.
+
+        `log_integrand` is elementwise in theta, so the 121-point scan below
+        and the two bisections are each one call rather than one call per
+        point. That is 241 calls saved per evaluation point, and each of those
+        calls reaches the prior's density.
+
+        The elementwise fallback exists because a prior may carry a
+        caller-supplied density that only accepts scalars. The three exception
+        types are the ones the elementwise version already caught; a genuine
+        failure of a vectorised density still surfaces, because the fallback
+        re-raises nothing and simply recomputes the same values one at a time.
+        """
+        thetas = np.asarray(thetas, dtype=float)
         try:
-            out = float(log_integrand(np.array([theta]), t_value)[0])
-        except (ValueError, FloatingPointError, ZeroDivisionError):
+            out = np.asarray(log_integrand(thetas, t_value), dtype=float)
+        except (ValueError, FloatingPointError, ZeroDivisionError, TypeError):
+            out = np.array([_value_at_scalar(x) for x in thetas.ravel()])
+            out = out.reshape(thetas.shape)
+        return np.where(np.isfinite(out), out, -np.inf)
+
+    def _value_at_scalar(theta):
+        try:
+            out = float(np.ravel(log_integrand(np.array([theta]), t_value))[0])
+        except (ValueError, FloatingPointError, ZeroDivisionError, TypeError):
             return -np.inf
         return out if math.isfinite(out) else -np.inf
 
     # Find any point with mass, scanning geometrically.
     grid = np.geomspace(lower_hint, upper_hint, 121)
-    values = np.array([value_at(theta) for theta in grid])
+    values = values_at(grid)
     if not np.any(np.isfinite(values)):
         return None
     peak_index = int(np.argmax(values))
@@ -124,25 +146,28 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     low = grid[max(inside[0] - 1, 0)]
     high = grid[min(inside[-1] + 1, len(grid) - 1)]
 
-    # Refine each endpoint by bisection. The coarse grid is enough to *find*
-    # the mass but not to bound it: for a Uniform prior the density is
-    # discontinuous at its edges, and integrating across a discontinuity costs
-    # `quad` several orders of accuracy. Measured on Uniform(0.5, 2), tightening
-    # the endpoints onto the support took the relative error from 2.0e-09 to
-    # the 1e-13 range.
-    def refine(inside_point, outside_point):
-        for _ in range(60):
-            middle = 0.5 * (inside_point + outside_point)
-            if middle in (inside_point, outside_point):
-                break
-            if value_at(middle) > below:
-                inside_point = middle
-            else:
-                outside_point = middle
-        return outside_point
-
-    low = refine(grid[inside[0]], low)
-    high = refine(grid[inside[-1]], high)
+    # Refine both endpoints by bisection, together. The coarse grid is enough
+    # to *find* the mass but not to bound it: for a Uniform prior the density
+    # is discontinuous at its edges, and integrating across a discontinuity
+    # costs `quad` several orders of accuracy. Measured on Uniform(0.5, 2),
+    # tightening the endpoints onto the support took the relative error from
+    # 2.0e-09 to the 1e-13 range.
+    #
+    # The `stuck` mask is what makes doing both at once equivalent to doing
+    # each alone: the scalar version broke out of its loop once the midpoint
+    # stopped moving, and an element that has stopped moving here simply stops
+    # being updated while the other continues.
+    interior = np.array([grid[inside[0]], grid[inside[-1]]], dtype=float)
+    exterior = np.array([low, high], dtype=float)
+    for _ in range(60):
+        middle = 0.5 * (interior + exterior)
+        stuck = (middle == interior) | (middle == exterior)
+        if np.all(stuck):
+            break
+        keep = values_at(middle) > below
+        interior = np.where(stuck | ~keep, interior, middle)
+        exterior = np.where(stuck | keep, exterior, middle)
+    low, high = float(exterior[0]), float(exterior[1])
     return low, high, grid[peak_index]
 
 
@@ -218,19 +243,25 @@ def expectationDeriv(
         with np.errstate(divide="ignore", invalid="ignore"):
             return order * np.log(theta) + t_value * theta + log_density(theta)
 
-    results = np.empty(t_arr.shape, dtype=float)
-    for index, (t_value, u_value) in enumerate(
-        zip(t_arr.ravel(), u_arr.ravel(), strict=True)
-    ):
+    # ---- Per point: locate the mass and its peak -------------------------
+    #
+    # This part stays a loop, and cheaply so: bracketing is now two vectorised
+    # calls per point rather than 241 scalar ones, and the peak search is a
+    # handful more. What used to dominate was the quadrature below, which is
+    # the part that batches.
+    t_flat = t_arr.ravel()
+    u_flat = u_arr.ravel()
+    results = np.full(t_flat.shape, -np.inf, dtype=float)
+
+    live, lows, highs, offsets = [], [], [], []
+    for index, (t_value, u_value) in enumerate(zip(t_flat, u_flat, strict=True)):
         found = _bracket(log_integrand, t_value)
         if found is None:
-            results.ravel()[index] = -np.inf
             continue
         low, high, peak_guess = found
         if np.isfinite(u_value):
             high = min(high, u_value)
         if high <= low:
-            results.ravel()[index] = -np.inf
             continue
 
         # Scale by the integrand's peak before integrating. Without this,
@@ -243,17 +274,60 @@ def expectationDeriv(
             bounds=(low, high),
             method="bounded",
         )
-        offset = max(-float(peak.fun), float(log_integrand(np.array([peak_guess]), t_value)[0]))
+        offset = max(
+            -float(peak.fun),
+            float(log_integrand(np.array([peak_guess]), t_value)[0]),
+        )
         if not math.isfinite(offset):
-            results.ravel()[index] = -np.inf
             continue
 
-        def scaled(theta, tv=t_value, off=offset):
-            with np.errstate(under="ignore"):
-                return float(np.exp(log_integrand(np.array([theta]), tv)[0] - off))
+        live.append(index)
+        lows.append(low)
+        highs.append(high)
+        offsets.append(offset)
 
-        value, _ = integrate.quad(scaled, low, high, limit=200)
-        results.ravel()[index] = -np.inf if value <= 0 else math.log(value) + offset
+    # ---- All points at once: one adaptive quadrature ---------------------
+    #
+    # Each point has its own interval, so they are mapped to a common [0, 1]
+    # by theta_i(s) = low_i + s * width_i, which turns N integrals over N
+    # intervals into one integral of an N-vector:
+    #
+    #     int_{low_i}^{high_i} f_i(theta) dtheta
+    #         = width_i * int_0^1 f_i(low_i + s width_i) ds
+    #
+    # `quad_vec` then runs ONE adaptive subdivision for the whole batch,
+    # evaluating every point's integrand at each node, where `quad` ran a
+    # separate subdivision per point and evaluated a scalar at each of its
+    # nodes -- 399 Python calls per evaluation point, each wrapping a float in
+    # a one-element array to hand to the prior's density.
+    #
+    # Sharing the subdivision is safe here *because* of the peak scaling
+    # above: every component is O(1) at its own peak, so no component is
+    # negligible against the others and the error norm cannot be dominated by
+    # one point while another is left inaccurate. Without that scaling this
+    # would be a real hazard rather than a bookkeeping detail.
+    if live:
+        lows = np.asarray(lows, dtype=float)
+        widths = np.asarray(highs, dtype=float) - lows
+        offsets = np.asarray(offsets, dtype=float)
+        t_live = t_flat[live]
+
+        def batched(s):
+            theta = lows + s * widths
+            with np.errstate(divide="ignore", invalid="ignore", under="ignore"):
+                exponent = (
+                    order * np.log(theta) + t_live * theta + log_density(theta)
+                )
+                return np.exp(exponent - offsets) * widths
+
+        values, _ = integrate.quad_vec(batched, 0.0, 1.0, epsrel=1e-10)
+        values = np.atleast_1d(np.asarray(values, dtype=float))
+        with np.errstate(divide="ignore"):
+            results[live] = np.where(
+                values > 0, np.log(np.where(values > 0, values, 1.0)) + offsets, -np.inf
+            )
+
+    results = results.reshape(t_arr.shape)
 
     signs = np.ones(results.shape, dtype=int)
     if scalar_input:

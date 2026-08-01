@@ -179,3 +179,134 @@ def test_all_three_routes_to_one_answer_agree(prior_name):
 # third instance in this audit of a check sitting downstream of the property it
 # claims to test. See CLAUDE.md, "A testing hazard this repository has already
 # hit twice" -- now three times, and the count is the point.
+
+
+# ==========================================================================
+# The tuple-vectorisation principle, asserted on cost rather than on shape
+# ==========================================================================
+# `CLAUDE.md` states the principle as: evaluation points are the *pair*
+# `(t, u)`, broadcast to a common shape and evaluated **as one batch**. Until
+# PR 9 the package satisfied that in shape and not in cost -- array `t`, array
+# `u` and broadcasting all returned correctly shaped answers, while underneath
+# the default route ran one adaptive quadrature per point. The measured
+# signature was a cost per point that did not fall as the batch grew:
+#
+#     points     total    per point
+#          1   255.9 ms    255.9 ms
+#          5  1277.6 ms    255.5 ms
+#         20  5098.2 ms    254.9 ms
+#
+# These tests assert the property structurally, by counting how many times the
+# prior's density is called. A wall-clock assertion would be the obvious
+# alternative and a bad one: it varies with the machine, so it is either flaky
+# or so loose that it asserts nothing. The call count is a property of the
+# algorithm.
+
+
+class _CountingDensity:
+    """Wraps a prior's density and records how often it is called."""
+
+    def __init__(self, prior):
+        self._prior = prior
+        self.calls = 0
+        self._inner = prior.logpdf_func
+
+    def __enter__(self):
+        def counted(theta):
+            self.calls += 1
+            return self._inner(theta)
+
+        self._prior.logpdf_func = counted
+        return self
+
+    def __exit__(self, *exc):
+        self._prior.logpdf_func = self._inner
+        return False
+
+
+def _density_calls(prior, points):
+    from jumufraktiv.numeric_expectation import expectationDeriv
+
+    with _CountingDensity(prior) as counter:
+        expectationDeriv(1.5, prior, t=np.asarray(points), log=True)
+    return counter.calls
+
+
+def test_a_batch_does_not_cost_a_multiple_of_the_calls(gamma_prior):
+    """Twenty points must not cost twenty times one point's density calls.
+
+    If the implementation loops, the count scales with the number of points.
+    If it batches, each quadrature node evaluates every point at once and the
+    count barely moves. The threshold is deliberately loose -- a larger batch
+    does need somewhat more adaptive subdivision, and bracketing is still
+    per-point -- but a loop cannot pass it: the pre-PR-9 code made 20x the
+    calls, and this allows 4x.
+    """
+    one = _density_calls(gamma_prior, [-1.0])
+    twenty = _density_calls(gamma_prior, np.linspace(-1.0, -5.0, 20))
+
+    assert twenty < 4 * one, (
+        f"{twenty} density calls for 20 points against {one} for 1 point: "
+        "the batch is being evaluated one point at a time"
+    )
+
+
+def test_the_counter_would_notice_a_loop(gamma_prior):
+    """Guard the guard: the counter must actually count.
+
+    A structural test built on instrumentation can pass because the
+    instrumentation is not wired up, and that looks exactly like success. So
+    call the density directly and check the count moves.
+    """
+    with _CountingDensity(gamma_prior) as counter:
+        gamma_prior.logpdf_func(np.array([1.0]))
+        gamma_prior.logpdf_func(np.array([2.0]))
+
+    assert counter.calls == 2
+
+
+@pytest.mark.parametrize("order", [0.5, 1.5, 6.0])
+def test_batch_and_one_at_a_time_agree_exactly(gamma_prior, order):
+    """Sharing one adaptive subdivision must not move any point's answer.
+
+    The batched quadrature maps every point's interval onto a common [0, 1]
+    and integrates the resulting vector, so all points share one subdivision.
+    That is only safe because each point is scaled by its own peak first; if it
+    were not, a point whose integrand is negligible against the others would be
+    integrated to the batch's tolerance rather than its own.
+    """
+    from jumufraktiv.numeric_expectation import expectationDeriv
+
+    points = np.array([-0.5, -1.0, -5.0, -14.0, -30.0])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        batched, _ = expectationDeriv(order, gamma_prior, t=points, log=True)
+        singly = np.array(
+            [
+                expectationDeriv(order, gamma_prior, t=float(p), log=True)[0]
+                for p in points
+            ]
+        )
+
+    assert batched == pytest.approx(singly, rel=1e-12, abs=1e-12)
+
+
+def test_every_prior_density_accepts_an_array(prior_name=None):
+    """The batched integrand hands the density a vector of theta.
+
+    `heaviside` could not take one: its density was `1.0 if theta >= k else
+    0.0`, a Python conditional, which raises for any array longer than one. It
+    passed unnoticed because every caller evaluated a single point at a time.
+    """
+    from jumufraktiv import registry
+
+    registry.initialize()
+    thetas = np.array([0.5, 1.0, 2.0, 5.0])
+    for name, params in REGISTRY_PARAMS.items():
+        prior = mitMGFprior.from_registry(name, params=params)
+        for func_name in ("pdf_func", "logpdf_func"):
+            values = np.asarray(getattr(prior, func_name)(thetas), dtype=float)
+            assert values.shape == thetas.shape, (
+                f"{name}.{func_name} did not return one value per theta"
+            )
