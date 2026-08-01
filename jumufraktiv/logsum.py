@@ -25,24 +25,10 @@ def logminus(x, y):
     Writing ``d = x - y > 0``, the identity is
     ``log(exp(x) - exp(y)) = x + log1mexp(d)`` with
     ``log1mexp(d) = log(1 - exp(-d))``, and **that inner term needs two
-    branches, not one**. This function previously implemented only the
-    ``log1p`` branch, which loses the difference entirely once ``exp(-d)``
-    rounds to 1:
-
-    ======  =======================  ==========================
-    gap     one branch (before)      exact (mpmath, 50 digits)
-    ======  =======================  ==========================
-    1e-08   -18.420680750029838      -18.420680748952364
-    1e-10   -23.025850847200090      -23.025850929990458
-    1e-15   -34.539575992340879      -34.538776394910684
-    1e-17   -inf                     -39.143946580898778
-    ======  =======================  ==========================
-
-    So the absolute error is 8.3e-08 at a gap of 1e-10 -- 3.6e-09 *relative* to
-    the value, and both figures are correct, which is exactly the confusion
-    :file:`CLAUDE.md` warns about. By 1e-15 it is 8.0e-04 absolute, and at 1e-17
-    the answer is ``-inf`` with a "divide by zero encountered in log1p" warning
-    for a quantity that is finite.
+    branches, not one**. The ``log1p`` branch alone loses the difference as the
+    gap closes and gives up entirely once ``exp(-d)`` rounds to 1: at a gap of
+    1e-17 it returns ``-inf``, with a "divide by zero encountered in log1p"
+    warning, for a quantity that is finite.
 
     The switch point is ``log 2``: below it use ``log(-expm1(-d))``, above it
     ``log1p(-exp(-d))``. Each branch is the one whose rounding error stays

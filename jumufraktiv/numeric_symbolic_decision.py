@@ -7,13 +7,10 @@ premise is that a derivative already heavy at order 2 only gets worse.
 :func:`~jumufraktiv.numeric_integerDeriv_Bell.integerDeriv_numeric_bell` is
 the only caller.
 
-A companion ``suggest_method_Mellin`` used to live here, applying the same
-heuristic to a symbolic Mellin transform. Nothing called it. The Mellin side
-belongs to the *second* marginalisable family described in the reference --
-the one whose operator has lower terminal 0 and acts on ``t^a M(log t)``,
-covering Beta, Beta-prime and Dirichlet likelihoods -- and this package does
-not implement that family. A helper for choosing how to compute a transform
-the package never takes is not a partial feature; it is a leftover.
+The heuristic applies to the MGF side only. The Mellin side belongs to the
+second marginalisable family described in the reference -- whose operator has
+lower terminal 0 and acts on ``t^a M(log t)``, covering Beta, Beta-prime and
+Dirichlet likelihoods -- which this package does not implement.
 """
 
 import logging
@@ -59,17 +56,17 @@ def suggest_method_integerDeriv(expr, symbol, order, test_order=None, timeout=1.
         # If the test derivative is already heavy, high order will be worse
         if elapsed < 0.1 and complexity < 100:
             recommend = True
-            msg = "✅ RECOMMEND: Symbolic (SymPy) – fast and simple."
+            msg = "Symbolic (SymPy) recommended: fast and simple."
         elif elapsed < timeout and complexity < 500:
             recommend = True  # still okay, but warn
-            msg = "⚠️  Symbolic is possible but may be heavy at higher orders."
+            msg = "Symbolic is possible but may be heavy at higher orders."
         else:
             recommend = False
-            msg = "❌ NOT RECOMMENDED: Symbolic test is already slow/large. Use numeric (JAX)."
+            msg = "Symbolic not recommended: the test derivative is already slow or large. Use the numeric (JAX) path."
     except Exception as e:
         logger.debug("Symbolic test failed (%s); recommending the numeric path.", e)
         recommend = False
-        msg = "❌ Symbolic test failed. Use numeric (JAX)."
+        msg = "Symbolic test failed. Use the numeric (JAX) path."
         elapsed = timeout
         complexity = -1
 

@@ -94,7 +94,7 @@ def uniform_mgf(t_val: float, a_val: float, b_val: float) -> float:
 
 def uniform_cgf_jax(t_val, a_val, b_val):
     """
-    JAX‑compatible CGF for the uniform prior.
+    JAX-compatible CGF for the uniform prior.
 
     Parameters
     ----------
@@ -115,7 +115,7 @@ def uniform_cgf_jax(t_val, a_val, b_val):
 
 def uniform_mgf_jax(t_val, a_val, b_val):
     """
-    JAX‑compatible MGF for the uniform prior.
+    JAX-compatible MGF for the uniform prior.
 
     Parameters
     ----------
@@ -152,12 +152,11 @@ def uniform_factory(params):
     cgf_sym = sp.log(mgf_sym)
     pdf_sym = sp.Piecewise((1 / (b - a), (theta >= a) & (theta <= b)), (0, True))
 
-    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
-    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
-    # docstring -- 430 us of work, before any density is evaluated. Written
-    # inside the lambda it ran on every call, and the density is the innermost
-    # thing in the package: every quadrature node calls it. Hoisted, the same
-    # call costs 41 us for identical values.
+    # Freeze the SciPy distribution ONCE, here rather than inside the lambdas
+    # below. `stats.<dist>(params)` builds an `rv_frozen`, and building one runs
+    # `_construct_doc`, which formats a docstring -- about 430 us before any
+    # density is evaluated. The density is the innermost thing in the package,
+    # called at every quadrature node, so it must not be rebuilt per call.
     frozen = stats.uniform(loc=a_val, scale=b_val - a_val)
 
     # Substitute numeric parameter values into the symbolic expressions

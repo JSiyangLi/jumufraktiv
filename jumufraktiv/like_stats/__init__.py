@@ -14,9 +14,8 @@ These modules are pure functions of the data. They know nothing about priors
 or derivatives, and must not import from the inference layer.
 
 This file exists so that ``jumufraktiv.like_stats`` is an ordinary package
-rather than a namespace package. It shipped correctly before, but only
-incidentally: ``setuptools``'s ``find_packages`` did not list it, and the
-fourteen modules reached the wheel by a route that declaring the package makes
-explicit. It is deliberately empty of imports — importing the fourteen modules
-here would make every one of them a cost of touching any one of them.
+rather than a namespace package, which is what lets ``setuptools``'s
+``find_packages`` list it. It is deliberately empty of imports — importing the
+fourteen modules here would make every one of them a cost of touching any one
+of them.
 """

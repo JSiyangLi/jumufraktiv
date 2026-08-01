@@ -15,18 +15,18 @@ with a(y) = α,
     b(y) = y,
     C(y) = y^{α-1} / Γ(α).
 
-For a sample of size n with per‑observation shapes α_i:
+For a sample of size n with per-observation shapes α_i:
     a = Σ α_i
     b = Σ y_i
     log_C = Σ ( (α_i - 1) * log(y_i) - log Γ(α_i) )
 
 If shape is a scalar, it is recycled. If shape is a vector, it must have length n.
 
-The user‑facing argument is `shape`, which corresponds to the known shape parameter α.
+The user-facing argument is `shape`, which corresponds to the known shape parameter α.
 
 This module provides two statistics functions:
 - `readyGamma` : aggregated sufficient statistics (scalars) for the whole sample.
-- `bereitGamma` : per‑element sufficient statistics (arrays) for vectorised predictive evaluation.
+- `bereitGamma` : per-element sufficient statistics (arrays) for vectorised predictive evaluation.
 
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
@@ -60,9 +60,9 @@ def readyGamma(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    shape : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    shape : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Shape parameters α_i. If scalar, recycled; if vector, same length as data.
 
     Returns
@@ -73,7 +73,7 @@ def readyGamma(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle shape ----
     if _is_1d_dataframe(shape):
@@ -110,7 +110,7 @@ def bereitGamma(
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Gamma likelihood.
+    Compute per-element sufficient statistics for a Gamma likelihood.
 
     For each observation y_i and shape α_i:
         a_i = α_i
@@ -119,9 +119,9 @@ def bereitGamma(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    shape : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    shape : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Shape parameters α_i. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
 
@@ -133,7 +133,7 @@ def bereitGamma(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle shape ----
     if _is_1d_dataframe(shape):
@@ -153,7 +153,7 @@ def bereitGamma(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive (Gamma likelihood requires y > 0)")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = shape_vals
     b_vals = data_vals
     # log_c_i = (α_i - 1) * log(y_i) - log Γ(α_i)

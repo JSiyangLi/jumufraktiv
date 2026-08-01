@@ -1,16 +1,11 @@
 """Input handling shared by the fourteen likelihood modules.
 
-Every ``like_stats`` module used to carry its own byte-identical copy of the
-two functions below. Folding them into one place is not only a size saving: it
-is what makes their validation *uniform*, which it was not. Ten of the fourteen
-``ready*`` functions guarded against two-dimensional data and four did not, and
-no ``bereit*`` function guarded at all — so the same input was rejected by one
-likelihood and silently mis-computed by another.
-
-The dimensionality check therefore lives in :func:`_extract_1d` rather than in
-each caller. Every entry point extracts its data through this function, so
-placing the check here is what makes "one guard, applied everywhere" true by
-construction instead of by fourteen-fold agreement.
+The two functions below are defined here and nowhere else, and no likelihood
+module carries its own copy. That is what makes their validation *uniform*: the
+dimensionality and finiteness checks live in :func:`_extract_1d`, and every
+``ready*`` and ``bereit*`` entry point passes its data — and every known
+parameter — through it, so "one guard, applied everywhere" holds by
+construction rather than by fourteen-fold agreement.
 """
 
 from typing import Any
@@ -47,23 +42,18 @@ def _extract_1d(obj: Any, label: str = "data") -> np.ndarray:
 
     Notes
     -----
-    Two of the three checks are load-bearing rather than defensive.
-
-    *Finiteness.* NumPy's ordering comparisons are ``False`` for NaN, so
-    ``np.any(values <= 0)`` — the positivity guard every likelihood module
-    applies next — passes a NaN straight through. It then lands in ``a``, ``b``
-    or ``log_c`` and surfaces much later as an error naming the wrong thing:
-    "Derivative at t=-b is negative" for Rayleigh, "t must be provided" for
-    Normal, "cannot convert float NaN to integer" for Poisson. None of those
-    mention the data.
+    *Finiteness.* The returned array is guaranteed finite, and this is the only
+    place that guarantee is established. NumPy's ordering comparisons are
+    ``False`` for NaN, so ``np.any(values <= 0)`` — the positivity guard every
+    likelihood module applies next — passes a NaN straight through, and it
+    would then reach ``a``, ``b`` or ``log_c`` and surface much later as an
+    error naming something other than the data.
 
     *Dimensionality.* These are functions of a one-dimensional sample, so a 2-D
-    array is a caller error and not a shape to reinterpret. Accepting one is
-    not a cosmetic fault: ``a`` is the *order of differentiation*, and summing
-    along one axis of a 2-D array rather than over every element halved it.
-    ``readyGamma([[1,2],[3,4]], shape=2.0)`` gave ``a = 4.0`` where the flat
-    data gives ``8.0``, and the package went on to compute a derivative of a
-    different order without comment.
+    array is a caller error and not a shape to reinterpret. It is refused
+    rather than flattened or summed along an axis, because ``a`` is the *order
+    of differentiation* and reinterpreting the shape silently changes which
+    derivative is taken.
     """
     if isinstance(obj, pd.DataFrame):
         if obj.shape[1] != 1:

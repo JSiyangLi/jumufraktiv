@@ -108,22 +108,19 @@ def _integration_range(gamma_val, tol):
     ``tol`` needs ``u_min <= log(tol) / (gamma + 1)``. That is bounded no matter
     how small ``gamma`` becomes, which is the point of subtracting.
 
-    The right endpoint cannot be derived the same way, and assuming it can was
-    a mistake worth recording. The subtracted term ``M^{(n+1)}(t) e^{-z}``
-    decays double-exponentially, which suggested ``u_max = 4`` would do -- but
-    the *other* term, ``M^{(n+1)}(t - z)``, decays only **polynomially in z**
-    for the priors here, so the integrand behaves like
-    ``e^{(gamma - tail - n - 1) u}``. For a Gamma(2, 3) prior at order 0.5 the
-    rate is 2.5, so ``u = 4`` leaves 4.5e-05 of the tail uncaptured; measured
-    relative error was 4.3e-04 at ``u_max = 4`` against 9.0e-16 at ``u_max =
-    20``.
+    The right endpoint cannot be derived the same way. The subtracted term
+    ``M^{(n+1)}(t) e^{-z}`` decays double-exponentially, but the *other* term,
+    ``M^{(n+1)}(t - z)``, decays only **polynomially in z** for the priors
+    here, so the integrand behaves like ``e^{(gamma - tail - n - 1) u}``. For a
+    Gamma(2, 3) prior at order 0.5 the rate is 2.5, so ``u = 4`` leaves 4.5e-05
+    of the tail uncaptured.
 
     The tail index is a property of the prior and is not exposed, so the
     endpoint is found by *probing the integrand's decay* -- extending until the
     contribution at the endpoint has fallen below ``tol`` relative to the
-    largest contribution seen. That is a direct test on the decay, not the
-    consecutive-iterate comparison the old kernel used, which underestimates
-    the remaining tail exactly when convergence is slow.
+    largest contribution seen. That is a direct test on the decay rather than a
+    comparison of consecutive iterates, which underestimates the remaining tail
+    exactly when convergence is slow.
     """
     u_min = math.log(tol) / (gamma_val + 1.0)
     return u_min, min(8.0, _MAX_U)
@@ -134,10 +131,10 @@ def _tail_has_decayed(nodes, gamma_val, t_arr, u_arr, integer_derivative, tol):
 
     Returns ``(decayed, log_edge, log_peak)``. The comparison is *relative to
     the largest contribution on the grid*, which is what makes it a test of
-    decay rather than of magnitude -- the previous kernel compared consecutive
-    integral estimates against ``tol * max(1, |prev|)``, an absolute test
-    whenever the integral is below 1, and one that underestimates the remaining
-    tail whenever convergence is slow.
+    decay rather than of magnitude. Comparing consecutive integral estimates
+    against ``tol * max(1, |prev|)`` instead would be an absolute test whenever
+    the integral is below 1, and would underestimate the remaining tail
+    whenever convergence is slow.
     """
     z = np.exp(nodes)
     shifted = t_arr[None, ...] - z.reshape((-1,) + (1,) * t_arr.ndim)
@@ -209,10 +206,10 @@ def fractionalDeriv_grid(
         )
 
     # A scalar in must give a scalar out. The dispatcher's other backends do
-    # this, and callers rely on it -- `atleast_1d` alone turned a float result
-    # into a one-element array, which made a list of scalar calls come back as
-    # shape (n, 1) instead of (n,) and compare unequal to the batched answer
-    # despite every value agreeing.
+    # this, and callers rely on it: `atleast_1d` alone would return a float
+    # result as a one-element array, so a list of scalar calls would come back
+    # as shape (n, 1) instead of (n,) and compare unequal to the batched
+    # answer despite every value agreeing.
     scalar_input = np.ndim(t_points) == 0 and (
         u_points is None or np.ndim(u_points) == 0
     )

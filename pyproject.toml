@@ -160,6 +160,17 @@ extend-exclude = ["notebooks"]
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 
+# Greek letters carry the mathematics in this package's docstrings, matching the
+# notation of the reference paper. Ruff flags them because they resemble Latin
+# letters -- alpha for a, rho for p, sigma for o, gamma for y -- which is the
+# right default for prose and the wrong one here.
+#
+# Listing them is what let RUF001-003 come out of the per-file ignores. Blanket
+# suppression could not tell these apart from the non-breaking hyphen that was
+# standing in for `-` in 336 places, 41 of them inside error messages, where it
+# defeats a grep for the message text.
+allowed-confusables = ["α", "ρ", "σ", "γ", "−"]
+
 [tool.ruff.lint.per-file-ignores]
 # ---------------------------------------------------------------------------
 # Lint debt baseline for the pre-audit library code.
@@ -198,17 +209,27 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # have no per-file exemptions either, so both block everywhere.
 # ---------------------------------------------------------------------------
 #
-# PR 12 also removed F841. Its one remaining site was `pareto_logimgf`'s
-# discarded `sign`, and the discarded sign was the least of what was wrong with
-# that function -- it returned NaN at every argument. Repairing the function
-# cleared the rule, which is the order these two things belong in: the lint was
-# the symptom.
+# PR 12 also removed F841, RUF001, RUF002, RUF003, W291 and W293.
+#
+# F841's one remaining site was `pareto_logimgf`'s discarded `sign`, and the
+# discarded sign was the least of what was wrong with that function: it
+# returned NaN at every argument. Repairing the function cleared the rule,
+# which is the order these two belong in -- the lint was the symptom.
+#
+# The three RUF00x codes had been filed as cosmetic, and were not. They were
+# suppressed wholesale because nobody had separated a look-alike from
+# legitimate notation. Of 520 flagged characters, 336 were U+2011 NON-BREAKING
+# HYPHEN standing in for `-`, and 41 of those sat inside error messages, where
+# it silently defeats a grep or a copy-paste search for the message text; the
+# rest are Greek letters carrying the mathematics, which `allowed-confusables`
+# above now permits by name. Blanket suppression could not tell the two apart,
+# which is why it hid the first group for the whole audit.
+#
+# What remains is one code. E501 is left because fixing it properly means
+# running `ruff format` over the library, and that is deliberately its own
+# change: reformatting 13k lines would bury the real diffs of any PR it rode
+# along with. It is the last entry in this list.
 # ---------------------------------------------------------------------------
 "jumufraktiv/**" = [
-    "E501",   # line-too-long                          -> PR 14 (docstring sweep)
-    "RUF001", # ambiguous-unicode-character-string     -> PR 14
-    "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
-    "RUF003", # ambiguous-unicode-character-comment    -> PR 14
-    "W291",   # trailing-whitespace                    -> PR 14
-    "W293",   # whitespace-on-blank-line               -> PR 14
+    "E501",   # line-too-long   -> lands with `ruff format` over the library
 ]

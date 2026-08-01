@@ -1,18 +1,18 @@
 """
 mitMGFprior.py
 
-Unified container for moment‑generating function (MGF) priors.
+Unified container for moment-generating function (MGF) priors.
 
 This module defines the `mitMGFprior` class, which serves as a standardised
 container for prior distributions in the MGF marginalisation framework.
 It holds both symbolic and numeric representations of the prior MGF, CGF,
-and PDF, along with JAX‑compatible versions for fast computation.
+and PDF, along with JAX-compatible versions for fast computation.
 
 Design philosophy:
 - The registry (`PRIOR_REGISTRY`) provides fully-formed function bundles;
   the class only composes, stores, and exposes interfaces.
-- Both symbolic and backend‑based construction routes are supported.
-- The class is dataclass‑based for clarity and easy extension.
+- Both symbolic and backend-based construction routes are supported.
+- The class is dataclass-based for clarity and easy extension.
 
 Key features:
 - Supports **complete** and **incomplete** MGFs (iMGF) via the `imgf`, `logimgf`,
@@ -56,9 +56,9 @@ class mitMGFprior:
     Container for a prior distribution's MGF, CGF, and PDF.
 
     This class holds both symbolic and numeric representations of a prior's
-    moment‑generating function (MGF), cumulant‑generating function (CGF),
-    and probability density function (PDF). It also supports JAX‑compatible
-    backends for high‑performance computation and incomplete MGF (iMGF)
+    moment-generating function (MGF), cumulant-generating function (CGF),
+    and probability density function (PDF). It also supports JAX-compatible
+    backends for high-performance computation and incomplete MGF (iMGF)
     functions for truncated distributions.
 
     Attributes
@@ -77,12 +77,12 @@ class mitMGFprior:
         Dictionary of numeric parameters (e.g., `{'alpha': 2.0, 'beta': 3.0}`).
 
     Compiled functions (populated by `as_mitMGFprior` or `from_registry`):
-    - mgf, cgf : NumPy‑based MGF and CGF functions.
-    - mgf_jax, cgf_jax : JAX‑based MGF and CGF functions.
-    - pdf_func, logpdf_func : NumPy‑based PDF and log‑PDF functions.
+    - mgf, cgf : NumPy-based MGF and CGF functions.
+    - mgf_jax, cgf_jax : JAX-based MGF and CGF functions.
+    - pdf_func, logpdf_func : NumPy-based PDF and log-PDF functions.
 
     Incomplete MGF (iMGF) attributes (if supported):
-    - imgf, logimgf : Numeric ordinary and log‑scale iMGF.
+    - imgf, logimgf : Numeric ordinary and log-scale iMGF.
     - imgf_jax, logimgf_jax : JAX versions.
     - imgf_sym, logimgf_sym : Symbolic expressions.
 
@@ -99,7 +99,7 @@ class mitMGFprior:
 
     Notes
     -----
-    The class follows a two‑step construction pattern:
+    The class follows a two-step construction pattern:
     1. Create an instance with raw inputs (symbolic or backend).
     2. Call `as_mitMGFprior()` to compile and populate all functions.
 
@@ -114,7 +114,7 @@ class mitMGFprior:
     >>> prior.mgf(-0.5)
     1.7777777778
 
-    >>> # Registry‑based prior
+    >>> # Registry-based prior
     >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
     >>> gamma_prior.mgf(-1.0)
     0.8888888889
@@ -179,7 +179,7 @@ class mitMGFprior:
             as `log(mgf_sym)`.
             2. **Backend mode**: if both `mgf_backend` and `pdf_backend` are provided,
             they are wrapped to accept a backend parameter (`xp=np` or `xp=jnp`),
-            and the CGF and log‑PDF are derived numerically.
+            and the CGF and log-PDF are derived numerically.
 
         The method modifies the instance in place and returns it for chaining.
 
@@ -344,10 +344,11 @@ class mitMGFprior:
         # ---------------------------------------------------------
         # Get the factory function and call it
         # ---------------------------------------------------------
-        # get_prior initialises the registry. Reading PRIOR_REGISTRY directly
-        # here used to make this method fail in a fresh process unless some
-        # other registry function had already run, and its error could not
-        # distinguish a typo from an unpopulated registry.
+        # `get_prior` initialises the registry, so it must be what the lookup
+        # goes through: reading `PRIOR_REGISTRY` directly fails in a fresh
+        # process unless some other registry function has already run, and
+        # cannot tell a typo from an unpopulated registry. The name is only
+        # read below to list what is available once the lookup has failed.
         try:
             factory = get_prior(prior_name)
         except KeyError as exc:
@@ -460,7 +461,7 @@ class mitMGFprior:
             if not callable(val):
                 return False
         return True
-    
+
     # ============================================================
     # iMGF SUPPORT CHECK
     # ============================================================

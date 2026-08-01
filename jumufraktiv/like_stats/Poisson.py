@@ -18,11 +18,11 @@ with a(y) = Σ y_i,
 If scale (s_i) is a scalar, it is recycled. If scale is a vector, it must have
 length equal to the number of observations.
 
-The user‑facing argument is `scale`, which corresponds to the exposure s_i.
+The user-facing argument is `scale`, which corresponds to the exposure s_i.
 
 This module provides two statistics functions:
 - `readyPoisson` : aggregated sufficient statistics (scalars) for the whole sample.
-- `bereitPoisson` : per‑element sufficient statistics (arrays) for vectorised
+- `bereitPoisson` : per-element sufficient statistics (arrays) for vectorised
   predictive evaluation (used in `post_predictive` when `individual=True`).
 
 Additionally, `cPoisson()` returns a symbolic expression for the normalising constant.
@@ -64,9 +64,9 @@ def readyPoisson(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
-        Observed counts (must be non‑negative).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like, default 1.0
+    data : pandas DataFrame (1-column), pandas Series, or array-like
+        Observed counts (must be non-negative).
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like, default 1.0
         Exposure values. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
 
@@ -83,7 +83,7 @@ def readyPoisson(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -101,7 +101,7 @@ def readyPoisson(
     if np.any(scale_vals <= 0):
         raise ValueError("scale values must be positive")
     if np.any(data_vals < 0):
-        raise ValueError("data values must be non‑negative")
+        raise ValueError("data values must be non-negative")
 
     # ---- Vectorized sums ----
     a = np.sum(data_vals)
@@ -120,7 +120,7 @@ def bereitPoisson(
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Poisson likelihood.
+    Compute per-element sufficient statistics for a Poisson likelihood.
 
     For each observation y_i and exposure s_i:
         a_i = y_i
@@ -129,9 +129,9 @@ def bereitPoisson(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
-        Observed counts (must be non‑negative).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like, default 1.0
+    data : pandas DataFrame (1-column), pandas Series, or array-like
+        Observed counts (must be non-negative).
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like, default 1.0
         Exposure values. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -143,7 +143,7 @@ def bereitPoisson(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -161,9 +161,9 @@ def bereitPoisson(
     if np.any(scale_vals <= 0):
         raise ValueError("scale values must be positive")
     if np.any(data_vals < 0):
-        raise ValueError("data values must be non‑negative")
+        raise ValueError("data values must be non-negative")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = data_vals.astype(float)
     b_vals = scale_vals
     # log(y!) = log Γ(y+1)

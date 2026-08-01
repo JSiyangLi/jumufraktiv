@@ -47,9 +47,9 @@ def readyPareto(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be >= scale).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) σ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -68,7 +68,7 @@ def readyPareto(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle scale ----
     if _is_1d_dataframe(scale):
@@ -107,7 +107,7 @@ def bereitPareto(
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Pareto likelihood.
+    Compute per-element sufficient statistics for a Pareto likelihood.
 
     For each observation y_i and known scale σ_i:
         a_i = 1
@@ -116,9 +116,9 @@ def bereitPareto(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be >= scale).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) σ. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -130,7 +130,7 @@ def bereitPareto(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -150,7 +150,7 @@ def bereitPareto(
     if np.any(data_vals < scale_vals):
         raise ValueError("data values must be >= scale for Pareto likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     b_vals = np.log(data_vals / scale_vals)
     log_c_vals = -np.log(data_vals)

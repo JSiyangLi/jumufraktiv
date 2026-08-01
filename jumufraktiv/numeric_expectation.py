@@ -95,11 +95,9 @@ def _vectorise(density):
     density written as ``0.0 if theta >= k else -inf`` accepts a one-element
     array and raises on anything longer, and one written with ``math`` accepts
     no array at all. Handling that per call site turns a real failure into a
-    plausible number: a genuinely scalar-only density returns ``-inf`` where
-    its vectorised twin returns ``-1.4481850809269488``, because a per-call
-    fallback catches the ``TypeError`` and substitutes ``-inf`` -- turning
-    "this density cannot be called that way" into "the integrand has no mass
-    here".
+    plausible number, because a per-call fallback catches the ``TypeError`` and
+    substitutes ``-inf`` -- turning "this density cannot be called that way"
+    into "the integrand has no mass here".
 
     Probing once removes that: the adapter is chosen before any evaluation, so
     every point sees the same function, and a density that works under neither
@@ -163,8 +161,8 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
 
         `log_integrand` is elementwise in theta, so the 121-point scan below
         and the two bisections are each one call rather than one call per
-        point -- 241 calls saved per evaluation point, each of which reaches
-        the prior's density.
+        point. Every such call reaches the prior's density, which is the
+        innermost cost on this route.
         """
         # No try/except here, deliberately: `_vectorise` settled at setup that
         # this density can be called this way. Catching would turn a failed
@@ -192,14 +190,12 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     # Refine both endpoints by bisection, together. The coarse grid is enough
     # to *find* the mass but not to bound it: for a Uniform prior the density
     # is discontinuous at its edges, and integrating across a discontinuity
-    # costs `quad` several orders of accuracy. Measured on Uniform(0.5, 2),
-    # tightening the endpoints onto the support took the relative error from
-    # 2.0e-09 to the 1e-13 range.
+    # costs `quad` several orders of accuracy, so the endpoints must be
+    # tightened onto the support.
     #
-    # The `stuck` mask is what makes doing both at once equivalent to doing
-    # each alone: the scalar version broke out of its loop once the midpoint
-    # stopped moving, and an element that has stopped moving here simply stops
-    # being updated while the other continues.
+    # The `stuck` mask is what makes doing both endpoints at once equivalent
+    # to doing each alone: an element whose midpoint has stopped moving stops
+    # being updated, while the other continues.
     interior = np.array([grid[inside[0]], grid[inside[-1]]], dtype=float)
     exterior = np.array([low, high], dtype=float)
     for _ in range(60):
@@ -304,10 +300,9 @@ def expectationDeriv(
 
     # ---- Per point: locate the mass and its peak -------------------------
     #
-    # This part stays a loop, and cheaply so: bracketing is now two vectorised
-    # calls per point rather than 241 scalar ones, and the peak search is a
-    # handful more. What used to dominate was the quadrature below, which is
-    # the part that batches.
+    # This part is a loop, and cheaply so: bracketing costs two vectorised
+    # calls per point and the peak search a handful more. The quadrature below
+    # is the expensive part, and that is the part which batches.
     t_flat = t_arr.ravel()
     u_flat = u_arr.ravel()
     results = np.full(t_flat.shape, -np.inf, dtype=float)
@@ -355,10 +350,10 @@ def expectationDeriv(
     #         = width_i * int_0^1 f_i(low_i + s width_i) ds
     #
     # `quad_vec` then runs ONE adaptive subdivision for the whole batch,
-    # evaluating every point's integrand at each node, where `quad` ran a
-    # separate subdivision per point and evaluated a scalar at each of its
-    # nodes -- 399 Python calls per evaluation point, each wrapping a float in
-    # a one-element array to hand to the prior's density.
+    # evaluating every point's integrand at each node. Integrating the points
+    # one at a time instead would run a separate subdivision per point, and
+    # every node of every one of them would reach the prior's density with a
+    # single scalar.
     #
     # Sharing the subdivision is safe here *because* of the peak scaling
     # above: every component is O(1) at its own peak, so no component is
@@ -373,15 +368,15 @@ def expectationDeriv(
 
         def batched(s):
             theta = lows + s * widths
-            # `over` is in the list for a reason `CLAUDE.md` records under its
-            # testing hazards: `pyproject.toml` sets `filterwarnings =
-            # ["error"]`, so NumPy's "overflow encountered in exp" is an
-            # exception under pytest and a warning everywhere else. A path
-            # that behaves differently in the suite than in a user's session
-            # is one the suite cannot vouch for. Overflow here needs an
-            # underestimated offset -- a multimodal caller-supplied density
-            # whose global peak the bounded search missed -- and it surfaces
-            # as `inf`, loudly, rather than as a plausible number.
+            # `over` belongs in this list. The suite runs with
+            # `filterwarnings = ["error"]`, so NumPy's "overflow encountered
+            # in exp" is an exception under pytest and a warning everywhere
+            # else, and a path that takes a different branch in the suite than
+            # in a user's session is one the suite cannot vouch for. Overflow
+            # here needs an underestimated offset -- a multimodal
+            # caller-supplied density whose global peak the bounded search
+            # missed -- and it then surfaces as `inf`, loudly, rather than as
+            # a plausible number.
             with np.errstate(
                 divide="ignore", invalid="ignore", under="ignore", over="ignore"
             ):

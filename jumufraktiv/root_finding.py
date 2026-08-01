@@ -140,7 +140,7 @@ def bisectioned_newton_np(
     rel_tol: float = 1e-8,
 ) -> np.ndarray:
     """
-    Vectorised safeguarded Newton method (NumPy) – Newton with bisection fallback.
+    Vectorised safeguarded Newton method (NumPy) -- Newton with bisection fallback.
 
     This is the recommended method for general root finding. It maintains
     brackets [lower, upper] and uses Newton steps when they stay within
@@ -349,16 +349,16 @@ def solve_root(
     f : callable
         Function f(x) whose roots are sought.
     df : callable, optional
-        Derivative f'(x). Required for Newton‑based methods.
+        Derivative f'(x). Required for Newton-based methods.
     x0 : array-like, optional
-        Initial guesses. Required for Newton‑based methods.
+        Initial guesses. Required for Newton-based methods.
     lower : array-like, optional
-        Lower brackets. Required for bisection‑based methods.
+        Lower brackets. Required for bisection-based methods.
     upper : array-like, optional
-        Upper brackets. Required for bisection‑based methods.
+        Upper brackets. Required for bisection-based methods.
     root_method : str, optional
         One of:
-            "auto"                      – try methods in order, skipping those with missing args.
+            "auto"                      -- try methods in order, skipping those with missing args.
             "bisectioned-newton-jax"
             "newton-jax"
             "bisection-jax"

@@ -47,9 +47,9 @@ def readyGompertz(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) β. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -68,7 +68,7 @@ def readyGompertz(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle scale ----
     if _is_1d_dataframe(scale):
@@ -100,14 +100,14 @@ def readyGompertz(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitGompertz(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Gompertz likelihood.
+    Compute per-element sufficient statistics for a Gompertz likelihood.
 
     For each observation y_i and known scale β_i:
         a_i = 1
@@ -116,9 +116,9 @@ def bereitGompertz(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) β. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -130,7 +130,7 @@ def bereitGompertz(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -150,7 +150,7 @@ def bereitGompertz(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Gompertz likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     exp_term = np.exp(scale_vals * data_vals)
     b_vals = exp_term - 1.0

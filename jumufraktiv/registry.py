@@ -1,7 +1,7 @@
 """
 registry.py
 
-Global registry for prior distributions in the MGF‑marginalisable framework.
+Global registry for prior distributions in the MGF-marginalisable framework.
 
 This module manages the registration and retrieval of prior factories.
 Priors are registered using the `@register_prior` decorator, typically
@@ -58,7 +58,7 @@ def register_prior(name: str):
 # ============================================================
 def initialize():
     """
-    Trigger import‑time discovery of all priors.
+    Trigger import-time discovery of all priors.
 
     This function imports `jumufraktiv.MGFdictionary`, which in turn imports all
     prior modules and runs their `@register_prior` decorators. It is safe to
@@ -78,8 +78,8 @@ def initialize():
     ImportError
         If the `MGFdictionary` subpackage itself cannot be imported. This is a
         packaging or installation fault rather than a missing optional backend,
-        so it is raised rather than downgraded to a warning — a registry that
-        quietly comes up empty produced silently wrong results before.
+        so it is raised, unlike a failure in an individual prior module, which
+        is recorded in `FAILED_MODULES` and only warned about.
     """
     global _LOADED
 

@@ -76,7 +76,7 @@ def heaviside_mgf(t_val: float, k_val: float) -> float:
 
 def heaviside_cgf_jax(t_val, k_val):
     """
-    JAX‑compatible CGF for the Heaviside prior.
+    JAX-compatible CGF for the Heaviside prior.
 
     Parameters
     ----------
@@ -95,7 +95,7 @@ def heaviside_cgf_jax(t_val, k_val):
 
 def heaviside_mgf_jax(t_val, k_val):
     """
-    JAX‑compatible MGF for the Heaviside prior.
+    JAX-compatible MGF for the Heaviside prior.
 
     Parameters
     ----------
@@ -132,19 +132,17 @@ def heaviside_pdf(theta_val, k_val: float):
     float or numpy.ndarray
         1.0 where theta >= k, else 0.0, with the shape of ``theta_val``.
     """
-    # `np.where`, not a Python conditional. The improper Heaviside prior's
-    # density is trivial, and that is exactly why it was written as
-    # `1.0 if theta_val >= k_val else 0.0` -- which raises "truth value of an
-    # array with more than one element is ambiguous" for any array of length
-    # above one. It survived only because every caller evaluated one point at
-    # a time; the moment the integrand is handed a vector of theta it fails,
-    # and it also failed for anyone calling `prior.pdf_func` on an array.
+    # `np.where`, not the Python conditional this trivial density invites.
+    # `1.0 if theta_val >= k_val else 0.0` raises "truth value of an array with
+    # more than one element is ambiguous" for any array longer than one, and
+    # both the quadrature integrand and `prior.pdf_func` are handed vectors of
+    # theta.
     return np.where(np.asarray(theta_val) >= k_val, 1.0, 0.0)
 
 
 def heaviside_logpdf(theta_val, k_val: float):
     """
-    Numeric log‑PDF for the Heaviside prior.
+    Numeric log-PDF for the Heaviside prior.
 
     Parameters
     ----------

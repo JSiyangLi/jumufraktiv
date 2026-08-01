@@ -1,18 +1,16 @@
 """
 symbolic_fractionalDeriv.py
 
-Symbolic computation of Liouville‑Caputo fractional derivatives of MGFs.
+Symbolic computation of Liouville-Caputo fractional derivatives of MGFs.
 
-This module implements the symbolic fractional derivative using the Laplace transform
-formula for the Liouville‑Caputo derivative:
-    D^α_{(-∞)+} f(x) = I^γ_{(-∞)+} f^{(n+1)}(x)
-where n = floor(α), γ = n+1-α, and the integral is represented as a combination
-of two Laplace transforms. If the Laplace transform fails or times out, the function
-falls back to the Mellin transform approach.
+This module evaluates the defining integral of the Liouville-Caputo derivative
+with lower terminal -∞ directly. Substituting x = t - z gives
+    D^α_{(-∞)+} M(t) = 1/Γ(γ) ∫_0^∞ z^{γ-1} M^{(n+1)}(t - z) dz
+where n = floor(α) and γ = n+1-α.
 
-The main function `fractionalDeriv_symbolic` attempts Laplace first, with a timeout
-(default 30s). If that fails or returns an unevaluated transform, it falls back to
-Mellin. If both fail, it returns None.
+The main function `fractionalDeriv_symbolic` hands that single integral to SymPy
+under a wall-clock budget (default 30s), and raises NotImplementedError when
+SymPy declines it or overruns.
 
 Supports both complete and incomplete MGFs via the `complete` flag.
 """
@@ -26,7 +24,7 @@ from jumufraktiv.symbolic_cache import cached_diff
 
 
 class FunctionTimedOut(TimeoutError):
-    """Raised when a symbolic transform exceeds its time budget."""
+    """Raised when a symbolic integration exceeds its time budget."""
 
 
 def func_timeout(timeout_seconds, func, args=()):
@@ -63,7 +61,7 @@ def func_timeout(timeout_seconds, func, args=()):
 
     The worker pool is shut down without waiting for that call to finish.
     ``ThreadPoolExecutor`` threads are non-daemon and joined by an ``atexit``
-    hook, so a still-running transform can delay interpreter exit even though
+    hook, so a still-running integration can delay interpreter exit even though
     this function has already returned.
     """
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -96,16 +94,15 @@ def fractionalDeriv_symbolic(
     timeout_seconds: float = 30.0
 ):
     """
-    Compute the Liouville‑Caputo fractional derivative.
+    Compute the Liouville-Caputo fractional derivative in closed form.
 
-    Tries Laplace transform with a timeout; if that fails, times out,
-    or returns unevaluated, falls back to Mellin transform with same timeout.
-    If Mellin also fails, returns None.
+    Evaluates the defining integral with SymPy, under the wall-clock budget
+    given by ``timeout_seconds``.
 
     Parameters
     ----------
     order : float
-        Fractional order (positive, non‑integer).
+        Fractional order (positive, non-integer).
     prior : mitMGFprior
         Prior object providing the symbolic MGF expression (mgf_sym).
     simplify : bool, optional
@@ -114,12 +111,20 @@ def fractionalDeriv_symbolic(
         If True (default), differentiate the complete MGF (prior.mgf_sym).
         If False, differentiate the incomplete MGF (prior.imgf_sym).
     timeout_seconds : float, optional
-        Timeout for each transform (default 30 seconds).
+        Time budget, in seconds, for the integration and again for the optional
+        simplification (default 30). A `simplify=True` call can therefore spend
+        it twice.
 
     Returns
     -------
-    sympy.Expr or None
-        Symbolic expression if successful, otherwise None.
+    sympy.Expr
+        The derivative, as an expression in the canonical symbol ``t``.
+
+    Raises
+    ------
+    NotImplementedError
+        If SymPy cannot evaluate the integral in closed form, or does not
+        finish within ``timeout_seconds``.
     """
     if order <= 0:
         raise ValueError("Fractional order must be positive.")
@@ -158,11 +163,7 @@ def fractionalDeriv_symbolic(
     #
     #     D^a M(t) = (1/Gamma(g)) * int_0^oo z^{g-1} M^{(n+1)}(t - z) dz
     #
-    # which SymPy can attempt as one integral. This replaces a Laplace leg and
-    # a Mellin fallback that between them returned nothing usable for any prior
-    # in the registry: Gamma raised inside `laplace_transform`, Pareto tripped a
-    # subscript on an unevaluated `Mul`, and uniform and heaviside did not
-    # return at all.
+    # which SymPy can attempt as one integral.
     #
     # `t` must be declared negative for the integral to converge -- it is the
     # evaluation point -b(y), which is never positive -- and the canonical
@@ -184,20 +185,16 @@ def fractionalDeriv_symbolic(
 
     prior_name = getattr(prior, "name", "this prior")
 
-    # The timeout stays, but not for the reason an earlier analysis gave.
+    # The timeout guards a user-supplied prior rather than the registry's four,
+    # which all return from the integral in a fraction of a second.
+    # `sp.integrate` has no bound in general, so an unguarded call is a hang
+    # waiting for a prior nobody has tried.
     #
-    # That analysis concluded every registry prior returns within a fraction of
-    # a second, so this machinery could be deleted. The four registry priors do
-    # indeed all return from the integral quickly -- measured 0.02-0.29 s. But
-    # a prior is user-supplied, and `sp.integrate` has no bound in general, so
-    # an unguarded call is a hang waiting for a prior nobody tried.
-    #
-    # A related measurement is worth recording, because it is what the ordering
-    # below is for: `sp.simplify` on an *unevaluated* integral does not return
-    # (uniform at order 1.5, killed at 120 s), while `sp.integrate` on the same
-    # input takes 0.29 s. So the unevaluated case is rejected BEFORE any
-    # simplification is attempted, and the timeout covers the simplify step too
-    # rather than only the integral.
+    # It covers the simplify step as well as the integral, and the unevaluated
+    # case is rejected BEFORE any simplification is attempted: `sp.simplify`
+    # on an *unevaluated* integral does not return at all (uniform at order
+    # 1.5, still running at 120 s), where `sp.integrate` on the same input
+    # takes 0.29 s.
     def _guarded(fn):
         try:
             return func_timeout(timeout_seconds, fn, args=())
@@ -210,9 +207,8 @@ def fractionalDeriv_symbolic(
 
     raw = _guarded(_integral_attempt)
 
-    # The 1/Gamma(gamma) prefactor. Every numeric backend applies it; this
-    # module did not, so its result was Gamma(gamma) times too large -- 77% at
-    # order 0.5. That was invisible because nothing ever returned an expression.
+    # The 1/Gamma(gamma) prefactor, which every backend must apply. Omitting it
+    # leaves the result Gamma(gamma) times too large -- 77% at order 0.5.
     frac_expr = raw / sp.gamma(gamma_order)
 
     if frac_expr.has(sp.Integral) or _is_unevaluated_transform(frac_expr):

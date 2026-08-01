@@ -1,24 +1,30 @@
 """
-Pareto MGF and related functions for symbolic, numeric, JAX, and Torch.
+Pareto MGF and related functions for symbolic, numeric (SciPy) and JAX use.
 
-This module provides the Pareto distribution in the MGF‑marginalisable framework.
+This module provides the Pareto distribution in the MGF-marginalisable framework.
 The MGF is expressed in terms of the exponential integral E_α(z).
 
-The incomplete MGF (upper‑truncated) is also provided, using the upper incomplete
-gamma function Γ(a, z). Numerically, this is computed via `scipy.special.gammaincc`
-and `scipy.special.gamma`, which can suffer from underflow/overflow for extreme
-parameter values. The log‑scale versions attempt to mitigate this, but stability
-is not guaranteed for very small or very large arguments.
+The incomplete MGF (upper-truncated at u) is also provided.
 
-**Numerical stability notes:**
-- `pareto_cgf` and `pareto_cgf_jax` rely on `log(gammaincc(-alpha, z))`.
-  Since SciPy and JAX do not provide a log‑scale version of `gammaincc`,
-  this term can underflow (→ -inf) or overflow (→ inf) for extreme values
-  of `z` or `alpha`. This is a known limitation of the current implementation.
-- The incomplete MGF functions (`pareto_imgf`, `pareto_logimgf`, and their JAX
-  counterparts) face similar issues because they combine `gammaincc` and `gamma`.
+Both the complete and the incomplete MGF need Γ(−α, z), an upper incomplete
+gamma of *negative* order — the incomplete one as a difference of two. SciPy's
+`gammaincc` is the regularised form and is defined only for a positive first
+argument, so it cannot supply it; the value comes from the generalised
+exponential integral in arbitrary precision, via
+`_log_upper_gamma_negative_order`.
 
-Symbolic, numeric (SciPy), JAX, and optional Torch backends are supported.
+**Numerical notes:**
+- The logarithm is taken inside the arbitrary-precision evaluation, so
+  `pareto_cgf` and `pareto_logimgf` stay finite where Γ(−α, z) itself
+  underflows float64.
+- `pareto_logimgf` is a difference of two such terms and forms it with
+  `logminus`, the log of a difference, rather than subtracting two logs — the
+  two coincide as `u` approaches `xi`.
+- JAX has neither an incomplete gamma at negative order nor an exponential
+  integral at real order, so every JAX entry point here raises
+  `NotImplementedError`. Use a SciPy backend for a Pareto prior.
+
+Symbolic and numeric (SciPy) backends are supported.
 """
 
 import math
@@ -26,11 +32,8 @@ import math
 import jax.numpy as jnp
 import mpmath as mp
 import numpy as np
-import scipy.special as sc
 import scipy.stats as stats
 import sympy as sp
-from jax.scipy.special import gammaincc as jax_gammaincc
-from jax.scipy.special import gammaln as jax_gammaln
 from sympy.functions.special.error_functions import expint
 
 from jumufraktiv.logsum import logminus
@@ -50,15 +53,7 @@ xi = param("xi")
 
 def pareto_cgf(t_val: float, alpha_val: float, xi_val: float) -> float:
     """
-    Numeric CGF for the Pareto distribution (log‑space stable).
-
-    Notes
-    -----
-    The computation uses `scipy.special.gammaincc` and `scipy.special.gammaln`.
-    Since SciPy does not provide a log‑scale incomplete gamma function,
-    the term `log(gammaincc(...))` is computed directly. For very small or
-    very large arguments, this can underflow or overflow, leading to `-inf`
-    or `inf`. This is a known limitation of the current implementation.
+    Numeric CGF for the Pareto distribution (log-space stable).
 
     Parameters
     ----------
@@ -78,6 +73,16 @@ def pareto_cgf(t_val: float, alpha_val: float, xi_val: float) -> float:
     ------
     ValueError
         If t > 0.
+
+    Notes
+    -----
+    ``log M(t) = log alpha + alpha log z + log Gamma(-alpha, z)`` with
+    ``z = -xi t``. The last term is an upper incomplete gamma of negative
+    order, which :func:`_log_upper_gamma_negative_order` supplies; see its
+    Notes for why ``scipy.special.gammaincc`` cannot.
+
+    Taking the logarithm inside that evaluation keeps the result finite where
+    ``Gamma(-alpha, z)`` itself underflows float64.
     """
     if t_val > 0:
         raise ValueError("MGF of Pareto distribution exists only for t <= 0")
@@ -85,9 +90,11 @@ def pareto_cgf(t_val: float, alpha_val: float, xi_val: float) -> float:
         return 0.0
 
     z = -xi_val * t_val
-    # log(Γ(-alpha, z)) via gammaincc + gammaln
-    log_gamma_inc = np.log(sc.gammaincc(-alpha_val, z)) + sc.gammaln(-alpha_val)
-    return math.log(alpha_val) + alpha_val * math.log(z) + log_gamma_inc
+    return (
+        math.log(alpha_val)
+        + alpha_val * math.log(z)
+        + _log_upper_gamma_negative_order(-alpha_val, z)
+    )
 
 
 def pareto_mgf(t_val: float, alpha_val: float, xi_val: float) -> float:
@@ -117,13 +124,7 @@ def pareto_mgf(t_val: float, alpha_val: float, xi_val: float) -> float:
 
 def pareto_cgf_jax(t_val, alpha_val, xi_val):
     """
-    JAX‑compatible CGF for the Pareto distribution.
-
-    Notes
-    -----
-    The same numerical stability caveat applies as in `pareto_cgf`; JAX's
-    `gammaincc` does not have a log‑scale variant, so `log(gammaincc(...))`
-    may suffer from overflow/underflow for extreme parameters.
+    JAX-compatible CGF for the Pareto distribution.
 
     Parameters
     ----------
@@ -138,20 +139,27 @@ def pareto_cgf_jax(t_val, alpha_val, xi_val):
     -------
     JAX array
         log M(t).
+
+    Raises
+    ------
+    NotImplementedError
+        Always. The Pareto CGF needs ``Gamma(-alpha, z)``, an upper incomplete
+        gamma of negative order, and ``jax.scipy.special`` offers ``gammaincc``
+        for a positive first argument only and ``expn`` at integer order only.
+        :func:`pareto_cgf` computes it on the SciPy side.
     """
-    def safe_log(t):
-        z = -xi_val * t
-        a = -alpha_val
-        log_gamma_a = jax_gammaln(a)
-        log_q = jnp.log(jax_gammaincc(a, z))
-        log_inc_gamma = log_gamma_a + log_q
-        return jnp.log(alpha_val) + alpha_val * jnp.log(z) + log_inc_gamma
-    return jnp.where(t_val == 0.0, 0.0, safe_log(t_val))
+    raise NotImplementedError(
+        "The Pareto CGF has no JAX implementation. It requires the upper "
+        "incomplete gamma at negative order, equivalently the generalised "
+        "exponential integral E_{1+alpha} at real order, and "
+        "jax.scipy.special provides neither. Use a non-JAX backend for a "
+        "Pareto prior."
+    )
 
 
 def pareto_mgf_jax(t_val, alpha_val, xi_val):
     """
-    JAX‑compatible MGF for the Pareto distribution.
+    JAX-compatible MGF for the Pareto distribution.
 
     Parameters
     ----------
@@ -175,12 +183,12 @@ def pareto_mgf_jax(t_val, alpha_val, xi_val):
 # ============================================================
 
 # ============================================================
-# Incomplete MGF (upper‑truncated at u)
+# Incomplete MGF (upper-truncated at u)
 # ============================================================
 
 def pareto_imgf_symbolic(u_sym):
     """
-    Symbolic expression for the upper‑truncated Pareto MGF.
+    Symbolic expression for the upper-truncated Pareto MGF.
 
     Parameters
     ----------
@@ -252,7 +260,7 @@ def _log_upper_gamma_negative_order(a, z):
 
 def pareto_imgf(t_val, alpha_val, xi_val, u_val):
     """
-    Numeric upper‑truncated Pareto MGF (ordinary scale).
+    Numeric upper-truncated Pareto MGF (ordinary scale).
 
     Parameters
     ----------
@@ -280,7 +288,7 @@ def pareto_imgf(t_val, alpha_val, xi_val, u_val):
 
 def pareto_logimgf(t_val, alpha_val, xi_val, u_val):
     """
-    Numeric log‑incomplete MGF for the Pareto distribution.
+    Numeric log-incomplete MGF for the Pareto distribution.
 
     Parameters
     ----------
@@ -349,7 +357,7 @@ def pareto_logimgf(t_val, alpha_val, xi_val, u_val):
 # ---- JAX ----
 def pareto_imgf_jax(t_val, alpha_val, xi_val, u_val):
     """
-    JAX‑compatible upper‑truncated Pareto MGF.
+    JAX-compatible upper-truncated Pareto MGF.
 
     Parameters
     ----------
@@ -380,11 +388,6 @@ def pareto_imgf_jax(t_val, alpha_val, xi_val, u_val):
     at integer order only and ``gammaincc`` for a positive first argument only,
     so neither reaches it for a general ``alpha``.
 
-    Refusing is the whole repair. The previous body called ``jnp.gamma``, which
-    does not exist, so it raised ``AttributeError`` from inside a traced
-    computation -- naming a missing attribute rather than a missing capability,
-    and only once a backend had already committed to this route.
-
     :func:`pareto_logimgf` computes it correctly on the SciPy side, so a caller
     who reaches this should use a non-JAX integer backend.
     """
@@ -399,7 +402,7 @@ def pareto_imgf_jax(t_val, alpha_val, xi_val, u_val):
 
 def pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val):
     """
-    JAX‑compatible log‑incomplete MGF for the Pareto distribution.
+    JAX-compatible log-incomplete MGF for the Pareto distribution.
 
     Parameters
     ----------
@@ -420,9 +423,9 @@ def pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val):
     Raises
     ------
     NotImplementedError
-        Always, for the reason given in :func:`pareto_imgf_jax`. It applied
-        equally here: ``jax_gammaincc(-alpha, z)`` is outside ``gammaincc``'s
-        domain, so this returned ``nan`` at every argument rather than raising.
+        Always, for the reason given in :func:`pareto_imgf_jax`, which applies
+        equally in log space: ``jax_gammaincc(-alpha, z)`` is outside
+        ``gammaincc``'s domain.
     """
     raise NotImplementedError(
         "The Pareto incomplete MGF has no JAX implementation. It requires the "
@@ -449,12 +452,11 @@ def pareto_factory(params):
     imgf_sym = pareto_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
-    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
-    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
-    # docstring -- 440 us of work, before any density is evaluated. Written
-    # inside the lambda it ran on every call, and the density is the innermost
-    # thing in the package: every quadrature node calls it. Hoisted, the same
-    # call costs 41 us for identical values.
+    # Freeze the SciPy distribution ONCE, here rather than inside the lambdas
+    # below. `stats.<dist>(params)` builds an `rv_frozen`, and building one runs
+    # `_construct_doc`, which formats a docstring -- about 440 us before any
+    # density is evaluated. The density is the innermost thing in the package,
+    # called at every quadrature node, so it must not be rebuilt per call.
     frozen = stats.pareto(b=alpha_val, scale=xi_val)
 
     # Substitute numeric parameter values
@@ -478,7 +480,7 @@ def pareto_factory(params):
 
         pdf_func=frozen.pdf,
         logpdf_func=frozen.logpdf,
-        
+
         # Incomplete MGF (truncated at u)
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,

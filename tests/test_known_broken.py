@@ -530,3 +530,67 @@ def test_post_sample_is_reproducible(poisson_posterior):
     # And a different seed must give a different draw, or the test above would
     # also pass for a method that ignored `rng` and returned a constant.
     assert not np.array_equal(first, poisson_posterior.post_sample(8, rng=1))
+
+
+def test_pareto_complete_mgf_is_finite():
+    """The same `gammaincc(-alpha, z)` domain error, in the complete MGF.
+
+    Repairing `pareto_imgf` and `pareto_logimgf` left `pareto_cgf` and
+    `pareto_mgf` on the same broken call two functions away, and those are
+    wired into the prior spec as its numeric `cgf` and `mgf`, so `prior.mgf(t)`
+    returned `nan` at every argument.
+    """
+    import mpmath as mp
+
+    mp.mp.dps = 40
+    prior = _pareto_prior()
+
+    def density(theta):
+        return mp.e ** (-theta) * 3 / theta**4
+
+    expected = float(mp.quad(density, [1, mp.inf]))
+
+    assert prior.mgf(-1.0) == pytest.approx(expected, rel=1e-12)
+    assert prior.cgf(-1.0) == pytest.approx(float(np.log(expected)), rel=1e-12)
+    assert prior.cgf(0.0) == 0.0
+
+
+def test_pareto_jax_complete_mgf_refuses_clearly():
+    """JAX cannot express the complete MGF either, for the same reason."""
+    for method in ("mgf_jax", "cgf_jax"):
+        with pytest.raises(NotImplementedError, match=r"jax\.scipy\.special"):
+            getattr(_pareto_prior(), method)(-1.0)
+
+
+def test_symbolic_joint_predictive_accepts_an_array():
+    """`individual=False` on a symbolic posterior raised for every input.
+
+    The helper wrapped its argument as `[x]`, so the joint branch's array
+    became two-dimensional and `_extract_1d` rejected it -- meaning the joint
+    symbolic predictive could not be computed at all. Checked against the
+    numeric posterior for the same prior, which takes a different code path.
+    """
+    from test_symbolic_correctness import _gamma_mgf, _gamma_pdf
+
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    params = {"alpha": 2.0, "beta": 3.0}
+    symbolic = mitMGFprior(
+        name="gamma_substituted",
+        mgf_sym=_gamma_mgf(),
+        pdf_sym=_gamma_pdf(),
+        params=params,
+    ).as_mitMGFprior()
+    numeric = mitMGFprior.from_registry("gamma", params=params)
+
+    def posterior(prior, **kwargs):
+        return MGFDerivative(
+            prior, data=[1, 2, 3], likelihood="poisson", scale=1.0, **kwargs
+        )
+
+    joint_symbolic = posterior(symbolic, method="symbolic").post_predictive(
+        [2.0, 3.0], individual=False
+    )
+    joint_numeric = posterior(numeric).post_predictive([2.0, 3.0], individual=False)
+
+    assert float(joint_symbolic) == pytest.approx(float(joint_numeric), rel=1e-10)

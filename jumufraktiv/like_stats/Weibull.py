@@ -53,9 +53,9 @@ def readyWeibull(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    rho : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    rho : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s) ρ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -74,7 +74,7 @@ def readyWeibull(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle rho ----
     if _is_1d_dataframe(rho):
@@ -105,14 +105,14 @@ def readyWeibull(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitWeibull(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     rho: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Weibull likelihood.
+    Compute per-element sufficient statistics for a Weibull likelihood.
 
     For each observation y_i and known shape ρ_i:
         a_i = 1
@@ -121,9 +121,9 @@ def bereitWeibull(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    rho : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    rho : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s) ρ. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -135,7 +135,7 @@ def bereitWeibull(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle rho ----
     if _is_1d_dataframe(rho):
@@ -155,7 +155,7 @@ def bereitWeibull(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Weibull likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     b_vals = data_vals ** rho_vals
     log_c_vals = np.log(rho_vals) + (rho_vals - 1.0) * np.log(data_vals)

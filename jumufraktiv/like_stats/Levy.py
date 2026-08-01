@@ -48,9 +48,9 @@ def readyLevy(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
-    location : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    location : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known location parameter(s) μ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -69,7 +69,7 @@ def readyLevy(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle location ----
     if _is_1d_dataframe(location):
@@ -99,14 +99,14 @@ def readyLevy(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitLevy(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Lévy likelihood.
+    Compute per-element sufficient statistics for a Lévy likelihood.
 
     For each observation y_i and known location μ_i:
         a_i = 0.5
@@ -115,9 +115,9 @@ def bereitLevy(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
-    location : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    location : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known location parameter(s) μ. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -129,7 +129,7 @@ def bereitLevy(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle location ----
     if _is_1d_dataframe(location):
@@ -148,7 +148,7 @@ def bereitLevy(
     if np.any(diff <= 0):
         raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.full(n, 0.5)
     b_vals = 1.0 / (2.0 * diff)
     log_c_vals = -0.5 * np.log(2.0 * np.pi) - 1.5 * np.log(diff)

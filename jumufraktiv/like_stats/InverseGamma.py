@@ -1,9 +1,9 @@
 """
 InverseGamma.py
 
-Functions for preparing Inverse‑Gamma likelihood statistics for MGF marginalisation.
+Functions for preparing Inverse-Gamma likelihood statistics for MGF marginalisation.
 
-For an Inverse‑Gamma distribution with known shape α (scalar or vector) and unknown rate β,
+For an Inverse-Gamma distribution with known shape α (scalar or vector) and unknown rate β,
 the density for y > 0 is:
 
     f(y; α, β) = β^α / Γ(α) * y^{-α-1} * exp(-β / y)
@@ -36,7 +36,7 @@ def readyInverseGamma(
     **kwargs
 ) -> dict[str, float | int]:
     """
-    Compute sufficient statistics for an Inverse‑Gamma likelihood with known shape.
+    Compute sufficient statistics for an Inverse-Gamma likelihood with known shape.
 
     The likelihood (in terms of rate β) is:
         L(β; y) = (y^{-α-1} / Γ(α)) * β^α * exp(-β / y)
@@ -48,9 +48,9 @@ def readyInverseGamma(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    shape : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    shape : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s) α. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -68,7 +68,7 @@ def readyInverseGamma(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle shape ----
     if _is_1d_dataframe(shape):
@@ -86,7 +86,7 @@ def readyInverseGamma(
     if np.any(shape_vals <= 0):
         raise ValueError("shape values must be positive.")
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Inverse‑Gamma likelihood.")
+        raise ValueError("data values must be positive for Inverse-Gamma likelihood.")
 
     # ---- Vectorized sums ----
     a = np.sum(shape_vals)
@@ -105,7 +105,7 @@ def bereitInverseGamma(
     **kwargs
 ) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for an Inverse‑Gamma likelihood.
+    Compute per-element sufficient statistics for an Inverse-Gamma likelihood.
 
     For each observation y_i and known shape α_i:
         a_i = α_i
@@ -114,9 +114,9 @@ def bereitInverseGamma(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    shape : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    shape : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s) α. If scalar, recycled; if vector, same length as data.
 
     Returns
@@ -127,7 +127,7 @@ def bereitInverseGamma(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle shape ----
     if _is_1d_dataframe(shape):
@@ -145,9 +145,9 @@ def bereitInverseGamma(
     if np.any(shape_vals <= 0):
         raise ValueError("shape values must be positive.")
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Inverse‑Gamma likelihood.")
+        raise ValueError("data values must be positive for Inverse-Gamma likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = shape_vals
     b_vals = 1.0 / data_vals
     log_c_vals = -(shape_vals + 1.0) * np.log(data_vals) - gammaln(shape_vals)
@@ -161,7 +161,7 @@ def bereitInverseGamma(
 
 def cInverseGamma() -> sp.Expr:
     """
-    Return a symbolic expression for the Inverse‑Gamma normalising constant:
+    Return a symbolic expression for the Inverse-Gamma normalising constant:
 
         ∏_{i=1}^{n} ( y_i^{-α_i-1} / Γ(α_i) )
 

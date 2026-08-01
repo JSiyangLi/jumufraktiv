@@ -1,14 +1,14 @@
 """
 symbolic_integerDeriv.py
 
-Symbolic differentiation of moment‑generating functions (MGFs) with respect to t.
+Symbolic differentiation of moment-generating functions (MGFs) with respect to t.
 
 This module provides a single function `integerDeriv_symbolic` that computes
 the symbolic derivative of order `order` of either the complete MGF or the
 incomplete MGF (iMGF) of a given prior. The derivative is returned as a
 SymPy expression.
 
-The function respects the **symbol‑numeric principle** in the sense that
+The function respects the **symbol-numeric principle** in the sense that
 it always returns a symbolic expression; numeric evaluation is handled by
 the caller (e.g., by substituting numeric values for `t` and evaluating
 with `.evalf()`).
@@ -48,24 +48,25 @@ def _as_integer_order(order):
 
     Notes
     -----
-    The previous guard was ``isinstance(order, int)``, which rejected
-    ``sympy.Integer(2)`` -- an integer by every meaning except Python's type
-    check. Since the dispatcher hands this function whatever the caller passed,
-    and SymPy arithmetic naturally produces ``sympy.Integer``, that made the
-    symbolic row of the backend matrix unreachable even for ordinary integer
-    orders.
+    An integer-valued order is accepted whatever its type -- Python ``int``,
+    NumPy integer, or a SymPy expression that evaluates to an integer and
+    carries no free symbols -- and is always returned as a Python ``int``. A
+    boolean is refused, as is a genuinely fractional order.
 
-    A genuinely symbolic order is a different matter and is still refused, but
-    with an accurate reason. ``sympy.diff(expr, t, n)`` needs a concrete number
-    of times to differentiate; it cannot produce a formula in ``n``. The old
-    message called this a limitation of SymPy's support for "symbolic
-    differentiation", which is not what is missing -- SymPy differentiates
-    symbolically, it just cannot do so an unspecified number of times.
+    An order carrying free symbols is refused because ``sympy.diff(expr, t, n)``
+    needs a concrete number of times to differentiate; SymPy differentiates
+    symbolically, but it cannot do so an unspecified number of times, and there
+    is no formula in ``n`` to return.
     """
     if isinstance(order, bool):
         raise NotImplementedError(
             "Derivative order must be an integer, not a boolean."
         )
+    # The accepted types are wider than `isinstance(order, int)` on purpose:
+    # the dispatcher passes on whatever the caller supplied, and SymPy
+    # arithmetic produces `sympy.Integer` routinely, so narrowing the check
+    # back to Python's `int` makes the symbolic backend unreachable for
+    # ordinary integer orders.
     if isinstance(order, (int, np.integer)):
         return int(order)
 
@@ -104,7 +105,9 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
     Parameters
     ----------
     order : int
-        Order of differentiation (non‑negative integer).
+        Order of differentiation: non-negative and integer-valued. A NumPy
+        integer, or a SymPy expression that evaluates to an integer and carries
+        no free symbols, is accepted as well.
     prior : mitMGFprior
         Prior object providing the symbolic MGF expression (mgf_sym) and optionally
         the incomplete MGF expression (imgf_sym).
@@ -125,8 +128,8 @@ def integerDeriv_symbolic(order: int, prior: mitMGFprior, simplify: bool = False
         If order is negative, or if `complete=False` and `imgf_sym` is missing.
     RuntimeError
         If no 't' symbol is found in the chosen expression.
-    TypeError
-        If order is not an integer.
+    NotImplementedError
+        If order is not integer-valued, or still carries free symbols.
     """
     order = _as_integer_order(order)
     if order < 0:

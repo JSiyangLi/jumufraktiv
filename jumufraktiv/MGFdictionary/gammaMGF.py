@@ -1,7 +1,7 @@
 """
 gammaMGF.py
 
-Functions for the Gamma prior in the MGF‑marginalisable framework.
+Functions for the Gamma prior in the MGF-marginalisable framework.
 
 The Gamma distribution (in terms of rate β) has density:
     p(θ; α, β) = (β^α / Γ(α)) * θ^{α-1} * exp(-β θ)
@@ -13,29 +13,15 @@ The CGF is:
     K(t) = α (log β - log(β - t)),  for t < β.
 
 This module provides:
-- **Incomplete MGF** (iMGF) for the lower‑truncated Gamma distribution:
+- **Incomplete MGF** (iMGF) for the lower-truncated Gamma distribution:
     M_inc(t; α, β, u) = (β/(β−t))^α * γ(α, (β−t)u) / Γ(α),
   with t < β and u > 0, in symbolic, numeric (SciPy) and JAX forms.
 - ``gamma_factory``, which the registry calls to build the prior. It writes
-  the complete MGF, CGF and PDF out inline, symbolically and as callables.
-
-The complete MGF, CGF and PDF used to be defined twice: once as named
-module-level functions and again, identically, inside ``gamma_factory``. The
-factory's copies are the ones the package ran; the named ones were reachable
-only by importing them directly, and two of them were wrong -- see the
-"Errors" note below. They are gone, so there is one definition of each.
+  the complete MGF, CGF and PDF out inline, symbolically and as callables, and
+  is the single definition of each.
 
 The Gamma prior is numerically stable for all parameter values; no special
 caveats apply.
-
-Errors
-------
-``gamma_cgf`` and ``gamma_mgf`` used ``logminus(log β, log(β−t))`` as though
-it meant "log minus", a difference of two logs. It means "log of a
-difference", ``log(e^x − e^y)``. At α=2, β=3, t=−1 the pair returned
-``-inf`` and ``0.0`` where the true values are ``-0.5753641449035618`` and
-``0.5625``: wrong at every argument, and wrong *quietly*, since ``0.0`` is a
-perfectly well-formed MGF value. ``logminus`` itself was repaired in PR 6a.
 """
 
 import jax.numpy as jnp
@@ -63,7 +49,7 @@ beta = param("beta")
 
 def gamma_imgf_symbolic(u_sym):
     """
-    Symbolic expression for the lower‑truncated Gamma MGF.
+    Symbolic expression for the lower-truncated Gamma MGF.
 
     Parameters
     ----------
@@ -116,7 +102,7 @@ def gamma_imgf(t_val, alpha_val, beta_val, u_val):
 
 def gamma_logimgf(t_val, alpha_val, beta_val, u_val):
     """
-    Numeric log‑incomplete MGF (vectorised, stable).
+    Numeric log-incomplete MGF (vectorised, stable).
 
     Parameters
     ----------
@@ -152,7 +138,7 @@ def gamma_logimgf(t_val, alpha_val, beta_val, u_val):
 
 def gamma_imgf_jax(t_val, alpha_val, beta_val, u_val):
     """
-    JAX‑compatible incomplete MGF (JIT‑compatible, vectorised).
+    JAX-compatible incomplete MGF (JIT-compatible, vectorised).
 
     Parameters
     ----------
@@ -177,7 +163,7 @@ def gamma_imgf_jax(t_val, alpha_val, beta_val, u_val):
 
 def gamma_logimgf_jax(t_val, alpha_val, beta_val, u_val):
     """
-    JAX‑compatible log‑incomplete MGF (JIT‑compatible, vectorised).
+    JAX-compatible log-incomplete MGF (JIT-compatible, vectorised).
 
     Parameters
     ----------
@@ -217,12 +203,11 @@ def gamma_factory(params):
     imgf_sym = gamma_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
-    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
-    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
-    # docstring -- 430 us of work, before any density is evaluated. Written
-    # inside the lambda it ran on every call, and the density is the innermost
-    # thing in the package: every quadrature node calls it. Hoisted, the same
-    # call costs 41 us for identical values.
+    # Freeze the SciPy distribution ONCE, here rather than inside the lambdas
+    # below. `stats.<dist>(params)` builds an `rv_frozen`, and building one runs
+    # `_construct_doc`, which formats a docstring -- about 430 us before any
+    # density is evaluated. The density is the innermost thing in the package,
+    # called at every quadrature node, so it must not be rebuilt per call.
     frozen = scipy_gamma(a=alpha_val, scale=1.0 / beta_val)
 
     # Substitute numeric parameter values into the symbolic expressions
@@ -251,7 +236,7 @@ def gamma_factory(params):
 
         pdf_func=frozen.pdf,
         logpdf_func=frozen.logpdf,
-        
+
         # ---- Incomplete MGF (truncated at u) ----
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
