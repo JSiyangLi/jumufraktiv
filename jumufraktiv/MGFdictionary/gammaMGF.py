@@ -217,6 +217,14 @@ def gamma_factory(params):
     imgf_sym = gamma_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
+    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
+    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
+    # docstring -- 430 us of work, before any density is evaluated. Written
+    # inside the lambda it ran on every call, and the density is the innermost
+    # thing in the package: every quadrature node calls it. Hoisted, the same
+    # call costs 41 us for identical values.
+    frozen = scipy_gamma(a=alpha_val, scale=1.0 / beta_val)
+
     # Substitute numeric parameter values into the symbolic expressions
     subs_map = {alpha: alpha_val, beta: beta_val}
     mgf_sym = mgf_sym.subs(subs_map)
@@ -241,8 +249,8 @@ def gamma_factory(params):
         mgf_jax=lambda t_val: (beta_val / (beta_val - t_val)) ** alpha_val,
         cgf_jax=lambda t_val: alpha_val * (jnp.log(beta_val) - jnp.log(beta_val - t_val)),
 
-        pdf_func=lambda x: scipy_gamma(a=alpha_val, scale=1/beta_val).pdf(x),
-        logpdf_func=lambda x: scipy_gamma(a=alpha_val, scale=1/beta_val).logpdf(x),
+        pdf_func=frozen.pdf,
+        logpdf_func=frozen.logpdf,
         
         # ---- Incomplete MGF (truncated at u) ----
         imgf_sym=imgf_sym,

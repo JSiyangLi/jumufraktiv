@@ -132,7 +132,14 @@ def heaviside_pdf(theta_val: float, k_val: float) -> float:
     float
         1.0 if theta >= k, else 0.0.
     """
-    return 1.0 if theta_val >= k_val else 0.0
+    # `np.where`, not a Python conditional. The improper Heaviside prior's
+    # density is trivial, and that is exactly why it was written as
+    # `1.0 if theta_val >= k_val else 0.0` -- which raises "truth value of an
+    # array with more than one element is ambiguous" for any array of length
+    # above one. It survived only because every caller evaluated one point at
+    # a time; the moment the integrand is handed a vector of theta it fails,
+    # and it also failed for anyone calling `prior.pdf_func` on an array.
+    return np.where(np.asarray(theta_val) >= k_val, 1.0, 0.0)
 
 
 def heaviside_logpdf(theta_val: float, k_val: float) -> float:
@@ -151,7 +158,7 @@ def heaviside_logpdf(theta_val: float, k_val: float) -> float:
     float
         0.0 if theta >= k, else -inf.
     """
-    return 0.0 if theta_val >= k_val else -np.inf
+    return np.where(np.asarray(theta_val) >= k_val, 0.0, -np.inf)
 
 
 # ============================================================

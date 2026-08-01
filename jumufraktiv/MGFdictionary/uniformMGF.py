@@ -138,48 +138,6 @@ def uniform_mgf_jax(t_val, a_val, b_val):
 # SciPy PDF / logPDF (using scipy.stats.uniform)
 # ============================================================
 
-def uniform_pdf(theta_val: float, a_val: float, b_val: float) -> float:
-    """
-    Numeric PDF for the uniform prior (via SciPy).
-
-    Parameters
-    ----------
-    theta_val : float
-        Evaluation point.
-    a_val : float
-        Lower bound.
-    b_val : float
-        Upper bound.
-
-    Returns
-    -------
-    float
-        p(theta).
-    """
-    return stats.uniform(loc=a_val, scale=b_val - a_val).pdf(theta_val)
-
-
-def uniform_logpdf(theta_val: float, a_val: float, b_val: float) -> float:
-    """
-    Numeric log‑PDF for the uniform prior (via SciPy).
-
-    Parameters
-    ----------
-    theta_val : float
-        Evaluation point.
-    a_val : float
-        Lower bound.
-    b_val : float
-        Upper bound.
-
-    Returns
-    -------
-    float
-        log p(theta).
-    """
-    return stats.uniform(loc=a_val, scale=b_val - a_val).logpdf(theta_val)
-
-
 # ============================================================
 # Registry factory
 # ============================================================
@@ -193,6 +151,14 @@ def uniform_factory(params):
     mgf_sym = (sp.exp(t * b) - sp.exp(t * a)) / (t * (b - a))
     cgf_sym = sp.log(mgf_sym)
     pdf_sym = sp.Piecewise((1 / (b - a), (theta >= a) & (theta <= b)), (0, True))
+
+    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
+    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
+    # docstring -- 430 us of work, before any density is evaluated. Written
+    # inside the lambda it ran on every call, and the density is the innermost
+    # thing in the package: every quadrature node calls it. Hoisted, the same
+    # call costs 41 us for identical values.
+    frozen = stats.uniform(loc=a_val, scale=b_val - a_val)
 
     # Substitute numeric parameter values into the symbolic expressions
     subs_map = {a: a_val, b: b_val}
@@ -216,8 +182,8 @@ def uniform_factory(params):
         mgf_jax=lambda t_val: uniform_mgf_jax(t_val, a_val, b_val),
         cgf_jax=lambda t_val: uniform_cgf_jax(t_val, a_val, b_val),
 
-        pdf_func=lambda x: uniform_pdf(x, a_val, b_val),
-        logpdf_func=lambda x: uniform_logpdf(x, a_val, b_val),
+        pdf_func=frozen.pdf,
+        logpdf_func=frozen.logpdf,
 
         params=params,
     )

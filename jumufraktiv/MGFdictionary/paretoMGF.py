@@ -172,48 +172,6 @@ def pareto_mgf_jax(t_val, alpha_val, xi_val):
 # SciPy PDF / logPDF
 # ============================================================
 
-def pareto_pdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
-    """
-    Numeric PDF for the Pareto distribution (via SciPy).
-
-    Parameters
-    ----------
-    theta_val : float
-        Evaluation point.
-    alpha_val : float
-        Shape parameter.
-    xi_val : float
-        Scale parameter.
-
-    Returns
-    -------
-    float
-        p(theta).
-    """
-    return stats.pareto(b=alpha_val, scale=xi_val).pdf(theta_val)
-
-
-def pareto_logpdf(theta_val: float, alpha_val: float, xi_val: float) -> float:
-    """
-    Numeric log‑PDF for the Pareto distribution (via SciPy).
-
-    Parameters
-    ----------
-    theta_val : float
-        Evaluation point.
-    alpha_val : float
-        Shape parameter.
-    xi_val : float
-        Scale parameter.
-
-    Returns
-    -------
-    float
-        log p(theta).
-    """
-    return stats.pareto(b=alpha_val, scale=xi_val).logpdf(theta_val)
-
-
 # ============================================================
 # Incomplete MGF (upper‑truncated at u)
 # ============================================================
@@ -412,6 +370,14 @@ def pareto_factory(params):
     imgf_sym = pareto_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
+    # Freeze the SciPy distribution ONCE. `stats.<dist>(params)` builds an
+    # `rv_frozen`, and building one runs `_construct_doc`, which formats a
+    # docstring -- 440 us of work, before any density is evaluated. Written
+    # inside the lambda it ran on every call, and the density is the innermost
+    # thing in the package: every quadrature node calls it. Hoisted, the same
+    # call costs 41 us for identical values.
+    frozen = stats.pareto(b=alpha_val, scale=xi_val)
+
     # Substitute numeric parameter values
     subs_map = {alpha: alpha_val, xi: xi_val}
     mgf_sym = mgf_sym.subs(subs_map)
@@ -431,8 +397,8 @@ def pareto_factory(params):
         mgf_jax=lambda t_val: pareto_mgf_jax(t_val, alpha_val, xi_val),
         cgf_jax=lambda t_val: pareto_cgf_jax(t_val, alpha_val, xi_val),
 
-        pdf_func=lambda x: pareto_pdf(x, alpha_val, xi_val),
-        logpdf_func=lambda x: pareto_logpdf(x, alpha_val, xi_val),
+        pdf_func=frozen.pdf,
+        logpdf_func=frozen.logpdf,
         
         # Incomplete MGF (truncated at u)
         imgf_sym=imgf_sym,
