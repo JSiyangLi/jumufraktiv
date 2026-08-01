@@ -15,10 +15,10 @@ rather than being left implicit in behaviour tests.
 import numpy as np
 import pytest
 import sympy as sp
-from conftest import BETA, gamma_mgf_derivative_log
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from conftest import BETA, gamma_mgf_derivative_log
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.symbols import t as t_sym
 

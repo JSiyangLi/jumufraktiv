@@ -85,7 +85,7 @@ Quick start
    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
    post = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
 
-   log_evidence, sign = post.evidence()
+   log_evidence = post.evidence()
    log_density = post.post_density(0.5)
 
 Before you start
@@ -98,13 +98,35 @@ another package will serve you better.
    positive real line or a subset of it, but it must not include zero or
    negative values.
 
-2. **A supported likelihood.** Fourteen named likelihoods are built in:
-   Poisson, Laplace (known mean), Normal (known mean), half-normal, Rayleigh,
-   Maxwell-Boltzmann, Gamma (known shape), inverse-gamma (known shape),
-   Lévy (known location), Weibull (known ``rho`` = shape/scale), Burr XII
-   (known ``c``), Pareto (known scale), Dagum (known ``a`` and ``b``), and
-   Gompertz (known scale). Custom likelihoods are supported by supplying your
-   own ``a()``, ``b()`` and ``c()`` sufficient-statistic functions.
+2. **A supported likelihood.** Fourteen are built in. The name in the first
+   column is the string to pass as ``likelihood=``; the second column lists the
+   known parameters that likelihood needs as keyword arguments.
+
+   ======================= =================
+   ``likelihood=``         known parameters
+   ======================= =================
+   ``"poisson"``           ``scale``
+   ``"laplace"``           ``mean``
+   ``"normal"``            ``mean``
+   ``"halfnormal"``        none
+   ``"rayleigh"``          none
+   ``"maxwell-boltzmann"`` none
+   ``"gamma"``             ``shape``
+   ``"inverse gamma"``     ``shape``
+   ``"levy"``              ``location``
+   ``"weibull"``           ``rho``
+   ``"burrxii"``           ``known_shape``
+   ``"pareto"``            ``scale``
+   ``"dagum"``             ``r``, ``s``
+   ``"gompertz"``          ``scale``
+   ======================= =================
+
+   Adding a fifteenth means writing a module under ``jumufraktiv/like_stats/``
+   that supplies :math:`a(y)`, :math:`b(y)` and :math:`\log c(y)`, and
+   registering it — there is no runtime API for supplying those functions from
+   caller code. Theorem 4.1 of the reference gives the test for whether a
+   likelihood belongs to the family at all: it does if and only if it admits a
+   gamma conjugate prior.
 
 3. **A prior with a finite MGF.** Any prior works provided its MGF is finite on
    the negative half of the real line; improper priors whose MGF diverges there

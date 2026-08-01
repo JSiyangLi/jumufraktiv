@@ -7,6 +7,9 @@ a number is produced.
 
 import numpy as np
 import pytest
+from scipy.special import gammaln
+from scipy.stats import gamma as scipy_gamma
+
 from conftest import (
     POISSON_DATA,
     POISSON_SCALE,
@@ -15,9 +18,6 @@ from conftest import (
     gamma_mgf_derivative_log,
     poisson_log_evidence,
 )
-from scipy.special import gammaln
-from scipy.stats import gamma as scipy_gamma
-
 from jumufraktiv.derivativeDispatch import mgfDerivative
 
 

@@ -85,6 +85,22 @@ from jumufraktiv.root_finding import solve_root
 # signatures shadows.
 from jumufraktiv.symbols import r, t, theta, u
 
+#: Exception types the symbolic paths let through unchanged rather than
+#: re-raise as a generic RuntimeError.
+#:
+#: `NotImplementedError` is the package's "this cannot be done, here is what to
+#: do instead": a differentiation order carrying free symbols, a backend that
+#: declines a particular prior. Wrapping one costs the caller both the type
+#: they would catch and the advice in the message. SymPy raises it for the same
+#: meaning, so letting it through is right either way.
+#:
+#: Only that one type. `ValueError` and `TypeError` are what SymPy raises for
+#: its own internal conversion failures -- "Cannot convert expression to float"
+#: is a `TypeError` -- which is precisely the unexpected failure the wrapper
+#: exists to label with the quantity being built. The domain guards that raise
+#: `ValueError` run before these blocks and are unaffected.
+_DELIBERATE_REFUSALS = (NotImplementedError,)
+
 # ============================================================
 # Likelihood registry
 # ============================================================
@@ -335,12 +351,15 @@ class MGFDerivative:
     --------
     >>> from jumufraktiv.mitMGFprior_class import mitMGFprior
     >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
-    >>> gamma_params = {'alpha':2.0, 'beta':3.0}
-    >>> gamma_prior = mitMGFprior.from_registry('gamma', params=gamma_params)
-    >>> data = [1.0, 2.0]
-    >>> deriv = MGFDerivative(gamma_prior, data=data, likelihood='poisson', scale=1.0)
-    >>> log_evidence = deriv.evidence()
-    >>> print(log_evidence)
+    >>> prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    >>> deriv = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
+    >>> print(f"{deriv.evidence():.6f}")               # log marginal likelihood
+    -6.096596
+
+    >>> # The Gamma prior is conjugate to the Poisson likelihood, so this
+    >>> # posterior is exactly Gamma(8, 6).
+    >>> print(f"{deriv.post_cdf(1.0, log=False):.6f}")
+    0.256020
     """
     def __init__(
         self,
@@ -729,8 +748,14 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> log_evidence = deriv.evidence()
-        >>> print(f"log evidence = {log_evidence:.4f}")
+        >>> print(f"{deriv.evidence():.6f}")           # log p(y), the default
+        -6.096596
+
+        >>> # With `log=False` at construction the same call returns p(y).
+        >>> plain = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson",
+        ...                       scale=1.0, log=False)
+        >>> print(f"{plain.evidence():.6e}")
+        2.250514e-03
         """
 
         if self._is_symbolic:
@@ -803,16 +828,23 @@ class MGFDerivative:
         Examples
         --------
         >>> # Numeric evaluation at a single point
-        >>> deriv.post_density(0.2, log=False)
-        1.234567e+00
+        >>> print(f"{deriv.post_density(0.2, log=False):.6e}")
+        1.284802e-03
 
         >>> # Vectorised evaluation on a grid
-        >>> theta_grid = np.linspace(0.0, 1.0, 100)
-        >>> log_dens = deriv.post_density(theta_grid, log=True)
+        >>> log_dens = deriv.post_density(np.array([0.5, 1.0, 2.0]))
+        >>> log_dens.shape
+        (3,)
+        >>> print(f"{log_dens[1]:.6f}")
+        -0.191086
 
         >>> # Symbolic evaluation using the canonical symbol
         >>> from jumufraktiv.symbols import theta
-        >>> expr = deriv.post_density(theta, log=False)  # SymPy expression
+        >>> expr = deriv.post_density(theta, log=False)
+        >>> isinstance(expr, sp.Expr)
+        True
+        >>> print(f"{float(expr.subs(theta, 1.0)):.6f}")  # exp(-0.191086)
+        0.826062
         """
         # ---- Symbolic path ----
         if self._deriv_is_symbolic and (
@@ -899,6 +931,8 @@ class MGFDerivative:
                     # theta_val is None or Symbol: return expression
                     return log_post if log else sp.exp(log_post)
 
+            except _DELIBERATE_REFUSALS:
+                raise
             except Exception as e:
                 raise RuntimeError(
                     f"Symbolic posterior density computation failed: {e}"
@@ -1007,17 +1041,21 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> # Numeric evaluation at a single point
-        >>> deriv.post_cdf(0.2, log=False)
-        0.8574
+        >>> # Numeric evaluation at a single threshold
+        >>> print(f"{deriv.post_cdf(1.0, log=False):.6f}")
+        0.256020
 
-        >>> # Vectorised evaluation on a grid
-        >>> u_grid = np.linspace(0.0, 1.0, 100)
-        >>> log_cdf = deriv.post_cdf(u_grid, log=True)  # array of log-CDFs
+        >>> # Tuple-vectorisation: `t = -b` stays fixed, `u` broadcasts.
+        >>> log_cdf = deriv.post_cdf(np.array([0.5, 1.0, 2.0]))
+        >>> log_cdf.shape
+        (3,)
+        >>> print(f"{log_cdf[1]:.6f}")
+        -1.362499
 
-        >>> # Symbolic evaluation using the canonical symbol
-        >>> from jumufraktiv.symbols import u
-        >>> expr = deriv.post_cdf(u, log=False)  # SymPy expression
+        >>> # The log scale is the default, and keeps its precision in the
+        >>> # lower tail, where the CDF itself is a very small number.
+        >>> print(f"{deriv.post_cdf(0.05):.4f}")
+        -20.5026
         """
         # ---- Ensure iMGF support ----
         if not hasattr(self.prior, "has_iMGF") or not self.prior.has_iMGF():
@@ -1235,6 +1273,8 @@ class MGFDerivative:
                 return log_pred if log else sp.exp(log_pred)
             return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
 
+        except _DELIBERATE_REFUSALS:
+            raise
         except Exception as e:
             raise RuntimeError(f"Symbolic predictive computation failed: {e}") from e
 
@@ -1244,12 +1284,9 @@ class MGFDerivative:
         Compute the posterior predictive density (or log-density) for new data.
 
         This method respects the **symbol-numeric principle**: the return type
-        depends only on whether unresolved symbols remain.
-
-        - If `new_data` is a SymPy symbol, the posterior is symbolic, and a
-        symbolic expression for the predictive density is returned.
-        - If `new_data` is numeric (scalar or array), the predictive density
-        is evaluated numerically, supporting vectorisation.
+        depends only on whether unresolved symbols remain. Symbols may come
+        from the prior's hyperparameters, which give a symbolic expression for
+        the predictive density, but not from `new_data` itself -- see Raises.
 
         The `individual` flag controls the aggregation:
         - `individual=True` (default): returns a density for each element of `new_data`
@@ -1259,10 +1296,9 @@ class MGFDerivative:
 
         Parameters
         ----------
-        new_data : scalar, array-like, or sympy.Symbol
-            New observation(s). If array-like, each element is treated separately.
-            If a SymPy symbol, the posterior must be symbolic
-            (`self._is_symbolic` is True).
+        new_data : scalar or array-like
+            New observation(s), numeric. If array-like, each element is treated
+            separately.
         log : bool, optional
             If True, return log-density; otherwise ordinary density.
         individual : bool, optional
@@ -1275,9 +1311,19 @@ class MGFDerivative:
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
-            - If `new_data` is a scalar and numeric: returns a Python float.
-            - If `new_data` is array-like: returns a NumPy array of the same length.
-            - If `new_data` is a SymPy symbol: returns a SymPy expression.
+            - If `new_data` is a scalar: returns a Python float, or a SymPy
+              expression when the prior has free hyperparameters.
+            - If `new_data` is array-like: returns a NumPy array of the same
+              length, or a list of expressions in the symbolic case.
+
+        Raises
+        ------
+        NotImplementedError
+            If `new_data` is a `sympy.Symbol`. The predictive density
+            differentiates the posterior MGF `a(y_new)` times, so a symbolic
+            observation gives a symbolic differentiation order, which SymPy
+            cannot use. This is a property of the construction rather than a
+            gap in one backend, so no `method` avoids it.
 
         Notes
         -----
@@ -1293,63 +1339,59 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> # Numeric predictive density for a single new observation
-        >>> deriv.post_predictive(14, scale=125.76, log=False)
-        0.01234
+        >>> # Predictive mass for one new count, on the ordinary scale. The
+        >>> # Gamma(8, 6) posterior makes this NegativeBinomial(8, 6/7).
+        >>> print(f"{float(deriv.post_predictive(2, log=False)):.6f}")
+        0.214058
 
-        >>> # Vectorised predictive masses for multiple y values
-        >>> y_vals = np.arange(0, 51)
-        >>> log_pred = deriv.post_predictive(y_vals, scale=125.76, log=True)
-        >>> pred_masses = np.exp(log_pred)  # array of masses
+        >>> # Vectorised: one batched call for a range of candidate counts
+        >>> log_pred = deriv.post_predictive(np.array([0, 1, 2, 3]))
+        >>> log_pred.shape
+        (4,)
+        >>> print(f"{float(np.exp(log_pred).sum()):.6f}")   # mass on 0..3
+        0.940328
 
-        >>> # Joint predictive density for two new observations
-        >>> joint_log = deriv.post_predictive(
-        ...     [14, 15], scale=125.76, log=True, individual=False
-        ... )
+        >>> # `individual=False` gives the two new observations' joint density
+        >>> # rather than one density per element. It is not the product of the
+        >>> # marginals above: both share the same theta, so they are dependent.
+        >>> log_joint = deriv.post_predictive([1, 2], individual=False)
+        >>> print(f"{float(log_joint):.6f}")
+        -2.653677
 
-        >>> # Symbolic predictive mass for a new observation
-        >>> from sympy import Symbol
-        >>> y_sym = Symbol('y', integer=True, positive=True)
-        >>> expr = deriv_sym.post_predictive(y_sym, scale=125.76, log=False)
+        >>> # A prior whose shape is left free gives a symbolic posterior, and
+        >>> # the predictive mass then comes back as an expression in it.
+        >>> from jumufraktiv.symbols import param, t, theta
+        >>> alpha = param("alpha")
+        >>> free_prior = mitMGFprior(
+        ...     name="gamma_free_shape",
+        ...     mgf_sym=(3 / (3 - t)) ** alpha,
+        ...     pdf_sym=3**alpha * theta ** (alpha - 1) * sp.exp(-3 * theta)
+        ...     / sp.gamma(alpha),
+        ...     params={},
+        ... ).as_mitMGFprior()
+        >>> sym = MGFDerivative(free_prior, data=[1, 2, 3],
+        ...                     likelihood="poisson", scale=1.0,
+        ...                     method="symbolic")
+        >>> expr = sym.post_predictive(2, log=False)
+        >>> print(f"{float(expr.subs(alpha, 2.0)):.6f}")    # as above at alpha=2
+        0.214058
         """
         # ---- Symbolic new_data (single symbol) ----
+        # A symbol for the observation makes the likelihood statistics symbolic
+        # too, and a(y_new) is the *order* of the derivative. sp.diff needs a
+        # concrete number of times to differentiate, so this cannot be built for
+        # any prior. Refused here rather than several frames down, where the
+        # message would name an internal symbol the caller never supplied.
         if isinstance(new_data, sp.Symbol):
-            if not self._is_symbolic:
-                raise ValueError(
-                    "Cannot compute predictive density symbolically with a "
-                    "numeric posterior."
-                )
-            # Directly build symbolic expression for the joint density
-            # (same as helper, but with symbolic stats)
-            a_new = sp.Symbol('a_new', real=True)
-            b_new = sp.Symbol('b_new', real=True)
-            log_c_new = sp.Symbol('log_c_new', real=True)
-            combined_order = self.a + a_new
-            combined_b = self.b + b_new
-            num = mgfDerivative(
-                order=combined_order,
-                prior=self.prior,
-                method="symbolic",
-                t=-combined_b,
-                simplify=self.simplify,
-                complete=True,
-                log=True
+            raise NotImplementedError(
+                f"post_predictive cannot take a symbolic observation "
+                f"({new_data!r}): the predictive density differentiates the "
+                f"posterior MGF a(y_new) times, and a symbolic y_new gives a "
+                f"symbolic order that sympy.diff cannot use. Pass numeric "
+                f"observations. Free hyperparameters are unaffected -- a "
+                f"symbolic posterior with numeric new_data returns an "
+                f"expression in those hyperparameters."
             )
-            if isinstance(num, tuple):
-                raise RuntimeError(
-                    "Symbolic predictive unexpectedly received numeric derivative."
-                )
-            denom = self._evaluate_derivative(-self.b)
-            log_pred = log_c_new + sp.log(num) - sp.log(denom)
-            if self.params is not None:
-                log_pred = log_pred.subs(
-                    {sym: self.params[sym.name]
-                     for sym in log_pred.free_symbols
-                     if sym.name in self.params}
-                )
-            if log_pred.free_symbols:
-                return log_pred if log else sp.exp(log_pred)
-            return float(log_pred.evalf()) if log else float(sp.exp(log_pred).evalf())
 
         # ---- Symbolic posterior with numeric new_data ----
         if self._is_symbolic:
@@ -1480,16 +1522,22 @@ class MGFDerivative:
         Examples
         --------
         >>> # Numeric evaluation at a single point
-        >>> deriv.post_mgf(0.2, log=False)
-        1.234567e+00
+        >>> print(f"{float(deriv.post_mgf(0.2, log=False)):.6f}")
+        1.311554
 
         >>> # Vectorised evaluation on a grid
-        >>> r_grid = np.linspace(-1.0, 1.0, 100)
-        >>> log_mgf = deriv.post_mgf(r_grid, log=True)  # array of log-MGFs
+        >>> r_grid = np.linspace(-1.0, 1.0, 5)
+        >>> log_mgf = deriv.post_mgf(r_grid, log=True)
+        >>> log_mgf.shape
+        (5,)
 
         >>> # Symbolic evaluation using the canonical symbol
         >>> from jumufraktiv.symbols import r
-        >>> expr = deriv.post_mgf(r, log=False)  # SymPy expression
+        >>> expr = deriv.post_mgf(r, log=False)
+        >>> isinstance(expr, sp.Expr)
+        True
+        >>> print(f"{float(expr.subs(r, 0.2)):.6f}")  # agrees with the numeric call
+        1.311554
         """
         # ---- Symbolic path (if derivative is symbolic) ----
         if self._deriv_is_symbolic:
@@ -1583,8 +1631,12 @@ class MGFDerivative:
                 val = float(log_ratio.evalf())
                 return val if log else np.exp(val)
 
+            except _DELIBERATE_REFUSALS:
+                raise
             except Exception as e:
-                raise RuntimeError(f"Symbolic computation failed: {e}") from e
+                raise RuntimeError(
+                    f"Symbolic posterior MGF computation failed: {e}"
+                ) from e
 
         # ---- Numeric path (if derivative is not symbolic) ----
         if r_val is None:
@@ -1670,17 +1722,20 @@ class MGFDerivative:
         Examples
         --------
         >>> # Numeric moment of order 2
-        >>> deriv.post_raw_moment(2, log=False)
-        0.1234
+        >>> print(f"{deriv.post_raw_moment(2, log=False):.6f}")
+        2.000000
+
+        >>> # A fractional order is computed the same way
+        >>> print(f"{deriv.post_raw_moment(0.5, log=False):.6f}")
+        1.136810
 
         >>> # Vectorised moments for multiple orders
         >>> q_vals = np.array([1, 2, 3, 4])
         >>> log_moments = deriv.post_raw_moment(q_vals, log=True)
-        >>> print(log_moments)  # array of log moments
-
-        >>> # Symbolic moment using the canonical symbol
-        >>> from jumufraktiv.symbols import q as q_sym
-        >>> expr = deriv.post_raw_moment(q_sym, log=False)  # SymPy expression
+        >>> log_moments.shape
+        (4,)
+        >>> print(f"{float(log_moments[1]):.6f}")  # log of the order-2 moment
+        0.693147
         """
         # ---- Determine if q is array-like ----
         if hasattr(q, '__len__') and not isinstance(q, (str, bytes, sp.Basic)):
@@ -1766,9 +1821,13 @@ class MGFDerivative:
                     val = float(log_ratio.evalf())
                     return val if log else np.exp(val)
 
+            except _DELIBERATE_REFUSALS:
+                raise
             except Exception as e:
+                # No fallback happens here, whatever an earlier version of this
+                # message said: the symbolic path is what the caller asked for.
                 raise RuntimeError(
-                    f"Symbolic computation failed: {e}. Falling back to numeric."
+                    f"Symbolic posterior moment computation failed: {e}"
                 ) from e
 
         # ---- Numeric path (vectorized) ----
@@ -1810,10 +1869,14 @@ class MGFDerivative:
         """
         Compute central moments of the posterior distribution.
 
-        Supported orders are 1 (mean), 2 (variance), 3 (skewness-related), and
-        4 (kurtosis-related). The method respects the **symbol-numeric principle**:
-        if the raw moments are symbolic, the central moment will be a SymPy
-        expression; otherwise it is numeric.
+        Supported orders are 1, 2 (the variance), 3 (unnormalised skewness) and
+        4 (unnormalised kurtosis). Order 1 is `E[Theta - E[Theta]]`, which is
+        zero by construction: it returns `0`, or `(-inf, +1)` under `log=True`.
+        For the posterior mean, ask `post_raw_moment(1)`.
+
+        The method respects the **symbol-numeric principle**: if the raw moments
+        are symbolic, the central moment will be a SymPy expression; otherwise
+        it is numeric.
 
         Parameters
         ----------
@@ -1848,17 +1911,25 @@ class MGFDerivative:
         --------
         >>> # Single central moment (variance)
         >>> log_abs, sign = deriv.post_central_moment(order=2, log=True)
-        >>> print(f"log variance = {log_abs}, sign = {sign}")
+        >>> print(f"log variance = {float(log_abs):.6f}, sign = {sign}")
+        log variance = -1.504077, sign = 1
 
         >>> # All four central moments (ordinary scale)
         >>> moments = deriv.post_central_moment(log=False)
-        >>> print(moments[1])  # mean
-        >>> print(moments[2])  # variance
+        >>> sorted(moments)
+        [1, 2, 3, 4]
+        >>> print(f"{float(moments[2]):.6f}")  # variance
+        0.222222
 
-        >>> # Symbolic central moment
-        >>> from sympy import Symbol
-        >>> # (assuming deriv_sym is a symbolic derivative object)
-        >>> expr = deriv_sym.post_central_moment(order=2, log=False)  # SymPy expression
+        >>> # An odd central moment is genuinely signed, which is why `log=True`
+        >>> # returns a pair here and a bare log everywhere else
+        >>> unif = mitMGFprior.from_registry("uniform", {"a": 0.5, "b": 2.0})
+        >>> skewed = MGFDerivative(
+        ...     unif, data=[1, 2, 3], likelihood="poisson", scale=1.0
+        ... )
+        >>> log_abs, sign = skewed.post_central_moment(order=3, log=True)
+        >>> print(f"{float(log_abs):.6f}, sign = {sign}")
+        -3.821959, sign = -1
         """
         # Determine which orders to compute
         if order is None:
@@ -2014,16 +2085,22 @@ class MGFDerivative:
         >>> # 95% quantile (single value)
         >>> q = deriv.post_quantile(0.95)
         >>> print(f"95% quantile = {q:.4f}")
+        95% quantile = 2.1914
 
-        >>> # Multiple quantiles at once
+        >>> # Several probabilities in one vectorised call
         >>> p_vals = np.array([0.025, 0.5, 0.975])
         >>> quantiles = deriv.post_quantile(p_vals)
-        >>> print(quantiles)  # array of three quantiles
+        >>> quantiles.shape
+        (3,)
+        >>> print(np.round(quantiles, 3))
+        [0.576 1.278 2.404]
 
         >>> # Using a specific root method and providing a bracket
         >>> q = deriv.post_quantile(
-        ...     0.5, root_method='bisection-np', lower=0.0, upper=1.0
+        ...     0.5, root_method='bisection-np', lower=0.5, upper=5.0
         ... )
+        >>> print(f"{q:.4f}")
+        1.2782
         """
 
         p_arr = np.asarray(p)
@@ -2174,20 +2251,22 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> # Generate 1000 posterior samples
-        >>> samples = deriv.post_sample(n=1000)
+        >>> # Draw posterior samples
+        >>> samples = deriv.post_sample(n=5, rng=np.random.default_rng(0))
+        >>> samples.shape
+        (5,)
 
-        >>> # A reproducible draw
-        >>> first = deriv.post_sample(n=500, rng=np.random.default_rng(42))
-        >>> second = deriv.post_sample(n=500, rng=np.random.default_rng(42))
-        >>> np.array_equal(first, second)
+        >>> # Seeding makes the draw reproducible
+        >>> again = deriv.post_sample(n=5, rng=np.random.default_rng(0))
+        >>> np.array_equal(samples, again)
         True
 
-        >>> # Or supply the variates directly
-        >>> samples = deriv.post_sample(u=np.random.default_rng(42).random(500))
-
-        >>> # Control the root-finding method and tolerance
-        >>> samples = deriv.post_sample(n=100, root_method='bisection-np', tol=1e-10)
+        >>> # Or supply the variates directly, and choose the root method
+        >>> fixed = deriv.post_sample(
+        ...     u=np.array([0.1, 0.5, 0.9]), root_method='bisection-np'
+        ... )
+        >>> print(np.round(fixed, 3))
+        [0.776 1.278 1.962]
         """
         if u is None:
             if n is None:
@@ -2261,15 +2340,22 @@ class MGFDerivative:
         >>> # 95% credible interval (single)
         >>> lower, upper = deriv.post_interval(level=0.95)
         >>> print(f"95% CI: [{lower:.4f}, {upper:.4f}]")
+        95% CI: [0.5756, 2.4038]
 
-        >>> # Multiple intervals at once
+        >>> # Multiple intervals at once, one row per level
         >>> levels = np.array([0.68, 0.95, 0.99])
         >>> intervals = deriv.post_interval(level=levels)
-        >>> for level, (l, u) in zip(levels, intervals):
-        ...     print(f"{level*100:.0f}% CI: [{l:.4f}, {u:.4f}]")
+        >>> intervals.shape
+        (3, 2)
+        >>> print(np.round(intervals, 3))
+        [[0.874 1.792]
+         [0.576 2.404]
+         [0.429 2.856]]
 
         >>> # Using a specific root method
         >>> lower, upper = deriv.post_interval(level=0.9, root_method='bisection-np')
+        >>> print(f"90% CI: [{lower:.4f}, {upper:.4f}]")
+        90% CI: [0.6635, 2.1914]
         """
         levels = np.asarray(level)
         scalar_input = levels.ndim == 0
@@ -2333,9 +2419,21 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> # Convert a numeric posterior to a prior for sequential updating
+        >>> # The posterior of the conjugate problem is exactly Gamma(8, 6),
+        >>> # and the prior handed back carries that same density.
+        >>> from jumufraktiv.symbols import theta
         >>> post_prior = deriv.to_prior_object()
-        >>> new_deriv = post_prior.update(new_data, likelihood='poisson')
+        >>> print(f"{float(post_prior.pdf_sym.subs(theta, 1.0)):.6f}")
+        0.826062
+        >>> print(f"{deriv.post_density(1.0, log=False):.6f}")
+        0.826062
+
+        >>> # Using it as the prior for the next batch of data is what
+        >>> # `update` does.
+        >>> chained = MGFDerivative(post_prior, data=[5, 7],
+        ...                         likelihood="poisson", scale=1.0)
+        >>> print(f"{chained.evidence():.6f}")
+        -9.752685
         """
 
         if self._deriv_is_symbolic:
@@ -2426,10 +2524,16 @@ class MGFDerivative:
 
         Examples
         --------
-        >>> # Sequential update: add two new observations
-        >>> deriv2 = deriv.update(new_data=[5, 7], likelihood='poisson', scale=1.0)
-        >>> # Check the updated evidence
-        >>> log_evidence = deriv2.evidence()
+        >>> # Condition on two further observations. The Gamma(8, 6)
+        >>> # posterior becomes the prior, so the update lands on Gamma(20, 8).
+        >>> deriv2 = deriv.update(new_data=[5, 7], likelihood="poisson",
+        ...                       scale=1.0)
+        >>> print(f"{deriv2.evidence():.6f}")    # log p(new data | old data)
+        -9.752685
+
+        >>> # The updated posterior mean is 20 / 8.
+        >>> print(f"{deriv2.post_raw_moment(1, log=False):.6f}")
+        2.500000
         """
         # Extract known arguments
         method = kwargs.pop("method", self.method)

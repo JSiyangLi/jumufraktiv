@@ -14,9 +14,9 @@ therefore checked where both the order and the prior are visible.
 
 import numpy as np
 import pytest
-from conftest import POISSON_DATA
 from test_likelihood_stats import COUNTS, DATA, LIKELIHOOD_KWARGS
 
+from conftest import POISSON_DATA
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import LIKELIHOOD_REGISTRY, MGFDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
@@ -304,3 +304,208 @@ def test_registry_priors_all_declare_a_moment_domain(name):
         f"use float('inf') if all moments exist."
     )
     assert float(spec["max_finite_moment"]) >= 0.0
+
+
+# ==========================================================================
+# Refusals the docstrings advertise
+# ==========================================================================
+# Both of these were documented as capabilities the code does not have. A
+# docstring that promises a return where the code raises is a defect in one of
+# the two; these tests fix which one.
+def test_a_symbolic_observation_is_refused_by_name():
+    """`post_predictive` cannot take a symbol for the observation.
+
+    The predictive density differentiates the posterior MGF `a(y_new)` times,
+    so a symbolic `y_new` makes the differentiation *order* symbolic, which
+    `sp.diff` cannot use. No backend avoids that, so the refusal belongs at the
+    entry point, and it must name the argument the caller passed rather than an
+    internal symbol standing in for a statistic.
+    """
+    import sympy as sp
+
+    registry.initialize()
+    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        deriv.post_predictive(sp.Symbol("y_new", real=True))
+
+    message = str(excinfo.value)
+    assert "y_new" in message
+    assert "a_new" not in message, "the message names an internal symbol"
+
+
+def test_the_first_central_moment_is_zero_not_the_mean():
+    """`E[Theta - E[Theta]]` is zero by construction.
+
+    Worth asserting because the docstring called order 1 "the mean" for several
+    releases, which is the raw moment. A caller who believed it got 0.0 and no
+    error.
+    """
+    registry.initialize()
+    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
+
+    assert float(deriv.post_central_moment(order=1, log=False)) == 0.0
+
+    log_abs, sign = deriv.post_central_moment(order=1, log=True)
+    assert float(log_abs) == -np.inf
+    assert sign == 1
+
+    # The posterior mean is the *raw* first moment: Gamma(8, 6) has mean 8/6.
+    assert float(deriv.post_raw_moment(1, log=False)) == pytest.approx(
+        8.0 / 6.0, rel=1e-10
+    )
+
+
+def test_a_symbolic_path_does_not_mask_a_deliberate_refusal():
+    """The refusal must reach the caller with its own type and message.
+
+    Each symbolic path ends in `except Exception: raise RuntimeError(...)`, to
+    say which quantity was being built when SymPy failed unexpectedly. That is
+    useful for an unexpected failure and destructive for a deliberate one: it
+    costs the caller the type they would catch and buries the message that says
+    what to do instead. A symbolic moment order is the reachable example --
+    `sp.diff` needs a concrete number of times to differentiate, so the order
+    is refused, and the refusal names the free symbol.
+
+    Only `NotImplementedError` is let through. SymPy's own `ValueError` and
+    `TypeError` still get the wrapper, because those are the unexpected
+    failures it exists to label -- so the second half of this test pins the
+    boundary rather than only the repair.
+    """
+    import sympy as sp
+
+    from jumufraktiv.symbols import param, t, theta
+
+    # A free shape leaves the posterior symbolic, which is what routes the call
+    # into the symbolic branch that carries the wrapper.
+    alpha = param("alpha")
+    free_prior = mitMGFprior(
+        name="gamma_free_shape",
+        mgf_sym=(3 / (3 - t)) ** alpha,
+        pdf_sym=3**alpha * theta ** (alpha - 1) * sp.exp(-3 * theta) / sp.gamma(alpha),
+        params={},
+    ).as_mitMGFprior()
+    deriv = MGFDerivative(
+        free_prior,
+        data=POISSON_DATA,
+        likelihood="poisson",
+        scale=1.0,
+        method="symbolic",
+    )
+
+    with pytest.raises(NotImplementedError) as excinfo:
+        deriv.post_raw_moment(sp.Symbol("q", real=True), log=False)
+
+    message = str(excinfo.value)
+    assert "q" in message, "the refusal does not name the free symbol"
+    assert "computation failed" not in message, "the refusal was wrapped"
+
+
+# ==========================================================================
+# from_registry's hyperparameters
+# ==========================================================================
+#: A number and its SymPy spellings. `sympy` arithmetic produces `Integer` and
+#: `Float` routinely, so a caller can hold one without ever having written
+#: `sp.Integer` themselves.
+def _sympy_spellings_of_two():
+    import sympy as sp
+
+    return {
+        "python float": 2.0,
+        "python int": 2,
+        "sp.Integer": sp.Integer(2),
+        "sp.Rational": sp.Rational(4, 2),
+        "sp.Float": sp.Float(2.0),
+        # An expression that carries symbols but cancels to a number. It has no
+        # free symbols, so it is a number in the only sense that matters here.
+        "cancelling expr": sp.Symbol("z") - sp.Symbol("z") + sp.Integer(2),
+    }
+
+
+@pytest.mark.parametrize("spelling", sorted(_sympy_spellings_of_two()))
+@pytest.mark.parametrize("prior_name", ["gamma", "pareto"])
+def test_a_sympy_number_is_a_number(prior_name, spelling):
+    """A SymPy object with no free symbols is a hyperparameter, not a symbol.
+
+    Rejecting on `isinstance(value, sp.Basic)` is too strict: it refuses
+    `sp.Integer(2)`, which is worth exactly 2. It is also not strict enough in
+    the other direction, since passing one *through* builds an object-dtype
+    array inside the Pareto factory, which fails as "Cannot cast array data
+    from dtype('O')" several frames from the argument at fault. Converting is
+    what makes every spelling behave alike, which is what this asserts.
+    """
+    registry.initialize()
+
+    value = _sympy_spellings_of_two()[spelling]
+    other = {"gamma": {"beta": 3.0}, "pareto": {"xi": 1.0}}[prior_name]
+    key = "alpha"
+
+    reference = mitMGFprior.from_registry(prior_name, params={key: 2.0, **other})
+    got = mitMGFprior.from_registry(prior_name, params={key: value, **other})
+
+    assert float(got.mgf(-1.0)) == pytest.approx(float(reference.mgf(-1.0)), rel=1e-14)
+    assert float(got.pdf_func(1.0)) == pytest.approx(
+        float(reference.pdf_func(1.0)), rel=1e-14
+    )
+
+
+def test_a_free_symbol_is_refused_by_name():
+    """The refusal must name the argument and the route that does work."""
+    import sympy as sp
+
+    registry.initialize()
+    alpha = sp.Symbol("alpha", positive=True)
+
+    with pytest.raises(TypeError, match=r"alpha, beta are symbolic"):
+        mitMGFprior.from_registry(
+            "gamma", params={"alpha": alpha, "beta": sp.Symbol("beta", positive=True)}
+        )
+
+    # An expression that still carries a symbol is refused for the same reason.
+    with pytest.raises(TypeError, match=r"alpha is symbolic"):
+        mitMGFprior.from_registry("gamma", params={"alpha": alpha + 1, "beta": 3.0})
+
+
+@pytest.mark.parametrize(
+    "value", [float("inf"), float("-inf"), float("nan")], ids=["inf", "-inf", "nan"]
+)
+def test_a_non_finite_hyperparameter_is_refused(value):
+    """It used to build a prior whose every derived quantity was 0 or nan.
+
+    `alpha=inf` gave `mgf(-1) == 0.0` and `alpha=nan` gave `nan`, with no error
+    anywhere -- the failure mode that is worst to debug, because the number
+    comes back.
+    """
+    registry.initialize()
+
+    with pytest.raises(ValueError, match=r"finite hyperparameters"):
+        mitMGFprior.from_registry("gamma", params={"alpha": value, "beta": 3.0})
+
+
+def test_a_non_finite_hyperparameter_is_refused_in_its_sympy_spelling_too():
+    """The same rule for both spellings.
+
+    A check that exists in one place and not in the neighbouring one is this
+    repository's most-repeated defect, so `sp.oo` and `float('inf')` are held
+    to one rule rather than two that agree by inspection.
+    """
+    import sympy as sp
+
+    registry.initialize()
+
+    with pytest.raises(ValueError, match=r"finite hyperparameters"):
+        mitMGFprior.from_registry("gamma", params={"alpha": sp.oo, "beta": 3.0})
+
+    # Complex infinity has no float at all, so it is reported as not a number
+    # rather than as a number of the wrong size.
+    with pytest.raises(TypeError, match=r"cannot be converted to a float"):
+        mitMGFprior.from_registry("gamma", params={"alpha": sp.zoo, "beta": 3.0})
+
+
+def test_a_hyperparameter_that_is_not_a_number_names_its_type():
+    registry.initialize()
+
+    with pytest.raises(TypeError, match=r"alpha \(str\) cannot be converted"):
+        mitMGFprior.from_registry("gamma", params={"alpha": "two", "beta": 3.0})

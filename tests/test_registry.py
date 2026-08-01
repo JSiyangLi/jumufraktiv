@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 import sympy as sp
-from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 
+from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior

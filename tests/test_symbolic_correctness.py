@@ -20,8 +20,8 @@ only way in, which is a large part of why this code was under-exercised.
 import numpy as np
 import pytest
 import sympy as sp
-from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 
+from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbols import param, t, theta, u

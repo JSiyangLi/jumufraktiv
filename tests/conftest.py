@@ -9,29 +9,21 @@ correctness rather than merely pinning current behaviour.
 
 import numpy as np
 import pytest
+
+# The canonical Gamma/Poisson problem lives in its own module so that the
+# repository-root conftest.py can share it; see tests/canonical.py. Re-exported
+# here because the suite imports it as `from conftest import ALPHA`.
+from canonical import ALPHA as ALPHA
+from canonical import BETA as BETA
+from canonical import POISSON_DATA as POISSON_DATA
+from canonical import POISSON_SCALE as POISSON_SCALE
+from canonical import POST_RATE as POST_RATE
+from canonical import POST_SHAPE as POST_SHAPE
 from scipy.special import gammaln
 
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 from jumufraktiv.mitMGFprior_class import mitMGFprior
-
-# --------------------------------------------------------------------------
-# Canonical test problem
-# --------------------------------------------------------------------------
-# Prior:      theta ~ Gamma(shape=ALPHA, rate=BETA)
-# Likelihood: y_i ~ Poisson(theta * s_i) with s_i = 1
-# Data:       POISSON_DATA
-#
-# The Gamma/Poisson pair is conjugate, so the posterior is
-#     theta | y ~ Gamma(shape=ALPHA + sum(y), rate=BETA + sum(s)).
-ALPHA = 2.0
-BETA = 3.0
-POISSON_DATA = [1, 2, 3]
-POISSON_SCALE = 1.0
-
-#: Posterior shape and rate implied by the fixtures above.
-POST_SHAPE = ALPHA + sum(POISSON_DATA)  # 8.0
-POST_RATE = BETA + POISSON_SCALE * len(POISSON_DATA)  # 6.0
 
 
 @pytest.fixture(scope="session", autouse=True)

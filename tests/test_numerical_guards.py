@@ -11,6 +11,7 @@ kernel, so no number that was previously correct moves.
 
 import numpy as np
 import pytest
+
 from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE
 
 #: The canonical test problem is conjugate, so the posterior is exactly
