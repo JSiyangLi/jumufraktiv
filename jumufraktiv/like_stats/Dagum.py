@@ -24,7 +24,6 @@ If the known parameters are scalars, they are recycled. If they are vectors,
 they must have the same length as data.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -34,11 +33,11 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyDagum(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
-    s: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
+    s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Dagum likelihood with known r and s.
 
@@ -123,11 +122,11 @@ def readyDagum(
     return {'a': a_stat, 'b': b_stat, 'log_c': log_c}
     
 def bereitDagum(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
-    s: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
+    s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Dagum likelihood.
 

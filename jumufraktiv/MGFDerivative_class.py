@@ -137,18 +137,13 @@ _RESERVED_DERIVATIVE_KWARGS = frozenset({
 })
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _likelihood_kwargs(ready_func) -> frozenset:
     """Return the keyword arguments a likelihood's ``ready`` function accepts.
 
     Derived from the function's signature rather than a hardcoded list, so it
     cannot drift out of step with the likelihood modules, and so each likelihood
     is checked against *its own* parameters instead of the union of everyone's.
-
-    Memoised on the function object. There are fourteen of them and they never
-    change, so the cache is bounded by the registry; it exists because
-    ``_likelihood_arguments`` now consults this on every predictive evaluation,
-    where ``inspect.signature`` would be a per-call cost on a hot path.
 
     Parameters
     ----------
@@ -160,8 +155,10 @@ def _likelihood_kwargs(ready_func) -> frozenset:
     frozenset of str
         Named parameters other than ``data``. A trailing ``**kwargs`` on the
         function is deliberately ignored: every ``ready`` function has one, and
-        it is what silently absorbed misspelled arguments.
+        absorbing unknown names into it is what this set exists to prevent.
     """
+    # Cached because the predictive path consults it per evaluation, and there
+    # are only fourteen `ready` functions, so the cache is bounded.
     parameters = inspect.signature(ready_func).parameters
     return frozenset(
         name
@@ -235,9 +232,8 @@ def _unknown_kwargs_message(
     likelihood : str
         Name of the chosen likelihood, quoted in the message.
     caller : str
-        What to name as the thing that was called. The constructor and
-        ``post_predictive`` both reach this, and a message naming the wrong one
-        sends the reader to the wrong line.
+        What to name as the thing that was called, so the message sends the
+        reader to the right line.
     derivative_options : frozenset of str, optional
         Options the *derivative layer* accepts, if this caller forwards to it.
         Pass an empty set for an entry point that forwards only to the
@@ -434,39 +430,20 @@ class MGFDerivative:
         ``bereit_func`` needs them again, because those functions take them as
         required positional arguments.
 
-        ``post_predictive`` used to forward only the *caller's* keyword
-        arguments, so ten of the fourteen likelihoods raised
-        ``TypeError: bereitNormal() missing 1 required positional argument:
-        'mean'`` for a parameter the object was already holding. The four that
-        worked are exactly the four with no known parameters, which is why the
-        suite never saw it: every predictive test uses Poisson, whose one
-        parameter has a default.
-
-        Overrides are honoured rather than ignored, so a caller can still
-        evaluate the predictive under a different known parameter than the one
-        the posterior was built with -- passing ``rho`` for a new observation
-        from a different Weibull shape, say.
+        An override replaces the stored value for this call only, so the
+        predictive can be evaluated under a different known parameter than the
+        posterior was built with -- a new observation from a different Weibull
+        shape, say.
 
         Raises
         ------
         TypeError
             For an override the likelihood does not accept, with the same "did
             you mean" suggestion the constructor gives.
-
-        Notes
-        -----
-        The validation is here rather than in ``post_predictive`` because this
-        is the funnel: both the vectorised path and the symbolic scalar path
-        call it, so one check covers both.
-
-        It is here at all because the constructor one call away has rejected
-        unknown names since PR 3b and this did not, which made a misspelling
-        expensive and silent. ``MGFDerivative(..., likelihood="weibull",
-        rh=2.0)`` raises with "did you mean 'rho'?"; ``post_predictive([2.0],
-        rh=9.0)`` used to return -1.1053356325054668, exactly the value for
-        the default shape, where ``rho=9.0`` gives -14.108023936618833. A typo
-        cost 13.003 nats and looked like an answer.
         """
+        # Validated here rather than in `post_predictive` because this is the
+        # funnel: the vectorised path and the symbolic scalar path both call
+        # it, so one check covers both.
         accepted = _likelihood_kwargs(self.ready_func)
         unknown = set(overrides) - accepted
         if unknown:
@@ -1893,8 +1870,12 @@ class MGFDerivative:
             - `"bisectioned-newton-jax"`, `"newton-jax"`, `"bisection-jax"` (JAX).
             See `jumufraktiv.root_finding.solve_root` for full list.
         lower, upper : array-like, optional
-            Search interval bounds. If not provided, an automatic expansion
-            from `1e-6` to `1e6` is performed until `CDF(lower) < p < CDF(upper)`.
+            Search interval bounds. If not provided, the bracket starts at half
+            and twice the posterior's own scale `(a + 1) / b` — or at 0.5 and
+            2.0 when `b` is not positive — then halves the lower end and
+            doubles the upper end for at most ten rounds, until
+            `CDF(lower) < p < CDF(upper)`. `RuntimeError` if that fails.
+            See the Notes before supplying a small `lower` by hand.
         x0 : array-like, optional
             Initial guess for Newton‑based methods. If `None`, uses the midpoint
             of the bracket.
@@ -1918,6 +1899,13 @@ class MGFDerivative:
         is fully vectorised over the elements of `p`.
         - If the automatic bracket expansion fails, you can provide explicit
         `lower` and `upper` bounds to improve robustness.
+        - **Do not set `lower` far into the lower tail.** The CDF is computed
+        from the incomplete-MGF derivative, which is inaccurate below about
+        `u = 1e-2` and badly wrong below `1e-4` — against the exact Gamma(8, 6)
+        posterior its log is off by 17.8 nats at `u = 1e-4` and by 45 nats at
+        `u = 1e-6`, with the sign flipped, which then trips the non-negativity
+        guard in `post_cdf`. This bounds how far into the lower tail any
+        CDF-based method here can be trusted.
 
         Examples
         --------
@@ -1949,24 +1937,15 @@ class MGFDerivative:
             return self.post_density(x, log=False)
 
         if lower is None or upper is None:
-            # Start from the posterior's own scale, not from a fixed 1e-6.
+            # Start from the posterior's own scale. A fixed small lower bound
+            # must not be substituted here: the CDF comes from the
+            # incomplete-MGF derivative, which is unusable below u ~ 1e-2 (see
+            # Notes), so the bracket has to begin inside the accurate region
+            # and grow outwards rather than start wide.
             #
-            # The old bracket ran 1e-6 to 1e6, and the lower end is not merely
-            # wasteful -- it is outside the region where the incomplete-MGF
-            # derivative is accurate. Measured against the exact Gamma(8, 6)
-            # posterior of the canonical test problem, the numerator's log at
-            # u = 1e-6 comes out as -65.17 where the true value is -110.41: a
-            # 45-nat error, with the computed sign flipped negative, which then
-            # trips the non-negativity guard in `post_cdf`. It is already wrong
-            # by 17.8 nats at u = 1e-4, and only becomes trustworthy around
-            # u = 1e-2. So every call failed before the root finder started.
-            #
-            # The likelihood's own statistics give a scale for free: the
-            # posterior is proportional to `theta**a * exp(-b*theta)` times the
-            # prior, whose density peaks at `a/b` and has mean `(a+1)/b`. That
-            # is the right order of magnitude for the quantiles of interest and
-            # sits well inside the accurate region, so the expansion below
-            # reaches the root without ever probing where the CDF is unusable.
+            # `theta**a * exp(-b*theta)` times the prior peaks at `a/b` and has
+            # mean `(a+1)/b`, which is the right order of magnitude for the
+            # quantiles of interest.
             scale = (self.a + 1.0) / self.b if self.b > 0 else 1.0
             lower_init = np.full_like(p_arr, scale * 0.5, dtype=float)
             upper_init = np.full_like(p_arr, scale * 2.0, dtype=float)
@@ -2082,12 +2061,6 @@ class MGFDerivative:
             X = F^{-1}(U), where U ~ Uniform(0, 1).
         This is exact up to the numerical accuracy of the quantile computation.
 
-        This used to call `np.random.rand`, the legacy global generator, and
-        took no seed, so **no draw from it could be reproduced** -- not by the
-        caller and not by a test. Passing `u` was the documented workaround,
-        which meant reproducibility cost the caller the inverse-transform step
-        this method exists to perform.
-
         Examples
         --------
         >>> # Generate 1000 posterior samples
@@ -2109,8 +2082,8 @@ class MGFDerivative:
             if n is None:
                 raise ValueError("Either n or u must be provided.")
 
-            # `np.random.default_rng(generator)` returns the generator unchanged
-            # only from NumPy 1.25, and this package supports 1.24.
+            # `default_rng` only passes a Generator through unchanged from
+            # NumPy 1.25, and this package supports 1.24.
             generator = (
                 rng
                 if isinstance(rng, np.random.Generator)
@@ -2118,11 +2091,9 @@ class MGFDerivative:
             )
             u = generator.random(n)
 
-            # `Generator.random` draws from [0, 1), and the branch below rejects
-            # 0 because `post_quantile(0)` has no finite answer. Nudging the
-            # (vanishingly rare) exact zeros keeps the two paths under one rule,
-            # rather than leaving the caller's variates held to a standard the
-            # method's own draw is not.
+            # `Generator.random` draws from [0, 1), and `post_quantile(0)` has
+            # no finite answer -- the same rule the caller-supplied branch below
+            # enforces.
             u = np.where(u == 0.0, np.finfo(float).tiny, u)
         else:
             u = np.asarray(u)

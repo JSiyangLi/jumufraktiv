@@ -180,6 +180,19 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # would have undone the repair PR 5 made for `sp.Integer(2)`. That line
 # carries a `noqa` with the reason; the genuinely redundant one is gone.
 #
+# PR 12 removed the four annotation codes -- UP006, UP007, UP035 and UP045 --
+# in 122 places across the library. All four are the same modernisation:
+# `Dict[str, float]` becomes `dict[str, float]`, `Union[int, str]` becomes
+# `int | str`, `Optional[float]` becomes `float | None`, and the `typing`
+# imports that existed only to spell those go with them. The whole rule group
+# `UP` is now clean, so nothing in this baseline exempts it any more.
+#
+# The choice is not stylistic here: `requires-python` is `>=3.10`, where the
+# PEP 585 and PEP 604 spellings are the language's own and the `typing`
+# aliases are deprecated. Keeping both spellings in one package meant the
+# public signatures read differently depending on which module a reader
+# opened.
+#
 # F821 (undefined-name) and F811 (redefined-while-unused) were never exempted
 # package-wide, because they find defects rather than style. As of PR 8 they
 # have no per-file exemptions either, so both block everywhere.
@@ -191,10 +204,6 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
     # "Known-broken" in CLAUDE.md; unscheduled, because it is a numerical
     # repair rather than a lint fix.
     "F841",   # unused-variable                        -> unscheduled
-    "UP006",  # non-pep585-annotation                  -> PR 12 (API surface)
-    "UP007",  # non-pep604-annotation-union            -> PR 12
-    "UP035",  # deprecated-import                      -> PR 12
-    "UP045",  # non-pep604-annotation-optional         -> PR 12
     "RUF001", # ambiguous-unicode-character-string     -> PR 14
     "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
     "RUF003", # ambiguous-unicode-character-comment    -> PR 14

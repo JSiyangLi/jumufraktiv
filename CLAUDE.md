@@ -278,6 +278,37 @@ order: summary, Parameters, Returns, Raises, Notes, Examples. Docstrings must
 describe what the code *does*, not what it is intended to do — if they diverge,
 that is a bug in one of the two.
 
+**Three readers want three different things, and only one of them reads the
+docstring.** This is worth stating because the audit repeatedly got it wrong,
+in one consistent direction: writing the reviewer's explanation into the API
+reference.
+
+| reader | wants | where it goes |
+|--------|-------|---------------|
+| someone calling `help(f)` or reading the Sphinx page | what it does, what the arguments mean, and any caveat that changes how they would call it | the docstring |
+| someone editing the next line | why the code is shaped this way, and what a plausible "simplification" would break | a short inline `#` comment |
+| someone reviewing the change | what was wrong, by how much, and what fixed it | the commit message, the PR body, `CHANGELOG.md` |
+
+So a docstring carries the contract and any limitation that is **still true**
+— `tol` is the quadrature's relative tolerance; the incomplete-MGF derivative
+is untrustworthy below `u ≈ 1e-2`; the sign is always `+1` because the
+integrand is positive. It does **not** carry the repository's own history:
+no PR numbers, no "this used to…", no before/after tables, no defence of a
+decision addressed to a reviewer, no "recorded here for the owner". Those are
+facts about an unreleased package's past and tell a caller nothing.
+
+The failure mode is self-compounding, which is why it needs a rule rather than
+taste. Every PR that leaves "broken until PR N" in a docstring leaves it there
+permanently, so the reference manual becomes an archaeology dig through
+defects no user ever saw. Module-level docstrings may carry design rationale,
+since documenting a module's reason to exist is their job — but the same ban
+on PR bookkeeping applies to them.
+
+Rationale that genuinely prevents a regression is kept, as an inline comment
+next to the code it protects. `int(round(order))  # noqa: RUF046` with one
+line saying why the cast is not redundant is the model: it is short, it sits
+where the mistake would be made, and it is invisible to `help()`.
+
 **Pull request descriptions are written for the reviewer, not for the author.**
 The people reviewing this repository are experts in the statistics and the
 numerical analysis, and are not necessarily fluent in its Python internals. A

@@ -220,6 +220,55 @@ class TestMomentDomain:
         with pytest.raises(ValueError, match="t = 0"):
             MGFDerivative(prior, data=[0.5, 0.5], likelihood="laplace", mean=0.5)
 
+    @pytest.mark.parametrize("order", [2, 3])
+    def test_every_public_entry_point_applies_the_bound(self, order):
+        """One question, three doors, one answer.
+
+        The guard was reached only through `mgfDerivative` and the constructor.
+        `mgfDerivative_integer` and `mgfDerivative_fractional` are advertised
+        as main functions and exported at package level, and both skipped it:
+        against Pareto(alpha=2) at t = 0 they returned `(inf, 1)` at order 2
+        and raised `TypeError: Cannot convert complex to float` at order 3.
+        The first of those is the worse one, because it is not an error.
+        """
+        from jumufraktiv.derivativeDispatch import (
+            mgfDerivative,
+            mgfDerivative_fractional,
+            mgfDerivative_integer,
+        )
+
+        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+
+        with pytest.raises(ValueError, match="t = 0"):
+            mgfDerivative(order, prior, method="symbolic", t=0.0)
+
+        with pytest.raises(ValueError, match="t = 0"):
+            mgfDerivative_integer(order, prior, method="symbolic", t=0.0)
+
+        with pytest.raises(ValueError, match="t = 0"):
+            mgfDerivative_fractional(order + 0.5, prior, method="scipy", t=0.0)
+
+    def test_an_admissible_fractional_order_still_reaches_the_kernel(self):
+        """The bound is about the caller's order, not the integrator's own step.
+
+        The Caputo form of order `a` differentiates the MGF `floor(a) + 1`
+        times, so a request for order 1.5 against Pareto(alpha=2) asks the
+        integer backend for order 2 -- whose moment does not exist. Checking
+        that intermediate would refuse a computable answer: `E[Theta^1.5]` is
+        `2 / (2 - 1.5) = 4`, perfectly finite.
+        """
+        from jumufraktiv.derivativeDispatch import mgfDerivative_fractional
+
+        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+
+        log_abs, sign = mgfDerivative_fractional(
+            1.5, prior, method="scipy", t=0.0, log=True
+        )
+
+        assert sign == 1
+        assert np.isfinite(log_abs)
+        assert log_abs == pytest.approx(np.log(4.0), rel=1e-3)
+
 
 REGISTRY_PARAMS = {
     "gamma": {"alpha": 2.0, "beta": 3.0},

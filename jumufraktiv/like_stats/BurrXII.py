@@ -25,7 +25,6 @@ If c is a scalar, it is recycled. If c is a vector, it must have length n.
 The user-facing argument is `known_shape`, which corresponds to the known shape parameter c.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -35,10 +34,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyBurrXII(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    known_shape: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    known_shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Burr Type XII likelihood with known shape.
 
@@ -110,10 +109,10 @@ def readyBurrXII(
     }
     
 def bereitBurrXII(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    known_shape: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    known_shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Burr Type XII likelihood.
 

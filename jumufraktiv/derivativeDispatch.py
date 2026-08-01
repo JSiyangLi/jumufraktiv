@@ -90,13 +90,12 @@ DERIVATIVE_OPTIONS = frozenset(BACKEND_OPTIONS) | {"integer_method", "int_tol"}
 #: ``(order type, backend)``. The expectation route serves either order type,
 #: so it is keyed on ``None``.
 #:
-#: This is the table behind the "accepted and discarded" warning below, and it
-#: is written out rather than derived because the two are not the same
-#: question. :data:`BACKEND_OPTIONS` answers "does any backend read this?",
-#: which is what decides whether a name is a misspelling. This answers "does
-#: *the route about to run* read it?", which is what decides whether the value
-#: has any effect. A name can pass the first and fail the second, and for the
-#: whole audit that failure was silent.
+#: Distinct from :data:`BACKEND_OPTIONS`, and the two must not be merged.
+#: That one answers "does *any* backend read this name?", which is what
+#: separates an option from a misspelling. This one answers "does *the route
+#: about to run* read it?", which is what separates a value that takes effect
+#: from one that is discarded. A name can pass the first and fail the second,
+#: which is what :func:`_warn_discarded_options` reports.
 #:
 #: ``int_tol`` appears nowhere because :func:`resolve_backend` consumes it
 #: before any route is chosen, so it is never discarded.
@@ -137,14 +136,10 @@ def _warn_discarded_options(requested, order_type, backend, function_name):
 
     Notes
     -----
-    A warning rather than an error, and that is the owner's decision rather
-    than a default. Refusing would break callers who pass a tuning dictionary
-    across several backends, which is a reasonable thing to do; returning a
-    number that ignores what was asked for is not.
-
-    The message names an alternative wherever one exists for this order type,
-    because "``dps`` was ignored" is only half of what the caller needs -- the
-    other half is that ``method='mpmath'`` would honour it.
+    A warning rather than an error, so that a caller may carry one tuning
+    dictionary across several backends. The message names an alternative
+    wherever one exists for this order type, since knowing that ``dps`` was
+    ignored is only useful alongside knowing that ``method='mpmath'`` reads it.
     """
     key = (None, backend) if backend == "expectation" else (order_type, backend)
     if key not in ROUTE_OPTIONS:
@@ -211,10 +206,11 @@ def _reject_unknown_options(kwargs, function_name):
     -----
     Only names that reach *no* backend are refused here. A name that some
     backend understands but the selected one does not -- ``dps`` under
-    ``method="scipy"``, say -- is still accepted and dropped. That is a
-    narrower defect with a real design question behind it (reject, warn, or
-    honour by switching backends?), it predates this guard, and PR 12 owns it;
-    see "Known-broken" in :file:`CLAUDE.md`.
+    ``method="scipy"``, say -- is accepted, dropped, and reported by
+    :func:`_warn_discarded_options` as a ``UserWarning`` naming a method that
+    would read it. The distinction matters under ``filterwarnings = error``,
+    where the second case raises and this one does too, but with different
+    text.
     """
     unknown = sorted(set(kwargs) - DERIVATIVE_OPTIONS)
     if not unknown:
@@ -245,6 +241,7 @@ def mgfDerivative_integer(
     complete: bool = True,
     symbolic_timeout: float = 600.0,
     cgf_method: str = "auto",
+    _intermediate: bool = False,
 ):
     """
     Compute an integer-order derivative of a prior MGF.
@@ -291,6 +288,13 @@ def mgfDerivative_integer(
         Maximum time (seconds) for symbolic computation in the Bell backend.
     cgf_method : str, optional
         Method for CGF derivatives in the Bell backend (`'auto'`, `'jet'`, `'grad'`).
+    _intermediate : bool, optional
+        Private. Set by the fractional kernels, which call this at order
+        `floor(a) + 1` as a step towards the caller's order `a`. It suppresses
+        the `t = 0` moment check, which asks whether `E[Theta^order]` exists —
+        a question about what the caller requested, not about an internal step.
+        `E[Theta^1.5]` is finite for Pareto(alpha=2) even though `E[Theta^2]`
+        is not, so checking the intermediate would refuse a computable answer.
 
     Returns
     -------
@@ -322,6 +326,13 @@ def mgfDerivative_integer(
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
         raise ValueError("method must be one of {'symbolic','bell','jax'}.")
+
+    # Applied at every public entry point, not only at `mgfDerivative`. The
+    # fractional kernels pass `_intermediate=True` because the order they ask
+    # for here is floor(a) + 1, an internal step, not what the caller
+    # requested -- see the parameter's description above.
+    if not _intermediate:
+        _check_moment_exists_at_origin(order, prior, t)
 
     requested_options = set()
     if symbolic_timeout != 600.0:
@@ -604,8 +615,8 @@ def mgfDerivative_fractional(
         If False, return the ordinary derivative as a float.
     integer_method : str, default 'symbolic'
         Method for integer derivatives inside the fractional integrator:
-        `'symbolic'`, `'bell'`, or `'jax'`. Spelled `integerDeriv_method` until
-        PR 12 — see the note below.
+        `'symbolic'`, `'bell'`, or `'jax'`. Spelled the same way here as in
+        `mgfDerivative`.
     u : float or array-like, optional
         Truncation point(s) for the incomplete MGF (used when `complete=False`).
         If array‑like, it is broadcast with `t` to form a batch of evaluation
@@ -633,19 +644,9 @@ def mgfDerivative_fractional(
     - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
       substitution, with the range derived from `gamma = floor(order)+1-order`;
       the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
-
-    **This parameter was called** ``integerDeriv_method`` **until PR 12**, while
-    :func:`mgfDerivative` -- the other public entry point to the same
-    computation -- called the same thing ``integer_method``. Passing the
-    sibling's spelling was accepted and dropped:
-    ``mgfDerivative_fractional(1.5, prior, method="scipy", t=-1,
-    integer_method="bell")`` reached the kernel with ``"symbolic"``, the
-    default. No unknown-option guard could catch it, because both names were
-    valid somewhere in this layer.
-
-    They are now one name. The old spelling raises, with
-    ``_reject_unknown_options`` suggesting the new one, so a caller who was
-    using it sees an error rather than a silently different backend.
+    - A tuning option the selected backend does not read is accepted and
+      warned about rather than refused, since the same option may be valid for
+      a sibling backend. See `ROUTE_OPTIONS` for which backend reads what.
 
     Examples
     --------
@@ -664,6 +665,10 @@ def mgfDerivative_fractional(
     >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
     _reject_unknown_options(kwargs, "mgfDerivative_fractional")
+
+    # Applied at every public entry point, not only at `mgfDerivative`. It is
+    # idempotent, so the extra call when dispatched from there costs nothing.
+    _check_moment_exists_at_origin(order, prior, t)
 
     requested_options = set(kwargs)
     if integer_method != "symbolic":
@@ -852,15 +857,15 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
     (``pareto``) — measure-zero for continuous data, but common once data is
     rounded.
 
-    Without this check the failure is silent or misleading. With the registry's
-    Pareto(α=2) prior at ``t = 0``: order 1 returns a correct value, order 2
-    returns ``inf``, and order 3 raises ``TypeError: Cannot convert complex to
-    float`` from inside the quadrature.
-
     The bound is a property of the *prior*, not of the data, which is why this
     lives here rather than in ``like_stats`` — those modules are pure functions
     of the data and cannot see the prior. The same ``b = 0`` is perfectly valid
     against a Gamma prior at every order.
+
+    Every public entry point applies it. Without it the failure is silent or
+    misleading rather than absent: against Pareto(α=2) at ``t = 0``, order 2
+    returns ``inf`` and order 3 raises ``TypeError: Cannot convert complex to
+    float`` from inside the quadrature.
     """
     if t is None or isinstance(order, sp.Basic):
         return
@@ -1161,11 +1166,10 @@ def mgfDerivative(
     # is scalar or array-valued, and whether the request ends up symbolic.
     _reject_unknown_options(kwargs, "mgfDerivative")
 
-    # What the caller *set*, recorded before the pops below take the options
-    # out of `kwargs`. `integer_method` counts only when it differs from the
-    # default, since ignoring a value that equals what would have happened
-    # anyway costs the caller nothing and warning about it would fire on almost
-    # every call.
+    # What the caller *set*, captured before the pops below empty `kwargs`.
+    # `integer_method` counts only when it differs from the default, or the
+    # warning would fire on almost every call to say that a value equal to the
+    # default was not used.
     requested_options = set(kwargs)
     if integer_method != "symbolic":
         requested_options.add("integer_method")
@@ -1296,10 +1300,9 @@ def mgfDerivative(
 
     _warn_discarded_options(requested_options, order_type, method, "mgfDerivative")
 
-    # Only the Bell backend reads these, so only the Bell backend is given
-    # them. Forwarding them regardless made `mgfDerivative_integer` issue a
-    # second copy of the warning just issued above, for an option the caller
-    # passed to this function and not to that one.
+    # Only the Bell backend reads these, so only it is given them: forwarding
+    # them regardless would make `mgfDerivative_integer` re-issue the warning
+    # above, naming itself for an option passed to this function.
     bell_options = (
         {"symbolic_timeout": symbolic_timeout, "cgf_method": cgf_method}
         if method == "bell"
@@ -1385,9 +1388,8 @@ def mgfDerivative(
                 },
             )
 
-        # `mpmath` and `symbolic` keep their own routes. Only the options that
-        # route reads are forwarded, so it does not re-issue the warning just
-        # issued here for an option the caller passed to this function.
+        # `mpmath` and `symbolic` keep their own routes. Forwarding only what
+        # the route reads keeps the warning above from being re-issued there.
         kwargs = {
             k: v
             for k, v in kwargs.items()

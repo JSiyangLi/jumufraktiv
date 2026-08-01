@@ -128,7 +128,8 @@ def fractionalDeriv_numeric_mpmath_tan(
                 simplify=simplify,
                 log=True,
                 complete=complete,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if return_log:
                 return log_abs, sign
@@ -154,7 +155,8 @@ def fractionalDeriv_numeric_mpmath_tan(
                     simplify=simplify,
                     log=True,
                     complete=complete,
-                    u=u_val
+                    u=u_val,
+                    _intermediate=True,
                 )
                 if not math.isfinite(log_abs):
                     return mpf(0.0)
@@ -416,7 +418,8 @@ def fractionalDeriv_numeric_mpmath(
                 simplify=simplify,
                 log=True,
                 complete=complete,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if return_log:
                 return log_abs, sign
@@ -463,7 +466,8 @@ def fractionalDeriv_numeric_mpmath(
                 simplify=simplify,
                 complete=complete,
                 log=True,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if not math.isfinite(log_abs):
                 return mpf(0.0)

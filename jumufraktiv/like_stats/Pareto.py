@@ -21,7 +21,6 @@ For a sample of size n:
 If σ is a scalar, it is recycled. If σ is a vector, it must have length n.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -31,10 +30,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyPareto(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Pareto likelihood with known scale.
 
@@ -103,10 +102,10 @@ def readyPareto(
     }
 
 def bereitPareto(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Pareto likelihood.
 

@@ -31,7 +31,6 @@ This module provides two statistics functions:
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -42,10 +41,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyGamma(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    shape: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Gamma likelihood (vectorized).
 
@@ -106,10 +105,10 @@ def readyGamma(
     }
 
 def bereitGamma(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    shape: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Gamma likelihood.
 

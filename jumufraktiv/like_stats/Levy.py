@@ -22,7 +22,6 @@ If μ is a scalar, it is recycled. If μ is a vector, it must have length n.
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -32,10 +31,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyLevy(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    location: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Lévy likelihood with known location.
 
@@ -102,10 +101,10 @@ def readyLevy(
     }
     
 def bereitLevy(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    location: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Lévy likelihood.
 

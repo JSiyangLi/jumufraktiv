@@ -37,7 +37,6 @@ Examples
 3.0
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -48,10 +47,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyPoisson(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray] = 1.0,
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray = 1.0,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Poisson likelihood.
 
@@ -116,10 +115,10 @@ def readyPoisson(
     }
 
 def bereitPoisson(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray] = 1.0,
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray = 1.0,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Compute per‑element sufficient statistics for a Poisson likelihood.
 

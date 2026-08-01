@@ -377,7 +377,6 @@ def test_the_route_table_agrees_with_the_backend_signatures():
     from jumufraktiv.derivativeDispatch import (
         BACKEND_OPTIONS,
         ROUTE_OPTIONS,
-        mgfDerivative_integer,
     )
     from jumufraktiv.numeric_expectation import expectationDeriv
     from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
@@ -423,8 +422,8 @@ def test_the_route_table_agrees_with_the_backend_signatures():
     # And every tunable name must be read by at least one route, or the
     # dispatcher accepts an option nothing can honour.
     covered = set().union(*ROUTE_OPTIONS.values())
-    assert tunable_names <= covered, (
-        "read by no route: " + ", ".join(sorted(tunable_names - covered))
+    assert tunable_names <= covered, "read by no route: " + ", ".join(
+        sorted(tunable_names - covered)
     )
 
 

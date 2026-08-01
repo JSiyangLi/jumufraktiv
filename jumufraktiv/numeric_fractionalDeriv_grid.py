@@ -241,6 +241,7 @@ def fractionalDeriv_grid(
             complete=complete,
             u=at_u,
             log=True,
+            _intermediate=True,
         )
 
     # ---- The leading term, which is the exact gamma -> 0 limit ----------

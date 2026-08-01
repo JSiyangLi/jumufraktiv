@@ -225,10 +225,9 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     return low, high, grid[peak_index]
 
 
-#: Relative tolerance handed to :func:`scipy.integrate.quad_vec` when the
-#: caller names none. Tight enough that the route's accuracy is set by the
-#: integrand rather than by the stopping rule -- measured worst case 1.17e-11
-#: over the 240-case sweep recorded in :file:`CLAUDE.md`.
+#: Relative tolerance handed to :func:`scipy.integrate.quad_vec` when the caller
+#: names none. Tight enough that the route's accuracy is set by the integrand
+#: rather than by the stopping rule.
 DEFAULT_TOL = 1e-10
 
 
@@ -284,14 +283,9 @@ def expectationDeriv(
     is positive -- which is itself worth asserting, since the defect this route
     exists to avoid announces itself as a sign flip.
 
-    ``tol`` exists so that the option means something on the path most callers
-    take. This route became the default for numeric evaluation in PR 6c and had
-    no tuning parameters at all, so ``mgfDerivative(..., method="auto",
-    tol=...)`` accepted the argument and discarded it -- ``tol=1e-1`` and
-    ``tol=1e-14`` returned the same digits, while through ``method="scipy"``
-    the same pair differ by 4.6e-4. Honouring it here was preferred to warning
-    that it could not be honoured: the quadrature has a relative tolerance, and
-    ``epsrel`` is what ``tol`` means everywhere else in this package.
+    ``tol`` is the quadrature's relative tolerance and nothing else; it does
+    not bound the error of the returned logarithm, which also carries the
+    accuracy of the peak location used to rescale the integrand.
     """
     if order < 0:
         raise ValueError("Derivative order must be non-negative.")

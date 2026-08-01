@@ -35,8 +35,9 @@ Examples
 >>> prior.as_mitMGFprior()
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -123,13 +124,13 @@ class mitMGFprior:
     # -----------------------------
     # user inputs (raw layer)
     # -----------------------------
-    mgf_sym: Optional[sp.Expr] = None
-    pdf_sym: Optional[sp.Expr] = None
+    mgf_sym: sp.Expr | None = None
+    pdf_sym: sp.Expr | None = None
 
-    mgf_backend: Optional[Callable] = None
-    pdf_backend: Optional[Callable] = None
+    mgf_backend: Callable | None = None
+    pdf_backend: Callable | None = None
 
-    params: Optional[Dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
     #: Supremum of the orders `a` for which `E[Θ^a]` is finite, i.e. the moment
     #: domain. Only consulted when the evaluation point is `t = 0`, where
@@ -146,14 +147,14 @@ class mitMGFprior:
     # -----------------------------
     # compiled outputs
     # -----------------------------
-    mgf: Optional[Callable] = None
-    cgf: Optional[Callable] = None
+    mgf: Callable | None = None
+    cgf: Callable | None = None
 
-    mgf_jax: Optional[Callable] = None
-    cgf_jax: Optional[Callable] = None
+    mgf_jax: Callable | None = None
+    cgf_jax: Callable | None = None
 
-    pdf_func: Optional[Callable] = None
-    logpdf_func: Optional[Callable] = None
+    pdf_func: Callable | None = None
+    logpdf_func: Callable | None = None
 
     mgf_sym_out: Any = None
     cgf_sym: Any = None

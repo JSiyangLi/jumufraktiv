@@ -19,8 +19,8 @@ import warnings
 import numpy as np
 import pytest
 import sympy as sp
-
 from conftest import gamma_mgf_derivative_log
+
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 
@@ -203,6 +203,83 @@ def test_pareto_symbolic_incomplete_mgf_is_correct():
 
 
 # ==========================================================================
+# Unscheduled — accuracy at t = 0 as the order approaches the moment bound
+# ==========================================================================
+# Found while making `_check_moment_exists_at_origin` reachable from all three
+# public entry points. The guard's contract is that an order strictly below the
+# prior's `max_finite_moment` is admissible, which is true of the mathematics
+# and not of the quadrature: at `t = 0` the integrand `theta^a p(theta)` decays
+# only polynomially, like `theta^(a - alpha - 1)`, and the closer `a` gets to
+# `alpha` the slower. Away from the origin the exponential restores geometric
+# decay and both routes are exact to machine precision, so this is a `t = 0`
+# defect specifically and not a heavy-tail defect in general.
+#
+# Measured for Pareto(alpha=2, xi=1) against the exact E[Theta^a] = 2/(2 - a):
+#
+#   order   exact       scipy grid   auto (expectation)
+#   0.5     1.333       4.3e-13      2.5e-16
+#   1.0     2.000       1.4e-17      1.4e-12
+#   1.5     4.000       2.0e-04      7.2e-07
+#   1.9    20.000       8.2e-02      2.2e-02
+#   1.99  200.000       6.1e-01      2.7e-01
+#
+# At t = -0.01 the same three near-boundary orders are accurate to 1.2e-16.
+#
+# Unscheduled: it is tail-handling in the quadrature, needing its own
+# verification, and PR 12 is an interface pass.
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="unscheduled: at t = 0 the integrand decays only polynomially, so "
+    "accuracy collapses as the order approaches the prior's max_finite_moment "
+    "-- 61% relative error at order 1.99 against Pareto(alpha=2)",
+)
+@pytest.mark.parametrize("order", [1.5, 1.9, 1.99])
+def test_moments_near_the_bound_are_accurate_at_the_origin(order):
+    """An order the guard admits must also be one the kernel can compute."""
+    prior = _pareto_prior_alpha_two()
+    exact = np.log(2.0 / (2.0 - order))
+
+    log_abs, sign = mgfDerivative(order, prior, method="auto", t=0.0, log=True)
+
+    assert sign == 1
+    assert log_abs == pytest.approx(exact, rel=1e-8)
+
+
+def test_moments_near_the_bound_are_accurate_just_off_the_origin():
+    """Not broken -- asserted here to bound the defect above.
+
+    Without this, "heavy-tailed priors lose accuracy at high orders" would be
+    far too broad a claim, and a repair might start from the wrong end. The
+    same orders at t = -0.01 agree with direct quadrature to 1.2e-16.
+    """
+    import mpmath as mp
+
+    prior = _pareto_prior_alpha_two()
+    mp.mp.dps = 40
+
+    def integrand(theta, a):
+        """theta**a e^{t theta} p(theta) for Pareto(2, 1) at t = -0.01."""
+        return theta ** mp.mpf(a) * mp.e ** (mp.mpf("-0.01") * theta) * 2 / theta**3
+
+    for order in (1.5, 1.9, 1.99):
+        reference = float(
+            mp.log(mp.quad(lambda th, a=order: integrand(th, a), [1, mp.inf]))
+        )
+        log_abs, _ = mgfDerivative(order, prior, method="auto", t=-0.01, log=True)
+
+        assert log_abs == pytest.approx(reference, rel=1e-12)
+
+
+def _pareto_prior_alpha_two():
+    from jumufraktiv import registry
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    registry.initialize()
+    return mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+
+
+# ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================
 # Three findings from PR 8's review, all the same shape: a check that exists at
@@ -233,9 +310,7 @@ def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
     # The cost of not raising, so the record carries the size of the defect
     # rather than only its shape.
     assert post.post_predictive([2.0]) == pytest.approx(-1.1053356325054668)
-    assert post.post_predictive([2.0], rho=9.0) == pytest.approx(
-        -14.108023936618833
-    )
+    assert post.post_predictive([2.0], rho=9.0) == pytest.approx(-14.108023936618833)
 
 
 def test_the_two_fractional_entry_points_name_options_alike():
