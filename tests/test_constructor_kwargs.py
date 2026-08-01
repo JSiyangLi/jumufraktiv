@@ -14,8 +14,8 @@ import inspect
 import warnings
 
 import pytest
-from conftest import ALPHA, BETA, POISSON_DATA, poisson_log_evidence
 
+from conftest import ALPHA, BETA, POISSON_DATA, poisson_log_evidence
 from jumufraktiv.MGFDerivative_class import (
     _RESERVED_DERIVATIVE_KWARGS,
     DERIVATIVE_KWARGS,

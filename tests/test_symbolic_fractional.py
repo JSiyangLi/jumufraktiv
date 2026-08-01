@@ -29,8 +29,8 @@ import warnings
 
 import numpy as np
 import pytest
-from conftest import gamma_mgf_derivative_log
 
+from conftest import gamma_mgf_derivative_log
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 from jumufraktiv.symbols import t as canonical_t

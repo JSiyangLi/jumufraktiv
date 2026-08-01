@@ -27,8 +27,8 @@ and a fixture that picks `n` carelessly asserts nothing at all.
 import numpy as np
 import pytest
 import sympy as sp
-from conftest import gamma_mgf_derivative_log
 
+from conftest import gamma_mgf_derivative_log
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 

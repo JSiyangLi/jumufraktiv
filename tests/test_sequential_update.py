@@ -16,8 +16,8 @@ what that route consumes.
 
 import numpy as np
 import pytest
-from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE
 
+from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 

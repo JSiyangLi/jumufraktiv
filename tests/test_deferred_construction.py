@@ -26,8 +26,8 @@ import warnings
 import numpy as np
 import pytest
 import sympy as sp
-from conftest import gamma_mgf_derivative_log
 
+from conftest import gamma_mgf_derivative_log
 from jumufraktiv.derivativeDispatch import mgfDerivative, resolve_backend
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 

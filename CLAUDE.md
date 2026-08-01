@@ -1018,7 +1018,7 @@ unnoticed.
 
 ---
 
-### A testing hazard this repository has already hit three times
+### A testing hazard this repository has already hit four times
 
 Recorded here because each instance cost real time and the shape recurs:
 **a check that sits downstream of the property being tested can pass for
@@ -1044,12 +1044,21 @@ reasons unrelated to it.**
   the wrong answer and the right answer are the same number. Off that value the
   error is 1.308 nats at `scale=5.0`. So the suite covered the one likelihood
   that fails quietly, at the one value where the failure cannot be seen.
+- **`ruff`'s cache is keyed on file contents, and isort's first-party
+  detection is not a function of file contents.** Adding a repository-root
+  `conftest.py` reclassifies `conftest` from third-party to first-party in
+  every test that imports it, so thirteen files needed their import blocks
+  regrouped — and `ruff check .` reported "All checks passed" locally against
+  cached verdicts for files whose text had not changed. CI, with a cold cache,
+  found all thirteen. **After adding or moving a file, run
+  `ruff check --no-cache .` before believing a clean local result.**
 
 The general rule: assert the property itself, and confirm a new test fails
 against the unfixed code before trusting that it passes against the fixed one.
 The third instance adds a corollary — **choose fixture values that are not
 defaults**, since a parameter tested only at its default value is a parameter
-whose plumbing is untested.
+whose plumbing is untested. The fourth adds another: **a cached verdict is a
+statement about the last run's inputs, not about the current tree.**
 
 ---
 
