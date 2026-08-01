@@ -227,17 +227,11 @@ def heaviside_logimgf(t_val, k_val, u_val):
             "so the integral diverges at and above the origin"
         )
 
-    out = np.full(t_arr.shape, -np.inf, dtype=float)
-    inside = u_arr > k_val
-    if not np.any(inside):
-        return out if out.ndim else float(out)
-
-    for index in np.argwhere(inside):
-        key = tuple(index)
-        tv, uv = float(t_arr[key]), float(u_arr[key])
-        # t < 0, so e^{t k} is the larger exponential and the numerator's sign
-        # cancels with t's.
-        out[key] = logminus(tv * k_val, tv * uv) - math.log(-tv)
+    # `t < 0`, so `e^{t k}` is the larger exponential and the numerator's sign
+    # cancels with `t`'s. Below the support `t*u >= t*k`, so `logminus` returns
+    # `-inf` of its own accord: a truncation that captures no mass needs no
+    # mask, only the right ordering.
+    out = logminus(t_arr * k_val, t_arr * u_arr) - np.log(-t_arr)
 
     return out if out.ndim else float(out)
 
@@ -248,7 +242,16 @@ def heaviside_imgf(t_val, k_val, u_val):
 
 
 def heaviside_logimgf_jax(t_val, k_val, u_val):
-    """JAX log incomplete MGF, dividing before the log as the CGF does."""
+    """JAX log incomplete MGF, dividing before the log as the CGF does.
+
+    Notes
+    -----
+    Returns `nan` for `t >= 0`, where the SciPy path raises. The two differ
+    deliberately: the improper prior has no MGF at or above the origin, and a
+    traced JAX function cannot raise on a value it has not computed yet. `nan`
+    is the honest answer for a quantity that does not exist, and it propagates
+    rather than being mistaken for a number.
+    """
     upper = jnp.maximum(u_val, k_val)
     return jnp.log((jnp.exp(t_val * upper) - jnp.exp(t_val * k_val)) / t_val)
 

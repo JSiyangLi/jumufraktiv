@@ -222,28 +222,32 @@ def uniform_logimgf(t_val, a_val, b_val, u_val):
         np.asarray(t_val, dtype=float), np.asarray(u_val, dtype=float)
     )
     m = np.clip(u_arr, a_val, b_val)
-    out = np.full(t_arr.shape, -np.inf, dtype=float)
-
-    inside = m > a_val
-    if not np.any(inside):
-        return out if out.ndim else float(out)
-
     width = math.log(b_val - a_val)
-    at_origin = inside & (t_arr == 0.0)
-    if np.any(at_origin):
-        out[at_origin] = np.log(m[at_origin] - a_val) - width
 
-    off = inside & (t_arr != 0.0)
-    for index in np.argwhere(off):
-        key = tuple(index)
-        tv, mv = float(t_arr[key]), float(m[key])
-        # Order the difference by the sign of t so that `logminus` receives the
-        # larger exponent first; the sign of the numerator and of t cancel.
-        if tv > 0:
-            numerator = logminus(tv * mv, tv * a_val)
-        else:
-            numerator = logminus(tv * a_val, tv * mv)
-        out[key] = numerator - math.log(abs(tv)) - width
+    # Order the difference by the sign of `t` so `logminus` receives the larger
+    # exponent first; the sign of the numerator and of `t` then cancel. Where
+    # `m == a` the two exponents are equal and `logminus` returns `-inf`, which
+    # is the right answer for a truncation that captures no mass, so the
+    # below-support case needs no mask of its own.
+    above = t_arr > 0.0
+    larger = np.where(above, t_arr * m, t_arr * a_val)
+    smaller = np.where(above, t_arr * a_val, t_arr * m)
+
+    # `t == 0` is a separate formula, not a limit to be approached: the
+    # numerator and `t` both vanish and the value is the plain mass fraction.
+    # Both branches are evaluated over the whole array and selected afterwards,
+    # so the placeholders below only keep the unused branch from warning.
+    nonzero = t_arr != 0.0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        off_origin = (
+            logminus(larger, smaller)
+            - np.log(np.abs(np.where(nonzero, t_arr, 1.0)))
+            - width
+        )
+        at_origin = np.log(np.where(m > a_val, m - a_val, 1.0)) - width
+        at_origin = np.where(m > a_val, at_origin, -np.inf)
+
+    out = np.where(nonzero, off_origin, at_origin)
 
     return out if out.ndim else float(out)
 
@@ -263,12 +267,22 @@ def uniform_logimgf_jax(t_val, a_val, b_val, u_val):
     negative factors cancel without a signed intermediate. That costs the
     small-`t` stability the SciPy path gets from `logminus`, which is the same
     trade the MGF makes.
+
+    `t = 0` is selected rather than approached. The quotient is `0/0` there and
+    evaluates to `nan`, where the value is the plain mass fraction
+    `(m - a)/(b - a)` -- and `t = 0` is reachable, since `b(y) = 0` whenever
+    every observation sits at the value the likelihood subtracts. Both branches
+    are computed and chosen between, because `jnp.where` evaluates both sides.
     """
     m = jnp.clip(u_val, a_val, b_val)
-    ratio = (jnp.exp(t_val * m) - jnp.exp(t_val * a_val)) / (
-        t_val * (b_val - a_val)
+    safe_t = jnp.where(t_val == 0, 1.0, t_val)
+
+    off_origin = (jnp.exp(safe_t * m) - jnp.exp(safe_t * a_val)) / (
+        safe_t * (b_val - a_val)
     )
-    return jnp.log(ratio)
+    at_origin = (m - a_val) / (b_val - a_val)
+
+    return jnp.log(jnp.where(t_val == 0, at_origin, off_origin))
 
 
 def uniform_imgf_jax(t_val, a_val, b_val, u_val):

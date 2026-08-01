@@ -235,3 +235,77 @@ def test_the_new_incomplete_mgfs_broadcast(name):
         for t, u in zip(t_values, u_values, strict=True)
     ]
     assert batched == pytest.approx(one_at_a_time, rel=1e-14)
+
+
+# ==========================================================================
+# The tuple-vectorisation principle
+# ==========================================================================
+@pytest.mark.parametrize(
+    ("module_name", "function_name", "args"),
+    [
+        ("uniformMGF", "uniform_logimgf", (0.5, 2.0)),
+        ("heavisideMGF", "heaviside_logimgf", (0.5,)),
+    ],
+)
+def test_the_incomplete_mgf_is_batched_not_looped(
+    monkeypatch, module_name, function_name, args
+):
+    """Cost, not only shape. Counted, not timed.
+
+    Both of these were written with a Python loop over `np.argwhere`, which
+    returns correctly shaped answers while doing per-element work in the
+    innermost function of the package -- the shape half of the principle
+    without the cost half, which is the failure PR 9 was written against and
+    which no value-based test can see.
+
+    `logminus` broadcasts, so a batched implementation calls it a fixed number
+    of times whatever the array length. A wall-clock assertion would vary with
+    the machine; a call count is a property of the algorithm.
+    """
+    import importlib
+
+    module = importlib.import_module(f"jumufraktiv.MGFdictionary.{module_name}")
+    calls = []
+    original = module.logminus
+
+    def counting_logminus(x, y):
+        calls.append(1)
+        return original(x, y)
+
+    monkeypatch.setattr(module, "logminus", counting_logminus)
+    function = getattr(module, function_name)
+
+    function(np.full(3, -1.0), *args, np.linspace(0.6, 1.9, 3))
+    for_three = len(calls)
+
+    calls.clear()
+    function(np.full(60, -1.0), *args, np.linspace(0.6, 1.9, 60))
+    for_sixty = len(calls)
+
+    assert for_three == for_sixty, (
+        f"{function_name} called logminus {for_three} times for 3 points and "
+        f"{for_sixty} for 60: it is looping, not broadcasting"
+    )
+
+
+def test_the_jax_and_scipy_incomplete_mgfs_agree_at_the_origin():
+    """`t = 0` is reachable, and the JAX path used to return `nan` there.
+
+    `b(y) = 0` whenever every observation sits at the value the likelihood
+    subtracts, which puts the evaluation point exactly at the origin. The
+    quotient is `0/0` there, so the JAX path has to select the limiting formula
+    rather than approach it.
+    """
+    from jumufraktiv.MGFdictionary.uniformMGF import (
+        uniform_logimgf,
+        uniform_logimgf_jax,
+    )
+
+    for u_value in [0.3, 1.25, 2.0, 5.0]:
+        scipy_side = float(uniform_logimgf(0.0, 0.5, 2.0, u_value))
+        jax_side = float(uniform_logimgf_jax(0.0, 0.5, 2.0, u_value))
+
+        if scipy_side == -math.inf:
+            assert jax_side == -math.inf
+        else:
+            assert jax_side == pytest.approx(scipy_side, rel=1e-12)
