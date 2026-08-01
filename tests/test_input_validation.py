@@ -401,3 +401,111 @@ def test_a_symbolic_path_does_not_mask_a_deliberate_refusal():
     message = str(excinfo.value)
     assert "q" in message, "the refusal does not name the free symbol"
     assert "computation failed" not in message, "the refusal was wrapped"
+
+
+# ==========================================================================
+# from_registry's hyperparameters
+# ==========================================================================
+#: A number and its SymPy spellings. `sympy` arithmetic produces `Integer` and
+#: `Float` routinely, so a caller can hold one without ever having written
+#: `sp.Integer` themselves.
+def _sympy_spellings_of_two():
+    import sympy as sp
+
+    return {
+        "python float": 2.0,
+        "python int": 2,
+        "sp.Integer": sp.Integer(2),
+        "sp.Rational": sp.Rational(4, 2),
+        "sp.Float": sp.Float(2.0),
+        # An expression that carries symbols but cancels to a number. It has no
+        # free symbols, so it is a number in the only sense that matters here.
+        "cancelling expr": sp.Symbol("z") - sp.Symbol("z") + sp.Integer(2),
+    }
+
+
+@pytest.mark.parametrize("spelling", sorted(_sympy_spellings_of_two()))
+@pytest.mark.parametrize("prior_name", ["gamma", "pareto"])
+def test_a_sympy_number_is_a_number(prior_name, spelling):
+    """A SymPy object with no free symbols is a hyperparameter, not a symbol.
+
+    Rejecting on `isinstance(value, sp.Basic)` is too strict: it refuses
+    `sp.Integer(2)`, which is worth exactly 2. It is also not strict enough in
+    the other direction, since passing one *through* builds an object-dtype
+    array inside the Pareto factory, which fails as "Cannot cast array data
+    from dtype('O')" several frames from the argument at fault. Converting is
+    what makes every spelling behave alike, which is what this asserts.
+    """
+    registry.initialize()
+
+    value = _sympy_spellings_of_two()[spelling]
+    other = {"gamma": {"beta": 3.0}, "pareto": {"xi": 1.0}}[prior_name]
+    key = "alpha"
+
+    reference = mitMGFprior.from_registry(prior_name, params={key: 2.0, **other})
+    got = mitMGFprior.from_registry(prior_name, params={key: value, **other})
+
+    assert float(got.mgf(-1.0)) == pytest.approx(float(reference.mgf(-1.0)), rel=1e-14)
+    assert float(got.pdf_func(1.0)) == pytest.approx(
+        float(reference.pdf_func(1.0)), rel=1e-14
+    )
+
+
+def test_a_free_symbol_is_refused_by_name():
+    """The refusal must name the argument and the route that does work."""
+    import sympy as sp
+
+    registry.initialize()
+    alpha = sp.Symbol("alpha", positive=True)
+
+    with pytest.raises(TypeError, match=r"alpha, beta are symbolic"):
+        mitMGFprior.from_registry(
+            "gamma", params={"alpha": alpha, "beta": sp.Symbol("beta", positive=True)}
+        )
+
+    # An expression that still carries a symbol is refused for the same reason.
+    with pytest.raises(TypeError, match=r"alpha is symbolic"):
+        mitMGFprior.from_registry("gamma", params={"alpha": alpha + 1, "beta": 3.0})
+
+
+@pytest.mark.parametrize(
+    "value", [float("inf"), float("-inf"), float("nan")], ids=["inf", "-inf", "nan"]
+)
+def test_a_non_finite_hyperparameter_is_refused(value):
+    """It used to build a prior whose every derived quantity was 0 or nan.
+
+    `alpha=inf` gave `mgf(-1) == 0.0` and `alpha=nan` gave `nan`, with no error
+    anywhere -- the failure mode that is worst to debug, because the number
+    comes back.
+    """
+    registry.initialize()
+
+    with pytest.raises(ValueError, match=r"finite hyperparameters"):
+        mitMGFprior.from_registry("gamma", params={"alpha": value, "beta": 3.0})
+
+
+def test_a_non_finite_hyperparameter_is_refused_in_its_sympy_spelling_too():
+    """The same rule for both spellings.
+
+    A check that exists in one place and not in the neighbouring one is this
+    repository's most-repeated defect, so `sp.oo` and `float('inf')` are held
+    to one rule rather than two that agree by inspection.
+    """
+    import sympy as sp
+
+    registry.initialize()
+
+    with pytest.raises(ValueError, match=r"finite hyperparameters"):
+        mitMGFprior.from_registry("gamma", params={"alpha": sp.oo, "beta": 3.0})
+
+    # Complex infinity has no float at all, so it is reported as not a number
+    # rather than as a number of the wrong size.
+    with pytest.raises(TypeError, match=r"cannot be converted to a float"):
+        mitMGFprior.from_registry("gamma", params={"alpha": sp.zoo, "beta": 3.0})
+
+
+def test_a_hyperparameter_that_is_not_a_number_names_its_type():
+    registry.initialize()
+
+    with pytest.raises(TypeError, match=r"alpha \(str\) cannot be converted"):
+        mitMGFprior.from_registry("gamma", params={"alpha": "two", "beta": 3.0})

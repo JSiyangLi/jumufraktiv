@@ -181,8 +181,8 @@ def test_notebook_sources_parse(notebook):
 
 
 @pytest.mark.slow
-def test_the_docstring_examples_run_as_ci_invokes_them():
-    """The doctest harness must be wired, not merely present.
+def test_the_docstring_examples_run():
+    """This is the only thing that runs them, and the harness must be wired.
 
     ``--doctest-modules`` collects from ``jumufraktiv/``, so it does not load
     ``tests/conftest.py`` and cannot see the ``deriv`` and ``prior`` the
@@ -191,7 +191,9 @@ def test_the_docstring_examples_run_as_ci_invokes_them():
     checks that arrangement: the suite passes with the fixture in either place,
     and only this command fails when it is in the wrong one.
 
-    Run the command CI runs, verbatim. A paraphrase would defeat the point.
+    Run in a subprocess rather than by collecting the doctests into this
+    session, because the wiring is the thing under test: collected in-process
+    they would find the fixture whatever its location.
     """
     result = subprocess.run(
         [

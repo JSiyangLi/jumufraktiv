@@ -37,6 +37,7 @@ Examples
 0.4444444444444444
 """
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -378,26 +379,70 @@ class mitMGFprior:
             raise ValueError(message) from exc
 
         # Every registry factory freezes a SciPy distribution and evaluates its
-        # density numerically, so the hyperparameters must be numbers. A SymPy
-        # symbol reaches `float()` several frames down and raises
-        # "Cannot convert expression to float", which names neither the
-        # argument at fault nor the supported route.
-        symbolic = sorted(
-            name for name, value in params.items() if isinstance(value, sp.Basic)
-        )
-        if symbolic:
+        # density numerically, so each hyperparameter must be a finite number.
+        # Sort the arguments into the three cases before raising, so a caller
+        # who got two of them wrong hears about both.
+        #
+        # A SymPy object that carries no free symbol IS a number, and is
+        # converted here rather than refused: `sp.Integer(2)` and `sp.Float(2.0)`
+        # arise from ordinary SymPy arithmetic. Converting is what makes them
+        # work everywhere -- passed through unconverted they build an
+        # object-dtype array inside the Pareto factory and fail there with
+        # "Cannot cast array data from dtype('O')", several frames from the
+        # argument at fault.
+        resolved: dict[str, float] = {}
+        free_symbols: list[str] = []
+        not_a_number: list[str] = []
+        not_finite: list[str] = []
+
+        for name, value in params.items():
+            if isinstance(value, sp.Basic) and value.free_symbols:
+                free_symbols.append(name)
+                continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                # `sp.zoo` (complex infinity) has no float at all, and neither
+                # does a string. Both land here rather than in `not_finite`,
+                # which would report them as numbers of the wrong size.
+                not_a_number.append(f"{name} ({type(value).__name__})")
+                continue
+            if not math.isfinite(number):
+                not_finite.append(name)
+                continue
+            resolved[name] = number
+
+        if free_symbols:
+            names = ", ".join(sorted(free_symbols))
             raise TypeError(
-                f"from_registry() needs numeric hyperparameters; "
-                f"{', '.join(symbolic)} "
-                f"{'is' if len(symbolic) == 1 else 'are'} symbolic. Registry "
-                "priors compile a numeric density, which a symbol cannot "
-                "supply. For a prior whose hyperparameters stay free, build it "
-                "directly -- mitMGFprior(mgf_sym=..., pdf_sym=..., "
-                "params={}).as_mitMGFprior() -- and substitute the values "
-                "later, or pass them through `params` to have them resolved."
+                f"from_registry() needs numeric hyperparameters; {names} "
+                f"{'is' if len(free_symbols) == 1 else 'are'} symbolic. "
+                "Registry priors compile a numeric density, which a free "
+                "symbol cannot supply. For a prior whose hyperparameters stay "
+                "free, build it directly -- mitMGFprior(mgf_sym=..., "
+                "pdf_sym=..., params={}).as_mitMGFprior() -- and substitute "
+                "the values later, or pass them through `params` to have them "
+                "resolved."
             )
 
-        spec = factory(params)  # <-- this is the make_prior_spec dict
+        if not_a_number:
+            names = ", ".join(sorted(not_a_number))
+            raise TypeError(
+                f"from_registry() needs numeric hyperparameters; {names} "
+                f"cannot be converted to a float."
+            )
+
+        if not_finite:
+            names = ", ".join(sorted(not_finite))
+            raise ValueError(
+                f"from_registry() needs finite hyperparameters; {names} "
+                f"{'is' if len(not_finite) == 1 else 'are'} not. An infinite "
+                "or undefined hyperparameter builds a density that integrates "
+                "to zero or to nan, and every quantity derived from it "
+                "inherits that silently rather than raising."
+            )
+
+        spec = factory(resolved)  # <-- this is the make_prior_spec dict
 
         # ---------------------------------------------------------
         # Extract symbolic forms from the spec

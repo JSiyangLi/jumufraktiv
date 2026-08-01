@@ -65,16 +65,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # The docstring examples are executed here too, not merely rendered: they
+      # printed invented numbers for several releases -- `1.234567e+00` among
+      # them -- because nothing ran them. There is no separate step for them,
+      # because `tests/test_documentation_runs.py` runs the `--doctest-modules`
+      # command in a subprocess and is `slow`-marked, so this job collects it.
+      # A dedicated step would run the same 28 seconds a second time.
       - name: Run the full suite
         if: matrix.slow
         run: pytest -v --cov=jumufraktiv --cov-report=term-missing
-
-      # The docstring examples are executed, not merely rendered. They printed
-      # invented numbers for several releases -- `1.234567e+00` among them --
-      # because nothing ran them.
-      - name: Run the docstring examples
-        if: matrix.slow
-        run: pytest -v --doctest-modules jumufraktiv/MGFDerivative_class.py jumufraktiv/mitMGFprior_class.py
 
       - name: Run the quick pass
         if: ${{ !matrix.slow }}
