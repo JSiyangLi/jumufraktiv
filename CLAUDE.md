@@ -651,8 +651,10 @@ where noted as "no runtime repro".
   that shows it.** Since PR 6c made the direct-expectation route the default
   for numeric evaluation, `method="auto"` with a concrete `t` calls
   `expectationDeriv`, which has **no tuning parameters at all**. So `tol`,
-  `dps`, `use_tan`, `cgf_method`, `symbolic_timeout` and `integer_method` are
-  accepted and discarded. Measured for Gamma(2, 3) at order 1.5, `t = −1`:
+  `dps`, `use_tan`, `cgf_method`, `symbolic_timeout`, `timeout_seconds` and
+  `integer_method` are accepted and discarded — every accepted option except
+  `int_tol`, which `resolve_backend` consumes before the branch is chosen.
+  Measured for Gamma(2, 3) at order 1.5, `t = −1`:
 
   | call | log of the derivative |
   |------|----------------------|
