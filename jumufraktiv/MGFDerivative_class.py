@@ -469,20 +469,21 @@ class MGFDerivative:
         differentiates the prior's MGF and hands back a `sympy.Expr` in `t`,
         which later methods substitute into as often as they like. Every
         numeric backend quadratures at a *particular* `t` and so has nothing to
-        return until one is known.
-
-        For those, this method stores a callable instead — a thunk that runs
-        the same `mgfDerivative` call once an evaluation point arrives. The
-        arrangement is what `_evaluate_derivative`'s callable branch has always
-        expected; until now nothing produced a callable, so the branch was
-        unreachable and every numeric backend raised
-        ``ValueError: t must be provided`` during construction.
+        return until one is known; for those this stores a thunk that runs the
+        same `mgfDerivative` call once an evaluation point arrives.
 
         Notes
         -----
         Which case applies is asked of `resolve_backend`, so this method does
         not need to know the backend matrix — that stays in the dispatch layer,
         as the layer rule requires.
+
+        The thunk is built either way. Holding a symbolic representation and
+        evaluating numerically through the dispatcher are not alternatives:
+        `post_density`, `post_cdf`, `post_mgf` and `update` need the
+        expression, while a numeric evaluation point should reach whichever
+        backend `mgfDerivative` would choose for it. See
+        `_evaluate_derivative`.
         """
         _, resolved_method, _ = resolve_backend(
             self.a,
@@ -491,6 +492,8 @@ class MGFDerivative:
             self._deriv_kwargs.get("int_tol", 1e-12),
             prior=self.prior,
         )
+
+        self._deriv_numeric = self._deferred_derivative()
 
         if resolved_method == "symbolic":
             self._deriv = mgfDerivative(
@@ -505,11 +508,18 @@ class MGFDerivative:
                 **self._deriv_kwargs
             )
         else:
-            self._deriv = self._deferred_derivative()
+            self._deriv = self._deriv_numeric
 
         # Do I have an unevaluated symbolic derivative function representation
         # DM(t)? It tells you whether you can work with it symbolically.
         self._deriv_is_symbolic = isinstance(self._deriv, sp.Expr)
+
+        # Whether substituting a number for `t` leaves a number. False when the
+        # prior's hyperparameters are unbound, in which case the answer stays
+        # symbolic and no numeric backend could produce it.
+        self._deriv_is_bound = (
+            self._deriv_is_symbolic and self._deriv.free_symbols <= {t}
+        )
 
     def _deferred_derivative(self):
         """Return a thunk evaluating ``D^a M`` at a `t` supplied later.
@@ -543,6 +553,26 @@ class MGFDerivative:
         return deferred
 
     def _evaluate_derivative(self, t_value):
+        """Evaluate the stored derivative at ``t_value``.
+
+        Notes
+        -----
+        Holding a symbolic representation does not mean evaluating through it.
+        ``method="auto"`` asks for the best route for the request, and for a
+        numeric evaluation point that is the direct-expectation route, whose
+        integrand is positive and therefore cannot cancel. Substituting into
+        the differentiated MGF instead reaches an answer that cancels through
+        as many digits as the prior's CGF alternates: for Uniform(0.5, 2) with
+        Poisson data summing to 27 the two differ by 5.4e-7 relative, and by 60
+        the substituted value is negative, which `_store_result` refuses.
+
+        An explicit ``method=`` is never diverted, and neither is a request
+        whose answer stays symbolic -- an unbound hyperparameter leaves free
+        symbols that no numeric backend can resolve.
+        """
+        if self._should_dispatch_numerically(t_value):
+            return self._deriv_numeric(t_value)
+
         if isinstance(self._deriv, sp.Basic):
             val = self._deriv.subs(t, t_value)
             if not val.free_symbols:
@@ -559,6 +589,21 @@ class MGFDerivative:
         else:
             # Deferred numeric backend: the thunk already holds the options.
             return self._deriv(t_value)
+
+    def _should_dispatch_numerically(self, t_value) -> bool:
+        """Whether to route this evaluation point through `mgfDerivative`.
+
+        True only for `method="auto"` at a concrete point whose answer is a
+        number. The three conditions are separate refusals, not one test:
+        an explicit backend must be honoured as asked, a symbolic evaluation
+        point has no numeric answer, and an unbound hyperparameter leaves one
+        that no backend can produce.
+        """
+        if not self._deriv_is_symbolic or self.method != "auto":
+            return False
+        if not self._deriv_is_bound:
+            return False
+        return not (isinstance(t_value, sp.Basic) and t_value.free_symbols)
 
 
     def _compute(self):

@@ -494,3 +494,116 @@ def test_backends_agree_on_a_fractional_order():
 
     assert scipy_log == pytest.approx(mpmath_log, rel=1e-8)
     assert scipy_log == pytest.approx(gamma_mgf_derivative_log(1.5, -1.0), rel=1e-8)
+
+
+class TestAutoUsesTheExpectationRoute:
+    """`auto` must reach the same backend through the class as through the
+    dispatcher.
+
+    `_build_derivative` asks `resolve_backend`, which encodes the backend
+    matrix and answers "symbolic" for `auto` at an integer order. But
+    `mgfDerivative` applies a *second*, separate decision that
+    `resolve_backend` does not model: with a concrete `t` it diverts `auto` to
+    the direct-expectation route, whose integrand is positive and so cannot
+    cancel. The class consulted only the first, so it held a symbolic
+    expression and substituted into it -- evaluating the differentiated MGF,
+    the route the diversion exists to avoid.
+
+    Invisible to the suite because every class-level test used a Gamma prior,
+    whose MGF derivatives have one-signed terms and therefore cannot cancel.
+    """
+
+    @staticmethod
+    def _uniform_oracle(order, t, lo=0.5, hi=2.0):
+        """log E[Theta^order e^{t Theta}] for Uniform(lo, hi), at 50 digits.
+
+        Written out here rather than taken from the package, so it cannot
+        agree with the code for the same wrong reason.
+        """
+        import mpmath as mp
+
+        mp.mp.dps = 50
+        width = mp.mpf(hi) - mp.mpf(lo)
+
+        def integrand(theta):
+            return theta ** mp.mpf(order) * mp.e ** (mp.mpf(t) * theta) / width
+
+        return float(mp.log(mp.quad(integrand, [lo, hi])))
+
+    @staticmethod
+    def _uniform_prior():
+        from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+        return mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+
+    @pytest.mark.parametrize("data", [[1, 2, 3], [8, 9, 10], [20, 20, 20]])
+    def test_the_class_matches_the_oracle_for_an_alternating_cgf(self, data):
+        """Poisson counts summing to 27 and 60 are ordinary, not contrived.
+
+        Before the repair, `a = 27` gave 5.4e-7 relative error and `a = 60`
+        raised `ValueError: Derivative at t=-b is negative` -- the class could
+        not construct a posterior the dispatcher computes to 2.4e-16.
+        """
+        post = MGFDerivative(
+            self._uniform_prior(), data=data, likelihood="poisson", scale=1.0
+        )
+        expected = self._uniform_oracle(float(post.a), -float(post.b))
+
+        assert post.evidence()[0] - post.log_c == pytest.approx(expected, rel=1e-12)
+
+    def test_an_explicit_backend_is_never_diverted(self):
+        """`method="symbolic"` must be honoured as asked, warts and all.
+
+        The diversion is what `auto` means, not a correction applied to every
+        request. A caller who names a backend gets it, and here that is
+        measurably worse -- which is the caller's choice to make.
+        """
+        post = MGFDerivative(
+            self._uniform_prior(),
+            data=[8, 9, 10],
+            likelihood="poisson",
+            scale=1.0,
+            method="symbolic",
+        )
+        expected = self._uniform_oracle(float(post.a), -float(post.b))
+
+        assert post.evidence()[0] - post.log_c != pytest.approx(expected, rel=1e-12)
+
+    def test_the_symbolic_representation_survives_the_diversion(self, gamma_prior):
+        """Routing numerically must not cost the expression the class holds.
+
+        `post_density`, `post_cdf`, `post_mgf` and `update` branch on
+        `_deriv_is_symbolic`. Swapping the representation for the expectation
+        route rather than evaluating through it would take those with it.
+        """
+        post = MGFDerivative(
+            gamma_prior, data=[1, 2, 3], likelihood="poisson", scale=1.0
+        )
+
+        assert post._deriv_is_symbolic
+        assert isinstance(post.post_density(theta_val=None), sp.Expr)
+
+    def test_an_unbound_hyperparameter_still_answers_symbolically(self):
+        """A prior with free hyperparameters has no numeric route to divert to.
+
+        The diversion is refused for a reason distinct from the other two: not
+        because the caller named a backend, and not because the point is
+        symbolic, but because the *answer* is. `_deriv_is_bound` is what
+        records that.
+        """
+        from test_symbolic_correctness import _gamma_mgf, _gamma_pdf
+
+        from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+        prior = mitMGFprior(
+            name="gamma_symbolic",
+            mgf_sym=_gamma_mgf(),
+            pdf_sym=_gamma_pdf(),
+            params={},
+        ).as_mitMGFprior()
+        post = MGFDerivative(
+            prior, data=[1, 2, 3], likelihood="poisson", scale=1.0, method="symbolic"
+        )
+
+        assert not post._deriv_is_bound
+        assert post._is_symbolic
