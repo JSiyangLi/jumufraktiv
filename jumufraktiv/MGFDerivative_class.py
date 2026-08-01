@@ -818,8 +818,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The evidence is computed as:
+        The evidence is computed as::
+
             evidence = c_func() * D^a M(t) |_{t=-b}
+
         where `c_func` is the likelihood's normalising constant and the
         derivative is evaluated at the posterior mode location `t = -b`.
 
@@ -881,10 +883,11 @@ class MGFDerivative:
         depends only on whether unresolved symbols remain, not on the path taken.
 
         - If `theta_val` is a SymPy symbol (canonically
-        :data:`jumufraktiv.symbols.theta`), or if the derivative expression
-        still contains free symbols, a symbolic expression is returned.
+          :data:`jumufraktiv.symbols.theta`), or if the derivative expression
+          still contains free symbols, a symbolic expression is returned.
+
         - If `theta_val` is numeric (scalar or array), the expression is evaluated
-        numerically, respecting vectorisation.
+          numerically, respecting vectorisation.
 
         Parameters
         ----------
@@ -905,8 +908,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior density is computed as:
+        The posterior density is computed as::
+
             p(θ | y) = p(θ) * θ^a * exp(-b θ) / D^a M(t) |_{t=-b}
+
         where `D^a M` is the fractional derivative of the prior MGF.
 
         For vectorised symbolic input, all elements must evaluate to a pure numeric
@@ -1092,11 +1097,12 @@ class MGFDerivative:
         depends only on whether unresolved symbols remain.
 
         - If `u_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.u`),
-        or if the expression still contains free symbols, a symbolic expression
-        is returned.
+          or if the expression still contains free symbols, a symbolic expression
+          is returned.
+
         - If `u_val` is numeric (scalar or array), the CDF is evaluated numerically,
-        supporting tuple-vectorisation: the evaluation point is the pair `(t, u)`,
-        where `t = -self.b` is fixed and `u` is broadcast to match the input.
+          supporting tuple-vectorisation: the evaluation point is the pair `(t, u)`,
+          where `t = -self.b` is fixed and `u` is broadcast to match the input.
 
         Parameters
         ----------
@@ -1123,8 +1129,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior CDF is computed as:
+        The posterior CDF is computed as::
+
             F(u | y) = D^a M_inc(t; u) / D^a M(t) |_{t=-b}
+
         where `M_inc` is the incomplete MGF of the prior.
 
         Examples
@@ -1377,10 +1385,12 @@ class MGFDerivative:
         the predictive density, but not from `new_data` itself -- see Raises.
 
         The `individual` flag controls the aggregation:
+
         - `individual=True` (default): returns a density for each element of `new_data`
-        (array or scalar).
+          (array or scalar).
+
         - `individual=False`: returns the joint density (product of individual
-        densities) as a scalar.
+          densities) as a scalar.
 
         Parameters
         ----------
@@ -1401,6 +1411,7 @@ class MGFDerivative:
         scalar, np.ndarray, or sympy.Expr
             - If `new_data` is a scalar: returns a Python float, or a SymPy
               expression when the prior has free hyperparameters.
+
             - If `new_data` is array-like: returns a NumPy array of the same
               length, or a list of expressions in the symbolic case.
 
@@ -1415,8 +1426,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior predictive density for a single new observation is:
+        The posterior predictive density for a single new observation is::
+
             p(y_new | y) = c(y_new) * D^{a(y_new)} M_{post}(t) |_{t = -b(y_new)}
+
         where `M_{post}` is the posterior MGF, and `c`, `a`, `b` are the likelihood
         statistics.
 
@@ -1579,10 +1592,11 @@ class MGFDerivative:
         depends only on whether unresolved symbols remain.
 
         - If `r_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.r`),
-        or if the expression still contains free symbols, a symbolic expression
-        is returned.
+          or if the expression still contains free symbols, a symbolic expression
+          is returned.
+
         - If `r_val` is numeric (scalar or array), the MGF is evaluated numerically,
-        supporting vectorisation. The evaluation point is `r` (complete MGF only).
+          supporting vectorisation. The evaluation point is `r` (complete MGF only).
 
         Parameters
         ----------
@@ -1603,8 +1617,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior MGF is computed as:
+        The posterior MGF is computed as::
+
             M_{post}(r) = D^a M(t) / D^a M(t) |_{t = r - b}  /  (t = -b)
+
         where `D^a M` is the fractional derivative of the prior MGF.
 
         Examples
@@ -1794,10 +1810,11 @@ class MGFDerivative:
         depends only on whether unresolved symbols remain.
 
         - If `q` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.q`),
-        or if the expression still contains free symbols, a symbolic expression
-        (or list of expressions for array `q`) is returned.
+          or if the expression still contains free symbols, a symbolic expression
+          (or list of expressions for array `q`) is returned.
+
         - If `q` is numeric (scalar or array), the moment is evaluated numerically,
-        supporting vectorisation.
+          supporting vectorisation.
 
         For integer orders 1--4, the computation is typically fast; for higher
         orders, a warning is emitted as the calculation may be slow.
@@ -1821,8 +1838,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The posterior moment is computed as:
+        The posterior moment is computed as::
+
             E[Θ^q | y] = D^{a+q} M(t) / D^a M(t) |_{t=-b}
+
         where `D^a M` is the fractional derivative of the prior MGF.
 
         Examples
@@ -2008,8 +2027,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The central moment of order `k` is computed using the binomial expansion:
+        The central moment of order `k` is computed using the binomial expansion::
+
             μ_k = Σ_{j=0}^k C(k, j) * μ'_j * (-μ_1)^{k-j}
+
         where `μ'_j` are the raw moments. This method currently only supports
         orders 1, 2, 3, and 4.
 
@@ -2144,10 +2165,11 @@ class MGFDerivative:
             returns quantiles of the same shape.
         root_method : str, optional
             Root-finding method passed to `solve_root`. Options include:
+
             - `"auto"` (default): tries JAX methods first, then NumPy fallbacks.
             - `"bisectioned-newton-np"`, `"newton-np"`, `"bisection-np"` (NumPy).
             - `"bisectioned-newton-jax"`, `"newton-jax"`, `"bisection-jax"` (JAX).
-            See `jumufraktiv.root_finding.solve_root` for full list.
+              See `jumufraktiv.root_finding.solve_root` for full list.
         lower, upper : array-like, optional
             Search interval bounds. If not provided, the bracket starts at half
             and twice the posterior's own scale `(a + 1) / b` — or at 0.5 and
@@ -2173,18 +2195,21 @@ class MGFDerivative:
 
         Notes
         -----
+
         - This method is purely numeric and does not support symbolic evaluation.
         - The CDF and density functions are called on arrays, so the computation
-        is fully vectorised over the elements of `p`.
+          is fully vectorised over the elements of `p`.
+
         - If the automatic bracket expansion fails, you can provide explicit
-        `lower` and `upper` bounds to improve robustness.
+          `lower` and `upper` bounds to improve robustness.
+
         - **Do not set `lower` far into the lower tail.** The CDF is computed
-        from the incomplete-MGF derivative, which is inaccurate below about
-        `u = 1e-2` and badly wrong below `1e-4` — against the exact Gamma(8, 6)
-        posterior its log is off by 17.8 nats at `u = 1e-4` and by 45 nats at
-        `u = 1e-6`, with the sign flipped, which then trips the non-negativity
-        guard in `post_cdf`. This bounds how far into the lower tail any
-        CDF-based method here can be trusted.
+          from the incomplete-MGF derivative, which is inaccurate below about
+          `u = 1e-2` and badly wrong below `1e-4` — against the exact Gamma(8, 6)
+          posterior its log is off by 17.8 nats at `u = 1e-4` and by 45 nats at
+          `u = 1e-6`, with the sign flipped, which then trips the non-negativity
+          guard in `post_cdf`. This bounds how far into the lower tail any
+          CDF-based method here can be trusted.
 
         Examples
         --------
@@ -2351,8 +2376,10 @@ class MGFDerivative:
 
         Notes
         -----
-        The method uses the inverse transform:
+        The method uses the inverse transform::
+
             X = F^{-1}(U), where U ~ Uniform(0, 1).
+
         This is exact up to the numerical accuracy of the quantile computation.
 
         Examples
@@ -2411,8 +2438,10 @@ class MGFDerivative:
         """
         Compute central (equal-tailed) credible intervals for the posterior.
 
-        For a given credible level `α`, the interval is defined as:
+        For a given credible level `α`, the interval is defined as::
+
             [F^{-1}( (1-α)/2 ),  F^{-1}( (1+α)/2 ) ]
+
         where `F` is the posterior CDF. This gives the central interval that
         contains the middle `α` fraction of the posterior mass.
 
@@ -2429,17 +2458,21 @@ class MGFDerivative:
 
         Returns
         -------
-        If `level` is scalar:
+        If `level` is scalar::
+
             tuple (lower, upper) where both are Python floats.
+
         If `level` is array-like:
             np.ndarray of shape `(len(level), 2)` where each row is `[lower, upper]`.
 
         Notes
         -----
+
         - The method is fully vectorised: quantiles for all levels are computed
-        in a single call to `post_quantile`.
+          in a single call to `post_quantile`.
+
         - The intervals are "equal-tailed", meaning the same probability mass
-        is left in each tail.
+          is left in each tail.
 
         Examples
         --------
@@ -2516,12 +2549,15 @@ class MGFDerivative:
 
         Notes
         -----
+
         - This method uses the canonical symbols `r`, `t`, and `theta` from
-        `jumufraktiv.symbols` for symbolic manipulation.
+          `jumufraktiv.symbols` for symbolic manipulation.
+
         - The symbolic route requires that the posterior derivative is symbolic
-        (`self._deriv_is_symbolic is True`).
+          (`self._deriv_is_symbolic is True`).
+
         - The numeric fallback works for any posterior, but the resulting prior
-        cannot be used in symbolic computations.
+          cannot be used in symbolic computations.
 
         Examples
         --------
@@ -2599,13 +2635,17 @@ class MGFDerivative:
                 Derivative backend for the new object. Defaults to the current method.
                 If 'symbolic' is chosen but the current posterior is numeric,
                 an error is raised.
+
             - likelihood : str, optional
                 Likelihood name. Defaults to the current likelihood.
+
             - simplify : bool, optional
                 Whether to simplify symbolic expressions. Defaults to current setting.
+
             - log : bool, optional
                 Whether to store the normalising constant in log-scale.
                 Defaults to current setting.
+
             - Other arguments are passed to the new `MGFDerivative` constructor.
 
         Returns
@@ -2623,10 +2663,11 @@ class MGFDerivative:
 
         Notes
         -----
+
         - This method is the primary way to perform sequential Bayesian updating.
         - The new object's `log` parameter can differ from the current one,
-        allowing you to switch between log-scale and ordinary-scale storage
-        at each update.
+          allowing you to switch between log-scale and ordinary-scale storage
+          at each update.
 
         Examples
         --------

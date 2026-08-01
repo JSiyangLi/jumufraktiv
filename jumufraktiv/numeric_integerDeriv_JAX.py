@@ -62,6 +62,7 @@ def _integerDeriv_numeric_jax_scalar(
         `complete=False`).
     jax_mode : str, optional
         Differentiation strategy:
+
         - `"auto"` (default): try `jet`, fallback to `grad` on failure.
         - `"jet"`: force JAX Taylor mode (`jet`).
         - `"grad"`: force nested reverse-mode `grad`.

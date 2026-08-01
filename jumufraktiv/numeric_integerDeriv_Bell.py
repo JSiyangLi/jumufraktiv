@@ -238,8 +238,10 @@ def integerDeriv_numeric_bell(
 
     Returns
     -------
-    If t and u are scalar:
+    If t and u are scalar::
+
         (log_abs, sign)  # Python floats
+
     If either is array-like:
         (log_abs_array, sign_array)  # np.ndarray with broadcasted shape
     """

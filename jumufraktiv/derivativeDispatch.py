@@ -24,10 +24,12 @@ Design principles:
 Backends:
     - Symbolic : SymPy differentiation (integer and fractional, via `sp.diff`
       and `sp.Derivative`).
+
     - Bell : Bell polynomial method (integer orders, JAX-based).
     - JAX : JAX `jet` or `grad` (integer orders).
     - Grid : fixed-grid trapezoid on the z = e^u substitution, with exact
       near-integer singularity subtraction (fractional; the `scipy` method).
+
     - Mpmath : high-precision quadrature (fractional).
 
 Incomplete MGF (iMGF) derivatives are supported via the `complete=False` flag,
@@ -246,6 +248,7 @@ def mgfDerivative_integer(
 
     - If `t` is `None` or if the substituted expression still contains free
       symbols (e.g., hyperparameters), a symbolic expression is returned.
+
     - If all symbols are resolved (numeric `t` and `u`), the derivative is
       evaluated numerically.
 
@@ -262,6 +265,7 @@ def mgfDerivative_integer(
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {"symbolic", "bell", "jax"}, optional
         Derivative backend:
+
         - `"symbolic"`: uses SymPy differentiation.
         - `"bell"`: uses Bell polynomials (requires JAX).
         - `"jax"`: uses JAX's `jet` or `grad`.
@@ -301,6 +305,7 @@ def mgfDerivative_integer(
 
     Notes
     -----
+
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - For the symbolic method, when `t` is an array, each element is evaluated
       individually using `.subs().evalf()` to ensure accuracy (mpmath).
@@ -580,6 +585,7 @@ def mgfDerivative_fractional(
 
     - If `method='symbolic'` and `t` is `None` or the expression still contains
       free symbols, a symbolic expression is returned.
+
     - If `t` is numeric (scalar or array), the derivative is evaluated numerically
       using either `scipy` or `mpmath` backend.
 
@@ -595,8 +601,10 @@ def mgfDerivative_fractional(
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend:
+
         - `'scipy'`: uses the fixed-grid kernel in
           `numeric_fractionalDeriv_grid`.
+
         - `'mpmath'`: uses `mpmath.quad` (high precision).
         - `'symbolic'`: returns a symbolic expression (may be slow).
     t : float or array-like, optional
@@ -630,18 +638,22 @@ def mgfDerivative_fractional(
     sympy.Expr, tuple (log_abs, sign), or float / np.ndarray
         - If `method='symbolic'` and `t` is `None` or free symbols remain:
           `sympy.Expr`.
+
         - If numeric evaluation:
             - `log=True`: `(log_abs, sign)` (scalars or arrays).
             - `log=False`: numeric value (scalar or array).
 
     Notes
     -----
+
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - For the symbolic path, when `t` is an array, each element is evaluated
       individually using `.subs().evalf()` to preserve accuracy (mpmath).
+
     - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
       substitution, with the range derived from `gamma = floor(order)+1-order`;
       the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
+
     - A tuning option the selected backend does not read is accepted and
       warned about rather than refused, since the same option may be valid for
       a sibling backend. See `ROUTE_OPTIONS` for which backend reads what.
@@ -1052,6 +1064,7 @@ def mgfDerivative(
 
     - If `order` contains symbolic variables, or if `t` is `None` or the
       expression still has free symbols, a symbolic expression is returned.
+
     - If `order`, `t`, and `u` (if applicable) are fully numeric, the derivative
       is evaluated numerically using the selected backend.
 
@@ -1112,6 +1125,7 @@ def mgfDerivative(
         - If `order` is symbolic or `t` is `None` or free symbols remain:
           `sympy.Expr`, or — for an array-like `order` — an object array of
           `sympy.Expr` in the shape of the request.
+
         - If numeric evaluation:
             - `log=True`: `(log_abs, sign)` (scalars or arrays).
             - `log=False`: numeric value (scalar or array).
@@ -1121,9 +1135,11 @@ def mgfDerivative(
 
     Notes
     -----
+
     - The canonical symbols `t` and `u` are imported from `jumufraktiv.symbols`.
     - The `'auto'` method chooses `'symbolic'` for integer orders (if available)
       and `'scipy'` for fractional orders by default.
+
     - For `method='symbolic'`, vectorisation over `t` is achieved by looping
       over elements using `.subs().evalf()` to maintain accuracy (mpmath).
 

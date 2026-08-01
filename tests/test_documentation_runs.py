@@ -239,3 +239,40 @@ def test_notebooks_carry_no_stored_output(notebook):
         f"{notebook.name} has stored output in cells {with_output}; "
         "clear it before committing"
     )
+
+
+def test_every_api_reference_module_is_importable():
+    """`automodule` needs the qualified name, and says nothing when it does not.
+
+    The directives named modules bare -- `derivativeDispatch` rather than
+    `jumufraktiv.derivativeDispatch` -- so autodoc could not import them and
+    emitted nothing. The build still exited zero, and the rendered API
+    reference covered two of the package's modules while appearing to list all
+    of them. Importing each target here is the cheap half of what Sphinx does,
+    and it is the half that failed.
+    """
+    import importlib
+
+    source = (REPO / "docs" / "api.rst").read_text(encoding="utf-8")
+    targets = re.findall(r"^\.\. automodule:: (\S+)$", source, flags=re.M)
+
+    assert targets, "docs/api.rst declares no automodule targets"
+
+    for target in targets:
+        assert target.startswith("jumufraktiv"), (
+            f"'{target}' is not qualified; autodoc will silently document nothing"
+        )
+        importlib.import_module(target)
+
+
+def test_the_documentation_toctree_resolves():
+    """A toctree entry with no document is a dead link in the sidebar."""
+    index = (REPO / "docs" / "index.rst").read_text(encoding="utf-8")
+    block = re.search(r"\.\. toctree::\n(?:\s+:\w+:.*\n)*\n((?:\s+\S+\n)+)", index)
+
+    assert block, "docs/index.rst has no toctree"
+
+    for name in block.group(1).split():
+        assert (REPO / "docs" / f"{name}.rst").exists(), (
+            f"toctree references '{name}', which does not exist"
+        )

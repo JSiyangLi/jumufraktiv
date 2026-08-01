@@ -9,17 +9,22 @@ It holds both symbolic and numeric representations of the prior MGF, CGF,
 and PDF, along with JAX-compatible versions for fast computation.
 
 Design philosophy:
+
 - The registry (`PRIOR_REGISTRY`) provides fully-formed function bundles;
   the class only composes, stores, and exposes interfaces.
+
 - Both symbolic and backend-based construction routes are supported.
 - The class is dataclass-based for clarity and easy extension.
 
 Key features:
+
 - Supports **complete** and **incomplete** MGFs (iMGF) via the `imgf`, `logimgf`,
   `imgf_jax`, `logimgf_jax`, `imgf_sym`, and `logimgf_sym` attributes.
+
 - Provides a `has_iMGF()` method to check if all iMGF components are present.
 - Includes a factory method `from_registry` for automatic construction from
   the registry, and a manual compiler `as_mitMGFprior` for custom priors.
+
 - Validation via `is_mitMGFprior` ensures a prior object is fully compiled.
 
 Examples
@@ -80,11 +85,13 @@ class mitMGFprior:
         Dictionary of numeric parameters (e.g., `{'alpha': 2.0, 'beta': 3.0}`).
 
     Compiled functions (populated by `as_mitMGFprior` or `from_registry`):
+
     - mgf, cgf : NumPy-based MGF and CGF functions.
     - mgf_jax, cgf_jax : JAX-based MGF and CGF functions.
     - pdf_func, logpdf_func : NumPy-based PDF and log-PDF functions.
 
     Incomplete MGF (iMGF) attributes (if supported):
+
     - imgf, logimgf : Numeric ordinary and log-scale iMGF.
     - imgf_jax, logimgf_jax : JAX versions.
     - imgf_sym, logimgf_sym : Symbolic expressions.
@@ -220,12 +227,15 @@ class mitMGFprior:
 
         Notes
         -----
+
         - The symbolic mode requires both `mgf_sym` and `pdf_sym` to be SymPy
-        expressions containing the canonical variable `t` (for MGF) and `theta`
-        (for PDF).
+          expressions containing the canonical variable `t` (for MGF) and `theta`
+          (for PDF).
+
         - The backend mode requires both `mgf_backend` and `pdf_backend` to be
-        callables with signature `(x, xp, **params)` where `x` is the evaluation
-        point and `xp` is either `numpy` or `jax.numpy`.
+          callables with signature `(x, xp, **params)` where `x` is the evaluation
+          point and `xp` is either `numpy` or `jax.numpy`.
+
         - The `params` dictionary (if provided) is passed to the backend functions.
 
         Examples
@@ -347,12 +357,15 @@ class mitMGFprior:
 
         Notes
         -----
+
         - The registry entry must provide at least `mgf_sym`, `pdf_sym`, `mgf`,
-        `cgf`, and `pdf_func`.
+          `cgf`, and `pdf_func`.
+
         - If iMGF functions (`imgf_sym`, `imgf`, `imgf_jax`, etc.) are present,
-        they are also extracted and stored.
+          they are also extracted and stored.
+
         - The method bypasses the manual `as_mitMGFprior` compiler and directly
-        assigns the compiled functions to the object.
+          assigns the compiled functions to the object.
 
         Examples
         --------
@@ -572,6 +585,7 @@ class mitMGFprior:
         Check if this prior object has complete incomplete MGF (iMGF) support.
 
         Returns True only if all six iMGF-related functions are present:
+
         - imgf         (numeric ordinary)
         - logimgf      (numeric log)
         - imgf_jax     (JAX ordinary)

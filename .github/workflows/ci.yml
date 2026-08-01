@@ -100,6 +100,19 @@ jobs:
       - name: Validate distribution metadata
         run: twine check dist/*
 
+      # The docs build succeeded with 79 warnings while the API reference
+      # documented 2 of the package's 36 modules, so "it builds" was never the
+      # property worth checking. This step fails if the build errors or if the
+      # warning count rises above the recorded baseline; `-W` will replace the
+      # baseline once the remaining warnings are cleared.
+      - name: Build the documentation
+        run: |
+          pip install -e ".[docs]"
+          python -m sphinx -b html docs /tmp/docbuild 2>&1 | tee /tmp/sphinx.log
+          count=$(grep -cE "WARNING|ERROR" /tmp/sphinx.log || true)
+          echo "sphinx warnings: $count"
+          test "$count" -le 30
+
       - name: Verify a clean install imports
         run: |
           python -m venv /tmp/fresh

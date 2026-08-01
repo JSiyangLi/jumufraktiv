@@ -7,8 +7,10 @@ The names below are the supported surface. Three workflows reach for them:
 * **Infer.** Build a prior with :class:`mitMGFprior`, hand it and your data to
   :class:`MGFDerivative`, and ask that for the evidence, density, CDF,
   quantiles, moments, predictive or a sequential update.
+
 * **Compute a single derivative.** :func:`mgfDerivative` and its two
   order-specific siblings evaluate ``D^a M(t)`` directly, without a posterior.
+
 * **Add a prior.** Decorate a factory with :func:`register_prior` and have it
   return :func:`make_prior_spec`; :func:`list_priors` reports what is
   available and :func:`failed_prior_modules` reports what failed to import.

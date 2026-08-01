@@ -13,9 +13,11 @@ The CGF is:
     K(t) = α (log β - log(β - t)),  for t < β.
 
 This module provides:
+
 - **Incomplete MGF** (iMGF) for the lower-truncated Gamma distribution:
     M_inc(t; α, β, u) = (β/(β−t))^α * γ(α, (β−t)u) / Γ(α),
   with t < β and u > 0, in symbolic, numeric (SciPy) and JAX forms.
+
 - ``gamma_factory``, which the registry calls to build the prior. It writes
   the complete MGF, CGF and PDF out inline, symbolically and as callables, and
   is the single definition of each.

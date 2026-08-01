@@ -25,6 +25,7 @@ If shape is a scalar, it is recycled. If shape is a vector, it must have length 
 The user-facing argument is `shape`, which corresponds to the known shape parameter α.
 
 This module provides two statistics functions:
+
 - `readyGamma` : aggregated sufficient statistics (scalars) for the whole sample.
 - `bereitGamma` : per-element sufficient statistics (arrays) for vectorised
   predictive evaluation.

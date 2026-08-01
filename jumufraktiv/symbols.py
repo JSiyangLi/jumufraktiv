@@ -5,6 +5,7 @@ This module defines canonical SymPy symbols used throughout the package
 for moment-generating functions, densities, and related quantities.
 
 The main symbols are:
+
 - t   : variable in the MGF domain (Laplace transform variable)
 - theta : latent parameter (in the parameter space)
 - r   : variable for posterior MGF
@@ -76,10 +77,13 @@ def param(name: str):
 
     Notes
     -----
+
     - This function is used in prior factory functions to create symbolic
       representations of hyperparameters.
+
     - The resulting symbols are later substituted with numeric values when
       a prior is instantiated with concrete parameters.
+
     - The canonical variables for MGF and CDF are ``t``, ``theta``, ``r``,
       and ``u``, which are defined separately in this module.
 

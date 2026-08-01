@@ -8,8 +8,10 @@ The main function fractionalDeriv_numeric_mpmath() uses adaptive range expansion
 (default). If that fails or if use_tan=True, it uses the tan-transform method
 (fractionalDeriv_numeric_mpmath_tan) which maps (-∞,∞) to (-π/2, π/2).
 
-The formula computed is:
+The formula computed is::
+
     D^α_{(-∞)+} M(t) = 1/Γ(γ) ∫_{-∞}^{∞} e^{γ u} M^{(n+1)}(t - e^{u}) du,
+
 where n = floor(α), γ = n+1-α.
 
 All arithmetic is performed with the precision specified by mp.dps.
