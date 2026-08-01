@@ -729,3 +729,52 @@ def test_the_pareto_evidence_factorises_on_the_auto_route():
     second = first.update(new_data=[5, 7], likelihood="poisson", scale=1.0)
 
     assert first.evidence() + second.evidence() == pytest.approx(batch, abs=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="unscheduled: an explicit method='symbolic' loses an alternating-CGF "
+    "prior's derivative to cancellation above order ~16 and changes sign by "
+    "order 30. No evaluator at any precision recovers it -- the loss is in the "
+    "float coefficients of the stored MGF. The DEFAULT route is exact to "
+    "7.3e-15 at the same orders, so this is reachable only by asking for the "
+    "backend by name.",
+)
+@pytest.mark.parametrize("order", [16, 20, 30])
+def test_the_symbolic_backend_survives_an_alternating_cgf(order):
+    """`a = sum(y)` for several likelihoods, so order 30 is ordinary use.
+
+    The oracle is `E[theta^a e^{-theta}]` for Uniform(0.5, 2), integrated with
+    mpmath at 80 digits on a density written out here. Measured relative error
+    of the differentiated route: 2.0e-06 at order 16, 1.8e-02 at 20, and
+    5.4e+09 with the sign flipped at 30.
+
+    Recorded rather than repaired because the repair is a route rather than a
+    patch, and it already exists: `method='auto'` computes the same quantity as
+    an expectation, whose integrand is positive and cannot cancel. What is left
+    open is whether an explicitly requested backend should silently be replaced
+    by a better one, which is an interface decision rather than a numerical
+    fix.
+    """
+    import mpmath as mp
+
+    from jumufraktiv import registry
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    registry.initialize()
+    prior = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+
+    with mp.workdps(80):
+        exact = float(
+            mp.quad(
+                lambda x: x**order * mp.e ** (-x) / mp.mpf("1.5"),
+                [mp.mpf("0.5"), mp.mpf(2)],
+            )
+        )
+
+    log_abs, sign = mgfDerivative(
+        order=order, prior=prior, method="symbolic", t=-1.0, log=True, complete=True
+    )
+    got = float(np.atleast_1d(sign)[0]) * float(np.exp(np.atleast_1d(log_abs)[0]))
+
+    assert got == pytest.approx(exact, rel=1e-8)
