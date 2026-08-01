@@ -548,6 +548,8 @@ agree by inspection.
 | File | Covers |
 |------|--------|
 | `conftest.py` (root) | the doctest namespace, for `--doctest-modules` |
+| `test_incomplete_mgf.py` | the iMGF for every prior, and the four methods built on it |
+| `test_mgf_domain.py` | where the posterior MGF converges, and the origin |
 | `tests/canonical.py` | the Gamma/Poisson problem, shared by both conftests |
 | `conftest.py` | fixtures and closed-form references |
 | `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
@@ -633,8 +635,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 4 | 10 | Caching and dispatch | **merged** |
 | 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **merged** |
 | 5 | 12b | The moment domain at `t = 0`: the analytic tail | **merged** |
-| 6 | 13a | The front door: README, notebooks, and the docstring examples | **in review** |
-| 6 | 13b | Quantities that come back wrong without saying so | planned |
+| 6 | 13a | The front door: README, notebooks, and the docstring examples | **merged** |
+| 6 | 13b | Quantities that come back wrong without saying so | **in review** |
 | 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | planned |
 | 6 | 13d | Packaging: what the sdist and wheel actually contain | planned |
 | 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
@@ -1007,6 +1009,58 @@ prior**, whose MGF derivatives have one-signed terms and therefore cannot
 cancel — the same hazard recorded below under a different name. The 240-case
 sweep that established the default measured the *dispatcher*; the class was
 assumed to inherit it.
+
+**The posterior CDF now exists for every registry prior.** `post_cdf` needs the
+prior's incomplete MGF `M(t, u) = ∫_{-∞}^{u} e^{tx}p(x)dx`, and
+`post_quantile`, `post_interval` and `post_sample` are all built on it, so a
+prior without one loses four public methods at once, on every backend. Two of
+the four registry priors had none, and the refusal said "Prior does not support
+incomplete MGF (iMGF)" — which reads as a statement about the mathematics and
+was a statement about the module. Both integrals are elementary:
+
+```
+uniform(a, b) :  ∫_a^{min(u,b)} e^{tx}/(b-a) dx = (e^{tm} - e^{ta})/(t(b-a))
+heaviside(k)  :  ∫_k^u e^{tx} dx                = (e^{tu} - e^{tk})/t
+```
+
+Both are formed with `logminus` and ordered by the sign of `t`, for the reason
+`uniform_cgf` already was: below the origin neither factor is positive on its
+own and the signs cancel only in the ratio. Measured against mpmath at 40 dps
+with the density written out separately, the worst relative error is 1.3e-15
+over 42 `(t, u)` pairs for uniform and 9.1e-16 over 24 for heaviside, and the
+posterior CDF is right to 1.3e-13 or better on all four backends.
+
+**`post_mgf` returned the value of a formula outside the domain where that
+formula is the MGF.** The Gamma(8, 6) posterior's MGF is `(6/(6-r))⁸`, finite
+only for `r < 6`. Past that the eighth power keeps the sign positive, so the
+package returned plausible numbers where the answer is infinite:
+
+| `r` | returned | true value |
+|---|---|---|
+| 6.1 | 1.68e+14 | ∞ |
+| 10 | **25.63** | ∞ |
+| 100 | **2.76e-10** | ∞ |
+
+The repair is a prior-level declaration in the same style as
+`max_finite_moment`, because where an MGF converges is a property of the prior
+and not of the data: `mgf_finite_below` is the supremum of `t` with `M(t) < ∞`
+— `β` for gamma, `∞` for uniform, `0` for pareto and heaviside. `post_mgf`
+evaluates at `t = r - b`, so it refuses any `r` that puts the point past the
+bound, and the message names the largest admissible `r`.
+
+**`t = 0` needed its own treatment, and got the answer wrong in two different
+ways.** At `r = b` the exponential is 1 and the value reduces to `E[Θ^a]`.
+Every prior but gamma returned `nan`: uniform because its MGF carries `t` in a
+denominator, so `subs` sees 0/0 where the value is finite; pareto and heaviside
+because the moment genuinely diverges and nothing refused. Both now behave —
+uniform returns 141.404114, exact to 1.4e-15 against mpmath, and the other two
+raise naming the order and the bound.
+
+**`sp.limit` is not the fix for the first of those, and that is worth
+recording.** For the uniform prior at order 6 it returns `∞` where the value is
+`E[Θ⁶] = 12.19`. A limit that returns a wrong number is the same class of
+defect being repaired, so the origin routes through the expectation backend
+instead, which integrates `E[Θ^a]` directly.
 
 **Dimensionality is now checked in one place.** The `ndim != 1` guard lives
 inside the shared `like_stats/_common.py::_extract_1d`, which every entry point

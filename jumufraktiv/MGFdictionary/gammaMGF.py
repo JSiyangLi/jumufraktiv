@@ -242,6 +242,10 @@ def gamma_factory(params):
         logpdf_func=frozen.logpdf,
 
         # ---- Incomplete MGF (truncated at u) ----
+        # M(t) = (beta/(beta-t))**alpha is finite exactly for t < beta; at
+        # t = beta the denominator vanishes and the integral diverges.
+        mgf_finite_below=beta_val,
+
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: gamma_imgf(t_val, alpha_val, beta_val, u_val),

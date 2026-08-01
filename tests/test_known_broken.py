@@ -696,3 +696,36 @@ def test_bell_reaches_the_pareto_jax_gap(order, cgf_method):
             log=True,
             cgf_method=cgf_method,
         )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="unscheduled: the Pareto prior's evidence does not factorise on the "
+    "auto route. Measured at 6.9e-05 nats against a batch fit of the same "
+    "data; the symbolic route factorises to 1.8e-15, and gamma, uniform and "
+    "heaviside factorise to ~3e-15 on both routes. Not diagnosed.",
+)
+def test_the_pareto_evidence_factorises_on_the_auto_route():
+    """`p(y1, y2) = p(y1) * p(y2 | y1)` is an identity, so it needs no oracle.
+
+    Sequential updating must reproduce the batch evidence exactly, whatever
+    route computed it. Three of the four registry priors do, on both routes.
+    Pareto does on the symbolic route and not on the default one, which is the
+    route a caller gets without asking.
+
+    Recorded rather than fixed because the mechanism is not established: the
+    gap is the right size to be quadrature tolerance on the Pareto expectation
+    integral, which stays on the exact symbolic path, and the wrong size to be
+    obviously that. Settling it means measuring the two evidences against an
+    independent oracle rather than against each other.
+    """
+    prior = _pareto_prior_alpha_two()
+
+    batch = MGFDerivative(
+        prior, data=[1, 2, 3, 5, 7], likelihood="poisson", scale=1.0
+    ).evidence()
+
+    first = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
+    second = first.update(new_data=[5, 7], likelihood="poisson", scale=1.0)
+
+    assert first.evidence() + second.evidence() == pytest.approx(batch, abs=1e-10)

@@ -149,6 +149,25 @@ class mitMGFprior:
     #: rather than pre-emptively rejecting.
     max_finite_moment: float = float("inf")
 
+    #: Supremum of the `t` for which `M(t)` is finite — the MGF's radius of
+    #: convergence, expressed as a right endpoint rather than a radius because
+    #: the domain is one-sided here. `M(t)` is finite for every `t` strictly
+    #: below it; whether the endpoint itself is attained varies by prior and is
+    #: left to the prior's own arithmetic, which raises where it diverges.
+    #:
+    #: The package evaluates the prior at `t = -b(y) <= 0`, so this bound is
+    #: never in the way of an ordinary posterior. It matters for `post_mgf`,
+    #: whose evaluation point is `t = r - b` and therefore moves right as `r`
+    #: grows: past the bound the posterior MGF does not exist, and an analytic
+    #: expression evaluated there returns the value of the *formula* rather
+    #: than of the MGF. `(beta/(beta-t))**alpha` at `t > beta` is positive
+    #: whenever `alpha` is even, so the wrong answer looks like a right one.
+    #:
+    #: Defaults to infinity, the safe default for a custom prior in the same
+    #: sense as `max_finite_moment`: it defers to the numerical result rather
+    #: than pre-emptively rejecting.
+    mgf_finite_below: float = float("inf")
+
     # -----------------------------
     # compiled outputs
     # -----------------------------
@@ -511,6 +530,9 @@ class mitMGFprior:
         # Store symbolic outputs
         obj.max_finite_moment = float(
             spec.get("max_finite_moment", float("inf"))
+        )
+        obj.mgf_finite_below = float(
+            spec.get("mgf_finite_below", float("inf"))
         )
 
         obj.mgf_sym_out = mgf_sym

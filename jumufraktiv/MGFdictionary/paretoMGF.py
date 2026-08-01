@@ -484,6 +484,11 @@ def pareto_factory(params):
         logpdf_func=frozen.logpdf,
 
         # Incomplete MGF (truncated at u)
+        # A power-law tail beats no exponential growth: int e^{t x} x^{-alpha-1}
+        # diverges for every t > 0. M(0) = 1 exists, so the endpoint is
+        # attained; anything strictly above it is refused.
+        mgf_finite_below=0.0,
+
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: pareto_imgf(t_val, alpha_val, xi_val, u_val),
