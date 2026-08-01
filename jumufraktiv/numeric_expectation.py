@@ -225,6 +225,13 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     return low, high, grid[peak_index]
 
 
+#: Relative tolerance handed to :func:`scipy.integrate.quad_vec` when the
+#: caller names none. Tight enough that the route's accuracy is set by the
+#: integrand rather than by the stopping rule -- measured worst case 1.17e-11
+#: over the 240-case sweep recorded in :file:`CLAUDE.md`.
+DEFAULT_TOL = 1e-10
+
+
 def expectationDeriv(
     order,
     prior,
@@ -232,6 +239,7 @@ def expectationDeriv(
     u=None,
     complete=True,
     log=True,
+    tol=DEFAULT_TOL,
 ):
     """Evaluate ``D^order M(t)`` as ``E[Theta^order e^{t Theta}]``.
 
@@ -250,6 +258,10 @@ def expectationDeriv(
         If False, integrate only up to ``u``.
     log : bool, optional
         Return ``(log_abs, sign)`` if True, else the plain value.
+    tol : float, optional
+        Relative tolerance for the quadrature, passed to
+        :func:`scipy.integrate.quad_vec` as ``epsrel``. Defaults to
+        :data:`DEFAULT_TOL`.
 
     Returns
     -------
@@ -260,8 +272,8 @@ def expectationDeriv(
     Raises
     ------
     ValueError
-        If ``order`` is negative, if the prior has no density, or if
-        ``complete=False`` without ``u``.
+        If ``order`` is negative, if ``tol`` is not positive, if the prior has
+        no density, or if ``complete=False`` without ``u``.
 
     Notes
     -----
@@ -271,9 +283,20 @@ def expectationDeriv(
     long before the answer appeared. The sign is always ``+1`` -- the integrand
     is positive -- which is itself worth asserting, since the defect this route
     exists to avoid announces itself as a sign flip.
+
+    ``tol`` exists so that the option means something on the path most callers
+    take. This route became the default for numeric evaluation in PR 6c and had
+    no tuning parameters at all, so ``mgfDerivative(..., method="auto",
+    tol=...)`` accepted the argument and discarded it -- ``tol=1e-1`` and
+    ``tol=1e-14`` returned the same digits, while through ``method="scipy"``
+    the same pair differ by 4.6e-4. Honouring it here was preferred to warning
+    that it could not be honoured: the quadrature has a relative tolerance, and
+    ``epsrel`` is what ``tol`` means everywhere else in this package.
     """
     if order < 0:
         raise ValueError("Derivative order must be non-negative.")
+    if not (tol > 0):
+        raise ValueError(f"tol must be positive, got {tol!r}.")
     if not expectation_is_available(prior):
         raise ValueError(
             f"Prior '{getattr(prior, 'name', '?')}' provides no density, so "
@@ -385,7 +408,7 @@ def expectationDeriv(
                 )
                 return np.exp(exponent - offsets) * widths
 
-        values, _ = integrate.quad_vec(batched, 0.0, 1.0, epsrel=1e-10)
+        values, _ = integrate.quad_vec(batched, 0.0, 1.0, epsrel=tol)
         values = np.atleast_1d(np.asarray(values, dtype=float))
         with np.errstate(divide="ignore"):
             results[live] = np.where(

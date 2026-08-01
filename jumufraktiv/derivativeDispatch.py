@@ -74,7 +74,7 @@ from jumufraktiv.symbols import u as u_sym
 #: one public entry point and was silently ignored through the other, and so
 #: was a plain misspelling like ``epsrell``.
 BACKEND_OPTIONS = {
-    "tol": "the fixed-grid and mpmath fractional kernels",
+    "tol": "the fixed-grid and mpmath fractional kernels, and the expectation route",
     "dps": "the mpmath fractional kernel",
     "use_tan": "the mpmath fractional kernel",
     "cgf_method": "the Bell integer backend",
@@ -85,6 +85,110 @@ BACKEND_OPTIONS = {
 #: Every option name the derivative layer accepts, including the named
 #: parameters of :func:`mgfDerivative` itself that a caller may reasonably set.
 DERIVATIVE_OPTIONS = frozenset(BACKEND_OPTIONS) | {"integer_method", "int_tol"}
+
+#: Which tuning options each route actually reads, keyed by
+#: ``(order type, backend)``. The expectation route serves either order type,
+#: so it is keyed on ``None``.
+#:
+#: This is the table behind the "accepted and discarded" warning below, and it
+#: is written out rather than derived because the two are not the same
+#: question. :data:`BACKEND_OPTIONS` answers "does any backend read this?",
+#: which is what decides whether a name is a misspelling. This answers "does
+#: *the route about to run* read it?", which is what decides whether the value
+#: has any effect. A name can pass the first and fail the second, and for the
+#: whole audit that failure was silent.
+#:
+#: ``int_tol`` appears nowhere because :func:`resolve_backend` consumes it
+#: before any route is chosen, so it is never discarded.
+ROUTE_OPTIONS = {
+    (None, "expectation"): frozenset({"tol"}),
+    ("integer", "symbolic"): frozenset(),
+    ("integer", "bell"): frozenset({"cgf_method", "symbolic_timeout"}),
+    ("integer", "jax"): frozenset(),
+    ("fractional", "scipy"): frozenset({"tol", "integer_method"}),
+    ("fractional", "mpmath"): frozenset(
+        {"tol", "dps", "use_tan", "integer_method"}
+    ),
+    ("fractional", "symbolic"): frozenset({"timeout_seconds"}),
+}
+
+
+def _route_description(order_type, backend):
+    """Name a route the way a caller would ask for it."""
+    if backend == "expectation":
+        return "the direct-expectation route"
+    article = "an" if str(order_type)[:1] in "aeiou" else "a"
+    return f"method='{backend}' at {article} {order_type} order"
+
+
+def _warn_discarded_options(requested, order_type, backend, function_name):
+    """Warn for options the selected route cannot read.
+
+    Parameters
+    ----------
+    requested : set of str
+        Option names the caller *set*, as opposed to left at their defaults.
+    order_type : {'integer', 'fractional'} or None
+        As returned by :func:`resolve_backend`.
+    backend : str
+        The route about to run: a backend name, or ``'expectation'``.
+    function_name : str
+        Quoted in the message so the caller knows which call to fix.
+
+    Notes
+    -----
+    A warning rather than an error, and that is the owner's decision rather
+    than a default. Refusing would break callers who pass a tuning dictionary
+    across several backends, which is a reasonable thing to do; returning a
+    number that ignores what was asked for is not.
+
+    The message names an alternative wherever one exists for this order type,
+    because "``dps`` was ignored" is only half of what the caller needs -- the
+    other half is that ``method='mpmath'`` would honour it.
+    """
+    key = (None, backend) if backend == "expectation" else (order_type, backend)
+    if key not in ROUTE_OPTIONS:
+        # A route this table does not describe -- a symbolic *order*, which
+        # raises a few lines further on. Saying nothing beats warning about the
+        # tuning of a result the caller is not going to receive.
+        return
+
+    discarded = sorted(set(requested) - ROUTE_OPTIONS[key])
+    if not discarded:
+        return
+
+    lines = []
+    for name in discarded:
+        here = sorted(
+            other_backend
+            for (other_type, other_backend), options in ROUTE_OPTIONS.items()
+            if name in options and other_type in (None, order_type)
+        )
+        elsewhere = sorted(
+            {
+                other_type
+                for (other_type, _), options in ROUTE_OPTIONS.items()
+                if name in options and other_type is not None
+            }
+        )
+        if here:
+            lines.append(
+                f"{name} (honoured by "
+                + ", ".join(f"method={backend_name!r}" for backend_name in here)
+                + ")"
+            )
+        elif elsewhere:
+            lines.append(f"{name} (read only at {' or '.join(elsewhere)} orders)")
+        else:
+            lines.append(name)
+
+    warnings.warn(
+        f"{function_name}() was given tuning option(s) that "
+        f"{_route_description(order_type, backend)} does not read, so they had "
+        f"no effect: " + "; ".join(lines) + ".",
+        UserWarning,
+        stacklevel=3,
+    )
 
 
 def _reject_unknown_options(kwargs, function_name):
@@ -218,6 +322,15 @@ def mgfDerivative_integer(
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
         raise ValueError("method must be one of {'symbolic','bell','jax'}.")
+
+    requested_options = set()
+    if symbolic_timeout != 600.0:
+        requested_options.add("symbolic_timeout")
+    if cgf_method != "auto":
+        requested_options.add("cgf_method")
+    _warn_discarded_options(
+        requested_options, "integer", method, "mgfDerivative_integer"
+    )
 
     # ---------------------------------------------------------
     # Symbolic differentiation
@@ -551,6 +664,13 @@ def mgfDerivative_fractional(
     >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
     _reject_unknown_options(kwargs, "mgfDerivative_fractional")
+
+    requested_options = set(kwargs)
+    if integer_method != "symbolic":
+        requested_options.add("integer_method")
+    _warn_discarded_options(
+        requested_options, "fractional", method.lower(), "mgfDerivative_fractional"
+    )
 
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
@@ -1041,6 +1161,15 @@ def mgfDerivative(
     # is scalar or array-valued, and whether the request ends up symbolic.
     _reject_unknown_options(kwargs, "mgfDerivative")
 
+    # What the caller *set*, recorded before the pops below take the options
+    # out of `kwargs`. `integer_method` counts only when it differs from the
+    # default, since ignoring a value that equals what would have happened
+    # anyway costs the caller nothing and warning about it would fire on almost
+    # every call.
+    requested_options = set(kwargs)
+    if integer_method != "symbolic":
+        requested_options.add("integer_method")
+
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to
@@ -1150,8 +1279,11 @@ def mgfDerivative(
         and expectation_is_available(prior)
     )
     if method == "expectation" or prefer_expectation:
-        from jumufraktiv.numeric_expectation import expectationDeriv
+        from jumufraktiv.numeric_expectation import DEFAULT_TOL, expectationDeriv
 
+        _warn_discarded_options(
+            requested_options, order_type, "expectation", "mgfDerivative"
+        )
         return expectationDeriv(
             order=float(order),
             prior=prior,
@@ -1159,7 +1291,20 @@ def mgfDerivative(
             u=u,
             complete=complete,
             log=log,
+            tol=kwargs.get("tol", DEFAULT_TOL),
         )
+
+    _warn_discarded_options(requested_options, order_type, method, "mgfDerivative")
+
+    # Only the Bell backend reads these, so only the Bell backend is given
+    # them. Forwarding them regardless made `mgfDerivative_integer` issue a
+    # second copy of the warning just issued above, for an option the caller
+    # passed to this function and not to that one.
+    bell_options = (
+        {"symbolic_timeout": symbolic_timeout, "cgf_method": cgf_method}
+        if method == "bell"
+        else {}
+    )
 
     if order_type == "symbolic":
         # No warning here any more. It used to promise that the result "is
@@ -1185,8 +1330,6 @@ def mgfDerivative(
             complete=complete,
             log=log,
             u=u,
-            symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method,
         )
 
     elif order_type == "integer":
@@ -1204,8 +1347,7 @@ def mgfDerivative(
             complete=complete,
             log=log,
             u=u,
-            symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method,
+            **bell_options,
         )
 
     else:
@@ -1228,7 +1370,6 @@ def mgfDerivative(
         if method == "scipy":
             from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
 
-            grid_keys = {"tol"}
             return fractionalDeriv_grid(
                 order=order,
                 prior=prior,
@@ -1237,10 +1378,21 @@ def mgfDerivative(
                 complete=complete,
                 integer_method=integer_method,
                 log=log,
-                **{k: v for k, v in kwargs.items() if k in grid_keys},
+                **{
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in ROUTE_OPTIONS[("fractional", "scipy")]
+                },
             )
 
-        # `mpmath` and `symbolic` keep their own routes.
+        # `mpmath` and `symbolic` keep their own routes. Only the options that
+        # route reads are forwarded, so it does not re-issue the warning just
+        # issued here for an option the caller passed to this function.
+        kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ROUTE_OPTIONS[("fractional", method)]
+        }
         return mgfDerivative_fractional(
             order=order,
             prior=prior,

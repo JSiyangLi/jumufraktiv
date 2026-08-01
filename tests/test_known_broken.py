@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 import sympy as sp
 
+from conftest import gamma_mgf_derivative_log
 from jumufraktiv.derivativeDispatch import mgfDerivative
 from jumufraktiv.MGFDerivative_class import MGFDerivative
 
@@ -279,17 +280,10 @@ def test_the_retired_spelling_raises(gamma_prior):
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="PR 12: since PR 6c made the direct-expectation route the default "
-    "for numeric evaluation, every tuning option is inert under method='auto' "
-    "-- expectationDeriv has no tuning parameters at all",
-)
 def test_tol_reaches_the_kernel_on_the_default_path(gamma_prior):
-    """`tol` is documented as tuning the fixed-grid kernel. By default it is not.
+    """`tol` is documented as tuning the quadrature. It used not to, under `auto`.
 
-    Measured for a Gamma(2, 3) prior at order 1.5, t = -1:
+    Measured for a Gamma(2, 3) prior at order 1.5, t = -1, before the repair:
 
     ==================  =====================
     call                log of the derivative
@@ -300,20 +294,46 @@ def test_tol_reaches_the_kernel_on_the_default_path(gamma_prior):
     scipy, tol=1e-1     -1.4542925617536986
     ==================  =====================
 
-    So the option is real -- it moves the answer by 4.6e-4 through `scipy` --
+    The option was real -- it moved the answer by 4.6e-4 through `scipy` --
     and simply unreachable through `auto`, which routes to the expectation
-    integral instead. The same holds for `dps`, `use_tan`, `cgf_method`,
-    `symbolic_timeout` and `integer_method`.
+    integral. That route had no tuning parameters at all; it now takes `tol`
+    as the quadrature's relative tolerance.
 
-    Not a defect in the expectation route, which is more accurate and faster;
-    a defect in an interface that accepts options the chosen route cannot use.
+    Asserted against the closed form rather than against a recorded number,
+    because "the two calls differ" would also be satisfied by a `tol` that
+    made the answer worse.
     """
     from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    exact = gamma_mgf_derivative_log(1.5, -1.0)
 
     loose = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-1)
     tight = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-14)
 
+    loose_error = abs(loose[0] - exact)
+    tight_error = abs(tight[0] - exact)
+
     assert loose[0] != tight[0]
+    assert tight_error < loose_error
+    assert tight_error == pytest.approx(0.0, abs=1e-15)
+
+
+def test_options_the_chosen_route_cannot_read_are_announced(gamma_prior):
+    """An option that reaches no route silently is the defect; a warning is the fix.
+
+    `dps` is read by the mpmath kernel and by nothing else, so passing it with
+    `method='auto'` -- which routes to the expectation integral -- cannot have
+    an effect. It used to be accepted in silence.
+    """
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    with pytest.warns(UserWarning, match=r"dps.*mpmath"):
+        mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, dps=60)
+
+    # The option the route *does* read must not warn, or the warning is noise.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-12)
 
 
 @pytest.mark.xfail(
