@@ -29,11 +29,10 @@ order   differentiated MGF      this route (float64)
 100     --                      1.3e-15
 ======  ======================  ====================
 
-:file:`CLAUDE.md` recorded the order-30 case as unrecoverable at any precision,
-confirmed with exact rationals and ``evalf(80)``. That is true of the
-differentiated-MGF route, whose terms cancel through 25--26 digits before the
-answer appears. It is not true of the problem: the expectation above never forms
-those terms at all.
+The differentiated-MGF route loses these orders to 25--26 digits of
+cancellation rather than to rounding, so no increase in working precision
+recovers them. Only computing the expectation directly avoids the loss, because
+it never forms the cancelling terms at all.
 
 When it is used
 ---------------
@@ -45,9 +44,6 @@ to construct without one in both its symbolic and its backend mode. An explicit
 The qualifier "numeric evaluation" is load-bearing. With ``t=None`` the caller
 is asking for a *representation*, and only a differentiating backend can build
 one before an evaluation point is known, so ``auto`` must not be diverted then.
-Routing it unconditionally silently removed the symbolic representation from
-every ``auto`` posterior -- ``post_density(theta)`` stopped returning an
-expression and ``int_tol`` stopped having any effect.
 
 :func:`expectation_is_available` reports whether a prior can use this route, so
 callers can decide rather than fail. It is what the sequential-update guard
@@ -98,24 +94,21 @@ def _vectorise(density):
     The registry's priors all take arrays. A caller-supplied one need not: a
     density written as ``0.0 if theta >= k else -inf`` accepts a one-element
     array and raises on anything longer, and one written with ``math`` accepts
-    no array at all. Handling that per call site produced two failure modes,
-    both measured on the Gamma-style prior below:
+    no array at all. Handling that per call site turns a real failure into a
+    plausible number: a genuinely scalar-only density returns ``-inf`` where
+    its vectorised twin returns ``-1.4481850809269488``, because a per-call
+    fallback catches the ``TypeError`` and substitutes ``-inf`` -- turning
+    "this density cannot be called that way" into "the integrand has no mass
+    here".
 
-    * **The answer depended on the batch size.** A Python-conditional density
-      returned ``0.28379634`` for one evaluation point and raised
-      ``ValueError`` for three, because a one-element array happens to satisfy
-      ``if``.
-    * **A real failure became a plausible number.** A genuinely scalar-only
-      density returned ``-inf`` where its vectorised twin returns
-      ``-1.4481850809269488``, because the per-call fallback caught the
-      ``TypeError`` and substituted ``-inf`` -- turning "this density cannot be
-      called that way" into "the integrand has no mass here".
-
-    Probing once removes both: the adapter is chosen before any evaluation, so
+    Probing once removes that: the adapter is chosen before any evaluation, so
     every point sees the same function, and a density that works under neither
     calling convention raises **the caller's own exception** instead of being
     converted into a number.
     """
+    # Two elements, deliberately. A one-element array satisfies a Python `if`,
+    # so a shorter probe -- or a guard at each call site -- would make the
+    # adapter choice, and hence the answer, depend on the batch size.
     probe = np.array([1.0, 2.0])
     try:
         probed = np.asarray(density(probe), dtype=float)
@@ -158,13 +151,9 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
     density is zero across almost all of the positive half-line, so a
     quadrature handed ``(0, inf)`` can miss the mass entirely.
 
-    And the bracket has to be found on the integrand, not on the density. An
-    earlier version of this walked outward until the *density* stopped being
-    finite, which never terminates for a Gamma prior -- its log density is
-    finite everywhere, merely tiny -- so the upper limit ran away to about
-    1e60 and every Gamma answer came back as ``-inf``. The integrand
-    ``theta**a e^{t theta} p(theta)`` is what actually decays, and it is what
-    the peak search below already needs.
+    And the bracket has to be found on the integrand, not on the density. The
+    integrand ``theta**a e^{t theta} p(theta)`` is what actually decays, and it
+    is what the peak search below already needs.
 
     The bracket is taken where the log integrand has fallen 700 below its peak,
     which is where its contribution passes under double precision's floor.
@@ -176,18 +165,18 @@ def _bracket(log_integrand, t_value, lower_hint=1e-12, upper_hint=1e12):
         and the two bisections are each one call rather than one call per
         point -- 241 calls saved per evaluation point, each of which reaches
         the prior's density.
-
-        There is deliberately no exception handling here. The density arrives
-        already able to take an array, because :func:`_vectorise` settled that
-        once at setup; a density that can be called neither way raised there.
-        Catching here as well would put back exactly what that removed -- a
-        failure quietly becoming ``-inf``, which reads as "no mass at this
-        theta" rather than "this call did not work".
         """
+        # No try/except here, deliberately: `_vectorise` settled at setup that
+        # this density can be called this way. Catching would turn a failed
+        # call into `-inf`, which reads as "no mass at this theta" rather than
+        # "this call did not work".
         out = np.asarray(log_integrand(np.asarray(thetas, dtype=float), t_value))
         return np.where(np.isfinite(out), out, -np.inf)
 
-    # Find any point with mass, scanning geometrically.
+    # Find any point with mass, scanning geometrically. The scan is on the
+    # integrand, not the density: a Gamma log density is finite everywhere,
+    # merely tiny, so a density-based outward walk has no termination criterion
+    # at all and the upper limit runs away.
     grid = np.geomspace(lower_hint, upper_hint, 121)
     values = values_at(grid)
     if not np.any(np.isfinite(values)):
@@ -280,8 +269,7 @@ def expectationDeriv(
     That is what keeps large orders usable: at order 100 the integrand spans
     hundreds of orders of magnitude, and integrating it directly would overflow
     long before the answer appeared. The sign is always ``+1`` -- the integrand
-    is positive -- which is itself worth asserting, since the defect this route
-    exists to avoid announces itself as a sign flip.
+    is positive.
 
     ``tol`` is the quadrature's relative tolerance and nothing else; it does
     not bound the error of the returned logarithm, which also carries the

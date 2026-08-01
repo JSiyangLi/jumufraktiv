@@ -54,27 +54,17 @@ def func_timeout(timeout_seconds, func, args=()):
 
     Notes
     -----
-    This replaces the third-party ``func_timeout`` package, which is
-    unmaintained and no longer installable: its ``setup.py`` reads the
-    ``install_layout`` attribute that setuptools removed, so building it fails
-    and the whole module became unimportable — taking the ``symbolic`` backend
-    for fractional orders with it.
+    This is a local stand-in for the identically named PyPI ``func_timeout``
+    package, which is unmaintained and no longer installs on current
+    setuptools.
 
     The worker thread cannot be killed once started, so an overrunning SymPy
-    call keeps consuming CPU in the background even after this raises. That is
-    a real limitation, but it matches what the previous dependency provided in
-    practice, and it restores control to the caller, which is the point.
+    call keeps consuming CPU in the background even after this raises.
 
-    The executor is deliberately **not** used as a context manager. ``__exit__``
-    calls ``shutdown(wait=True)``, which joins the worker — so on a timeout the
-    wrapper would block until the runaway call finished anyway, defeating the
-    entire purpose. Measured before this was corrected: a 0.2s budget against a
-    4s call returned after 4.00s.
-
-    A consequence of ``wait=False`` worth knowing: ``ThreadPoolExecutor``
-    threads are non-daemon and joined by an ``atexit`` hook, so a still-running
-    transform can delay interpreter exit even though this function has already
-    returned.
+    The worker pool is shut down without waiting for that call to finish.
+    ``ThreadPoolExecutor`` threads are non-daemon and joined by an ``atexit``
+    hook, so a still-running transform can delay interpreter exit even though
+    this function has already returned.
     """
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
@@ -86,7 +76,9 @@ def func_timeout(timeout_seconds, func, args=()):
                 f"call exceeded its {timeout_seconds}s budget"
             ) from exc
     finally:
-        # Never wait: returning promptly on timeout is the whole contract.
+        # Never wait: returning promptly on timeout is the whole contract. Do
+        # not switch to `with pool:` -- its `__exit__` calls
+        # `shutdown(wait=True)`, which joins the runaway worker.
         pool.shutdown(wait=False)
 
 

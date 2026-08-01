@@ -1,8 +1,6 @@
 """Fixed-grid quadrature for the Liouville--Caputo fractional derivative.
 
-This replaces the adaptive scheme in :mod:`numeric_fractionalDeriv_scipy`. The
-reasons are recorded in :file:`CLAUDE.md` under "Numerical policy"; in short,
-the substitution the package already uses turns the kernel into an integrand
+The substitution the package already uses turns the kernel into an integrand
 that decays single-exponentially on the whole real line, and that is precisely
 the class where a plain uniform-grid trapezoid rule converges *geometrically*
 while adaptive Gauss--Kronrod does not.
@@ -47,12 +45,11 @@ truncation point that runs away as ``gamma -> 0``.
 
 Why the range is derived rather than discovered
 -----------------------------------------------
-The previous kernel started at ``L = 10`` and doubled until consecutive
-iterates agreed. That rule is wrong in two ways at once: it compares
-consecutive iterates, which underestimates the remaining tail when convergence
-is slow, and it tests against ``tol * max(1, |prev|)``, which is an absolute
-test whenever the integral is below 1. Here both endpoints are computed from
-the decay rates above, so there is no stopping rule to get wrong.
+Both endpoints are computed from the decay rates above rather than discovered
+by a stopping rule, so there is no stopping rule to get wrong. A rule that
+compares consecutive iterates underestimates the remaining tail exactly when
+convergence is slow, and a test against ``tol * max(1, |prev|)`` is an absolute
+test whenever the integral is below 1.
 """
 
 import math
@@ -77,10 +74,7 @@ def _signed_logsumexp(log_abs, sign, axis=0):
     """Sum signed values given in log space, returning ``(log_abs, sign)``.
 
     Accumulating in log space is what stops a large derivative order
-    overflowing. The previous kernel exponentiated each contribution into
-    linear space and clamped on overflow, which silently dropped the
-    overflowing terms: order 300.5 came out as 694.234 against an exact
-    1006.311, wrong by 312 nats with no warning.
+    overflowing.
     """
     log_abs = np.asarray(log_abs, dtype=float)
     sign = np.asarray(sign, dtype=float)

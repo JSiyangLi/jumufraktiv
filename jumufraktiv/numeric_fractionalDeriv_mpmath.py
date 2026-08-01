@@ -231,18 +231,10 @@ def fractionalDeriv_numeric_mpmath_tan(
 def _mp_integer_derivative(prior, n_plus_1, complete):
     """Return a callable giving ``M^{(n+1)}`` at **arbitrary** precision.
 
-    This is what makes ``dps`` mean something. The obvious implementation --
-    calling ``mgfDerivative_integer`` per quadrature node -- returns
-    ``(log_abs, sign)`` as NumPy ``float64`` and takes ``t`` as a Python float,
-    so the mpmath backend was integrating a float-precision function at
-    arbitrary precision: the quadrature exact to ``dps`` digits, of a function
-    known only to 16. Measured, accuracy stopped improving with ``dps`` at
-    around 1e-10 and bounced rather than converging.
-
-    SymPy evaluates to any precision natively, so the derivative expression is
-    built once and evaluated per node with ``evalf(dps)``. Substituting the
-    prior's hyperparameters up front keeps that per-node work to one
-    substitution and one evaluation.
+    This is what makes ``dps`` mean something. SymPy evaluates to any precision
+    natively, so the derivative expression is built once and evaluated per node
+    with ``evalf(dps)``. Substituting the prior's hyperparameters up front keeps
+    that per-node work to one substitution and one evaluation.
 
     Returns ``None`` when no symbolic MGF is available, so the caller can fall
     back rather than fail -- the Bell and JAX backends are float by
@@ -252,6 +244,9 @@ def _mp_integer_derivative(prior, n_plus_1, complete):
     if getattr(prior, attr, None) is None:
         return None
 
+    # Not a per-node `mgfDerivative_integer` call: that route returns
+    # `(log_abs, sign)` as float64 and takes `t` as a Python float, so it would
+    # cap this backend at double precision however high `dps` goes.
     expr = cached_diff(getattr(prior, attr), _t_sym, n_plus_1)
 
     params = getattr(prior, "params", None) or {}
@@ -286,10 +281,7 @@ def _right_endpoint(integrand, gamma_val, tol, start=8.0, cap=709.0):
     measured rather than assumed, by extending until the value at the endpoint
     is below ``tol`` relative to the largest value seen.
 
-    This is a test of the *integrand's* decay. The rule it replaces compared
-    consecutive estimates of the *integral*, which underestimates the remaining
-    tail exactly when convergence is slow -- the failure this whole change is
-    about.
+    This is a test of the *integrand's* decay.
     """
     u_max = start
     while u_max < cap:
@@ -338,13 +330,6 @@ def fractionalDeriv_numeric_mpmath(
         If True, return (log_abs, sign) instead of ordinary value.
     tol : float
         Relative tolerance for convergence (default 1e-8).
-
-        `initial_L` and `max_L` used to sit here, as the starting half-width
-        and cap of a doubling loop. PR 6c replaced that loop with a range
-        derived from `dps`, and left the two parameters declared and
-        documented but unread -- so a caller could set `max_L` and be told
-        nothing. They are gone; the range is not tunable because it is no
-        longer discovered.
     use_tan : bool
         If True, directly use the tan‑transform method.
     dps : int
@@ -358,6 +343,11 @@ def fractionalDeriv_numeric_mpmath(
     float or tuple (log_abs, sign)
         If t and u are scalar, returns scalar or tuple.
         If either is array, returns array(s) with the broadcasted shape.
+
+    Notes
+    -----
+    The truncation range is derived from ``dps`` -- the target is ``10**-dps``
+    -- and is not tunable by any argument.
     """
     mp.dps = dps
 

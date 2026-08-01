@@ -344,7 +344,12 @@ def test_the_option_list_matches_the_backends_in_both_directions():
         mgfDerivative_integer,
     ):
         declared |= set(inspect.signature(backend).parameters)
-    tunable = declared - STRUCTURAL
+
+    # A leading underscore marks a parameter the dispatch layer sets for itself,
+    # never one a caller may pass. Excluded by the rule rather than by name, so
+    # the next such parameter does not fail this test on the day it is added.
+    private = {name for name in declared if name.startswith("_")}
+    tunable = declared - STRUCTURAL - private
 
     accepted_but_unreachable = sorted(set(BACKEND_OPTIONS) - tunable)
     reachable_but_refused = sorted(tunable - set(BACKEND_OPTIONS))
