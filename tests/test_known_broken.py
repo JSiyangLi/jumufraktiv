@@ -625,3 +625,54 @@ def test_uniform_cgf_works_below_the_origin():
         assert prior.cgf(t_value) == pytest.approx(reference, rel=1e-12)
 
     assert prior.cgf(0.0) == 0.0
+
+
+@pytest.mark.parametrize("method", ["symbolic", "auto", "expectation"])
+def test_the_backends_the_pareto_refusal_recommends_actually_work(method):
+    """The message names alternatives, so those must be alternatives.
+
+    An error that points somewhere is worse than one that does not if the
+    destination also fails. `bell` was named here first and is not safe: it
+    prefers the symbolic incomplete CGF at its default `cgf_method`, but calls
+    the JAX function directly at order 0, and reaches it at any order once
+    `cgf_method` is `jet` or `grad`.
+    """
+    import mpmath as mp
+
+    mp.mp.dps = 40
+    prior = _pareto_prior()
+
+    def integrand(theta):
+        return theta * mp.e ** (-theta) * 3 / theta**4
+
+    expected = float(mp.log(mp.quad(integrand, [1, 2])))
+    log_abs, sign = mgfDerivative(
+        1, prior, method=method, t=-1.0, u=2.0, complete=False, log=True
+    )
+
+    assert sign == 1
+    assert log_abs == pytest.approx(expected, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("order", "cgf_method"), [(0, "auto"), (1, "jet"), (1, "grad")]
+)
+def test_bell_reaches_the_pareto_jax_gap(order, cgf_method):
+    """Recorded so the refusal message stays true, not because it is a defect.
+
+    The Bell backend has no non-JAX route to the incomplete CGF's *value*, only
+    to its derivatives via the symbolic expression. Order 0 is the value
+    itself, and `cgf_method='jet'`/`'grad'` ask for the JAX path by name. Both
+    are honest refusals rather than silent wrong answers.
+    """
+    with pytest.raises(NotImplementedError, match="no JAX implementation"):
+        mgfDerivative(
+            order,
+            _pareto_prior(),
+            method="bell",
+            t=-1.0,
+            u=2.0,
+            complete=False,
+            log=True,
+            cgf_method=cgf_method,
+        )

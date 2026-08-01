@@ -395,8 +395,9 @@ def pareto_imgf_jax(t_val, alpha_val, xi_val, u_val):
         "The Pareto incomplete MGF has no JAX implementation. It requires the "
         "generalised exponential integral E_{1+alpha} at real order, and "
         "jax.scipy.special provides expn at integer order only. Use "
-        "method='symbolic' or method='bell' for an incomplete-MGF derivative "
-        "against a Pareto prior."
+        "method='symbolic' or method='auto' for an incomplete-MGF derivative "
+        "against a Pareto prior; 'bell' reaches this function at order 0 and "
+        "whenever cgf_method forces its JAX path."
     )
 
 
@@ -431,8 +432,9 @@ def pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val):
         "The Pareto incomplete MGF has no JAX implementation. It requires the "
         "generalised exponential integral E_{1+alpha} at real order, and "
         "jax.scipy.special provides expn at integer order only. Use "
-        "method='symbolic' or method='bell' for an incomplete-MGF derivative "
-        "against a Pareto prior."
+        "method='symbolic' or method='auto' for an incomplete-MGF derivative "
+        "against a Pareto prior; 'bell' reaches this function at order 0 and "
+        "whenever cgf_method forces its JAX path."
     )
 
 
