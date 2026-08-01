@@ -1,18 +1,18 @@
 """
 mitMGFprior.py
 
-Unified container for moment‑generating function (MGF) priors.
+Unified container for moment-generating function (MGF) priors.
 
 This module defines the `mitMGFprior` class, which serves as a standardised
 container for prior distributions in the MGF marginalisation framework.
 It holds both symbolic and numeric representations of the prior MGF, CGF,
-and PDF, along with JAX‑compatible versions for fast computation.
+and PDF, along with JAX-compatible versions for fast computation.
 
 Design philosophy:
 - The registry (`PRIOR_REGISTRY`) provides fully-formed function bundles;
   the class only composes, stores, and exposes interfaces.
-- Both symbolic and backend‑based construction routes are supported.
-- The class is dataclass‑based for clarity and easy extension.
+- Both symbolic and backend-based construction routes are supported.
+- The class is dataclass-based for clarity and easy extension.
 
 Key features:
 - Supports **complete** and **incomplete** MGFs (iMGF) via the `imgf`, `logimgf`,
@@ -35,8 +35,9 @@ Examples
 >>> prior.as_mitMGFprior()
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -55,9 +56,9 @@ class mitMGFprior:
     Container for a prior distribution's MGF, CGF, and PDF.
 
     This class holds both symbolic and numeric representations of a prior's
-    moment‑generating function (MGF), cumulant‑generating function (CGF),
-    and probability density function (PDF). It also supports JAX‑compatible
-    backends for high‑performance computation and incomplete MGF (iMGF)
+    moment-generating function (MGF), cumulant-generating function (CGF),
+    and probability density function (PDF). It also supports JAX-compatible
+    backends for high-performance computation and incomplete MGF (iMGF)
     functions for truncated distributions.
 
     Attributes
@@ -76,12 +77,12 @@ class mitMGFprior:
         Dictionary of numeric parameters (e.g., `{'alpha': 2.0, 'beta': 3.0}`).
 
     Compiled functions (populated by `as_mitMGFprior` or `from_registry`):
-    - mgf, cgf : NumPy‑based MGF and CGF functions.
-    - mgf_jax, cgf_jax : JAX‑based MGF and CGF functions.
-    - pdf_func, logpdf_func : NumPy‑based PDF and log‑PDF functions.
+    - mgf, cgf : NumPy-based MGF and CGF functions.
+    - mgf_jax, cgf_jax : JAX-based MGF and CGF functions.
+    - pdf_func, logpdf_func : NumPy-based PDF and log-PDF functions.
 
     Incomplete MGF (iMGF) attributes (if supported):
-    - imgf, logimgf : Numeric ordinary and log‑scale iMGF.
+    - imgf, logimgf : Numeric ordinary and log-scale iMGF.
     - imgf_jax, logimgf_jax : JAX versions.
     - imgf_sym, logimgf_sym : Symbolic expressions.
 
@@ -98,7 +99,7 @@ class mitMGFprior:
 
     Notes
     -----
-    The class follows a two‑step construction pattern:
+    The class follows a two-step construction pattern:
     1. Create an instance with raw inputs (symbolic or backend).
     2. Call `as_mitMGFprior()` to compile and populate all functions.
 
@@ -113,8 +114,10 @@ class mitMGFprior:
     >>> prior.mgf(-0.5)
     1.7777777778
 
-    >>> # Registry‑based prior
-    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+    >>> # Registry-based prior
+    >>> gamma_prior = mitMGFprior.from_registry(
+    ...     'gamma', params={'alpha':2.0, 'beta':3.0}
+    ... )
     >>> gamma_prior.mgf(-1.0)
     0.8888888889
     """
@@ -123,13 +126,13 @@ class mitMGFprior:
     # -----------------------------
     # user inputs (raw layer)
     # -----------------------------
-    mgf_sym: Optional[sp.Expr] = None
-    pdf_sym: Optional[sp.Expr] = None
+    mgf_sym: sp.Expr | None = None
+    pdf_sym: sp.Expr | None = None
 
-    mgf_backend: Optional[Callable] = None
-    pdf_backend: Optional[Callable] = None
+    mgf_backend: Callable | None = None
+    pdf_backend: Callable | None = None
 
-    params: Optional[Dict[str, Any]] = None
+    params: dict[str, Any] | None = None
 
     #: Supremum of the orders `a` for which `E[Θ^a]` is finite, i.e. the moment
     #: domain. Only consulted when the evaluation point is `t = 0`, where
@@ -146,14 +149,14 @@ class mitMGFprior:
     # -----------------------------
     # compiled outputs
     # -----------------------------
-    mgf: Optional[Callable] = None
-    cgf: Optional[Callable] = None
+    mgf: Callable | None = None
+    cgf: Callable | None = None
 
-    mgf_jax: Optional[Callable] = None
-    cgf_jax: Optional[Callable] = None
+    mgf_jax: Callable | None = None
+    cgf_jax: Callable | None = None
 
-    pdf_func: Optional[Callable] = None
-    logpdf_func: Optional[Callable] = None
+    pdf_func: Callable | None = None
+    logpdf_func: Callable | None = None
 
     mgf_sym_out: Any = None
     cgf_sym: Any = None
@@ -178,7 +181,7 @@ class mitMGFprior:
             as `log(mgf_sym)`.
             2. **Backend mode**: if both `mgf_backend` and `pdf_backend` are provided,
             they are wrapped to accept a backend parameter (`xp=np` or `xp=jnp`),
-            and the CGF and log‑PDF are derived numerically.
+            and the CGF and log-PDF are derived numerically.
 
         The method modifies the instance in place and returns it for chaining.
 
@@ -282,7 +285,9 @@ class mitMGFprior:
         if self.pdf_backend is not None and self.mgf_backend is None:
             raise ValueError("Backend mode requires both mgf_backend and pdf_backend.")
 
-        raise ValueError("Must provide either (mgf_sym, pdf_sym) or (mgf_backend, pdf_backend).")
+        raise ValueError(
+            "Must provide either (mgf_sym, pdf_sym) or (mgf_backend, pdf_backend)."
+        )
 
     # ============================================================
     # REGISTRY ROUTE: automatic construction
@@ -329,12 +334,16 @@ class mitMGFprior:
 
         Examples
         --------
-        >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+        >>> gamma_prior = mitMGFprior.from_registry(
+        ...     'gamma', params={'alpha':2.0, 'beta':3.0}
+        ... )
         >>> gamma_prior.mgf(-1.0)
         0.8888888889
 
         >>> # With symbolic simplification
-        >>> prior = mitMGFprior.from_registry('pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True)
+        >>> prior = mitMGFprior.from_registry(
+        ...     'pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True
+        ... )
         """
         from jumufraktiv.registry import failed_prior_modules
 
@@ -343,14 +352,17 @@ class mitMGFprior:
         # ---------------------------------------------------------
         # Get the factory function and call it
         # ---------------------------------------------------------
-        # get_prior initialises the registry. Reading PRIOR_REGISTRY directly
-        # here used to make this method fail in a fresh process unless some
-        # other registry function had already run, and its error could not
-        # distinguish a typo from an unpopulated registry.
+        # `get_prior` initialises the registry, so it must be what the lookup
+        # goes through: reading `PRIOR_REGISTRY` directly fails in a fresh
+        # process unless some other registry function has already run, and
+        # cannot tell a typo from an unpopulated registry. The name is only
+        # read below to list what is available once the lookup has failed.
         try:
             factory = get_prior(prior_name)
         except KeyError as exc:
-            message = f"Unknown prior '{prior_name}'. Available: {sorted(PRIOR_REGISTRY)}"
+            message = (
+                f"Unknown prior '{prior_name}'. Available: {sorted(PRIOR_REGISTRY)}"
+            )
             failed = failed_prior_modules()
             if failed:
                 details = "; ".join(
@@ -400,7 +412,9 @@ class mitMGFprior:
         logimgf_jax = spec.get("logimgf_jax")
 
         if mgf_math is None or cgf_math is None or pdf_math is None:
-            raise ValueError("Registry must provide numeric MGF, CGF, and PDF functions.")
+            raise ValueError(
+                "Registry must provide numeric MGF, CGF, and PDF functions."
+            )
 
         # ---------------------------------------------------------
         # Build the object using the existing class
@@ -459,7 +473,7 @@ class mitMGFprior:
             if not callable(val):
                 return False
         return True
-    
+
     # ============================================================
     # iMGF SUPPORT CHECK
     # ============================================================

@@ -3,8 +3,8 @@ Dagum.py
 
 Functions for preparing Dagum likelihood statistics for MGF marginalisation.
 
-For a Dagum distribution with known shape r (scalar or vector) and known scale s (scalar or vector),
-and unknown shape q, the density for y > 0 is:
+For a Dagum distribution with known shape r (scalar or vector) and known
+scale s (scalar or vector), and unknown shape q, the density for y > 0 is:
 
     f(y; r, s, q) = (r * q / y) * (y/s)^(r*q) / ( (y/s)^r + 1 )^(q+1)
 
@@ -24,7 +24,6 @@ If the known parameters are scalars, they are recycled. If they are vectors,
 they must have the same length as data.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -34,11 +33,11 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyDagum(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
-    s: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
+    s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Dagum likelihood with known r and s.
 
@@ -58,11 +57,11 @@ def readyDagum(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    r : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    r : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s). If scalar, recycled; if vector, same length as data.
-    s : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    s : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s). If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
 
@@ -79,7 +78,7 @@ def readyDagum(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle r and s (vectorization) ----
     def _handle_param(param, name):
@@ -107,12 +106,12 @@ def readyDagum(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Dagum likelihood.")
 
-    # ---- Compute log‑stable statistics ----
-    # log(1 + (y/s)^r)  – needed for log_c
+    # ---- Compute log-stable statistics ----
+    # log(1 + (y/s)^r)  -- needed for log_c
     ratio = data_vals / s_vals
     log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
 
-    # log(1 + (s/y)^r)  – needed for b (stable version)
+    # log(1 + (s/y)^r)  -- needed for b (stable version)
     inv_ratio = s_vals / data_vals
     log_term_inv = np.log1p(inv_ratio ** r_vals)   # log(1 + (s/y)^r)
 
@@ -121,15 +120,15 @@ def readyDagum(
     log_c = np.sum(np.log(r_vals) - np.log(data_vals) - log_term)
 
     return {'a': a_stat, 'b': b_stat, 'log_c': log_c}
-    
+
 def bereitDagum(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    r: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
-    s: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
+    s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Dagum likelihood.
+    Compute per-element sufficient statistics for a Dagum likelihood.
 
     For each observation y_i, known shape r_i, known scale s_i:
         a_i = 1
@@ -138,11 +137,11 @@ def bereitDagum(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    r : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    r : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known shape parameter(s). If scalar, recycled; if vector, same length as data.
-    s : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    s : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s). If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -154,7 +153,7 @@ def bereitDagum(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Reuse parameter handling ----
     def _handle_param(param, name):
@@ -182,7 +181,7 @@ def bereitDagum(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Dagum likelihood.")
 
-    # ---- Per‑element computations ----
+    # ---- Per-element computations ----
     ratio = data_vals / s_vals
     log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
 

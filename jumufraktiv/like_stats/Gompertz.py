@@ -3,8 +3,8 @@ Gompertz.py
 
 Functions for preparing Gompertz likelihood statistics for MGF marginalisation.
 
-For a Gompertz distribution with known scale parameter β (scalar or vector) and unknown shape θ,
-the density for y > 0 is:
+For a Gompertz distribution with known scale parameter β (scalar or vector)
+and unknown shape θ, the density for y > 0 is:
 
     f(y; θ, β) = β * exp(β*y) * θ * exp(-θ * (exp(β*y) - 1))
 
@@ -21,7 +21,6 @@ For a sample of size n:
 If β is a scalar, it is recycled. If β is a vector, it must have length n.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -31,10 +30,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyGompertz(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Gompertz likelihood with known scale.
 
@@ -48,9 +47,9 @@ def readyGompertz(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) β. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -69,7 +68,7 @@ def readyGompertz(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle scale ----
     if _is_1d_dataframe(scale):
@@ -101,14 +100,14 @@ def readyGompertz(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitGompertz(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Gompertz likelihood.
+    Compute per-element sufficient statistics for a Gompertz likelihood.
 
     For each observation y_i and known scale β_i:
         a_i = 1
@@ -117,9 +116,9 @@ def bereitGompertz(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) β. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -131,7 +130,7 @@ def bereitGompertz(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -151,7 +150,7 @@ def bereitGompertz(
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Gompertz likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     exp_term = np.exp(scale_vals * data_vals)
     b_vals = exp_term - 1.0

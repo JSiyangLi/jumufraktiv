@@ -53,9 +53,8 @@ def test_bell_and_symbolic_backends_agree(gamma_prior, order):
 # Conjugate posterior: Gamma prior + Poisson likelihood
 # ==========================================================================
 def test_evidence_matches_closed_form(poisson_posterior):
-    log_ev, sign = poisson_posterior.evidence()
+    log_ev = poisson_posterior.evidence()
 
-    assert sign == 1
     assert log_ev == pytest.approx(poisson_log_evidence(POISSON_DATA), rel=1e-12)
 
 
@@ -143,12 +142,12 @@ def test_sequential_update_equals_batch_evidence(gamma_prior):
     batch = MGFDerivative(
         gamma_prior, data=first + second, likelihood="poisson", scale=POISSON_SCALE
     )
-    log_batch, _ = batch.evidence()
+    log_batch = batch.evidence()
 
     staged = MGFDerivative(
         gamma_prior, data=first, likelihood="poisson", scale=POISSON_SCALE
     )
-    log_first, _ = staged.evidence()
-    log_second, _ = staged.update(second, scale=POISSON_SCALE).evidence()
+    log_first = staged.evidence()
+    log_second = staged.update(second, scale=POISSON_SCALE).evidence()
 
     assert log_first + log_second == pytest.approx(log_batch, rel=1e-8)

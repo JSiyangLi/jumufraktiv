@@ -4,7 +4,7 @@ numeric_integerDeriv_Bell.py
 Compute integer derivatives of MGFs via Bell polynomials.
 Uses suggest_method_integerDeriv() with a low-order test to decide between
 symbolic (SymPy) and numeric (JAX). Falls back to JAX if symbolic fails
-or exceeds a user‑specified timeout.
+or exceeds a user-specified timeout.
 """
 
 import logging
@@ -25,13 +25,12 @@ from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
 from jumufraktiv.symbolic_cache import cached_diff
 
 # Must run before any JAX array is created, not before JAX is imported, so it
-# belongs below the imports rather than wedged among them -- where it was, and
-# where it broke the import block into two halves that no formatter could sort.
+# belongs below the import block rather than wedged among the imports.
 jax.config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
-# ===== Helper: CGF derivatives (unchanged) =====
+# ===== Helper: CGF derivatives =====
 def cgf_derivatives_jet(cgf_func, t, order):
     """Compute derivatives of the CGF using JAX's jet (Taylor mode)."""
     if order == 0:
@@ -105,14 +104,19 @@ def _cgf_derivatives_jax_scalar(cgf_func, t, order, cgf_mode):
             return cgf_derivatives_jet(cgf_func, t, order)
         except Exception as e:
             msg = str(e).lower()
-            if any(key in msg for key in ("jet", "primitive", "not implemented", "igamma")):
+            if any(
+                key in msg
+                for key in ("jet", "primitive", "not implemented", "igamma")
+            ):
                 logger.debug(
                     "jet() failed (%s: %s); using nested grad() instead. "
                     "Both compute the same derivatives.", type(e).__name__, e)
                 return cgf_derivatives_grad(cgf_func, t, order)
             raise
     else:
-        raise ValueError(f"Unknown cgf_mode='{cgf_mode}'. Expected 'jet', 'grad', or 'auto'.")
+        raise ValueError(
+            f"Unknown cgf_mode='{cgf_mode}'. Expected 'jet', 'grad', or 'auto'."
+        )
 
 
 # ======================================================================
@@ -206,13 +210,13 @@ def integerDeriv_numeric_bell(
     u: float | np.ndarray | None = None,
 ):
     """
-    Compute the order‑th derivative of M(t) or imgf(t,u) using Bell polynomials.
+    Compute the order-th derivative of M(t) or imgf(t,u) using Bell polynomials.
 
     The evaluation point is:
         - complete MGF: (t)
         - incomplete MGF: (t, u)
-    If either t or u is array‑like, they are broadcast to a common shape and the
-    computation is vectorised over that batch (tuple‑vectorisation principle).
+    If either t or u is array-like, they are broadcast to a common shape and the
+    computation is vectorised over that batch (tuple-vectorisation principle).
 
     Parameters
     ----------
@@ -240,7 +244,7 @@ def integerDeriv_numeric_bell(
         (log_abs_array, sign_array)  # np.ndarray with broadcasted shape
     """
     if order < 0:
-        raise ValueError("Order must be non‑negative.")
+        raise ValueError("Order must be non-negative.")
 
     valid_modes = {"auto", "symbolic", "jet", "grad"}
     if cgf_mode.lower() not in valid_modes:
@@ -308,7 +312,9 @@ def integerDeriv_numeric_bell(
         if complete:
             cgf_vals = np.array([cgf_func(t_flat[i]) for i in range(n_points)])
         else:
-            cgf_vals = np.array([cgf_func(t_flat[i], u_flat[i]) for i in range(n_points)])
+            cgf_vals = np.array(
+                [cgf_func(t_flat[i], u_flat[i]) for i in range(n_points)]
+            )
         cgf_vals = cgf_vals.reshape(batch_shape)
         if scalar_input:
             return float(cgf_vals.item()), 1
@@ -359,7 +365,7 @@ def integerDeriv_numeric_bell(
     # 5. Symbolic path (iterate over points)
     # ------------------------------------------------------------
     if use_symbolic:
-        # Pre‑substitute hyperparameters once
+        # Pre-substitute hyperparameters once
         subs_dict = {}
         for sym in cgf_expr.free_symbols:
             if sym.name in params:
@@ -390,7 +396,10 @@ def integerDeriv_numeric_bell(
             for idx in range(n_points):
                 val_sub = deriv_expr.subs(subs_list[idx]).evalf()
                 if val_sub.free_symbols:
-                    raise ValueError(f"Free symbols remain for point {idx}: {val_sub.free_symbols}")
+                    raise ValueError(
+                        f"Free symbols remain for point {idx}: "
+                        f"{val_sub.free_symbols}"
+                    )
                 vals_k[idx] = float(val_sub)
 
             abs_vals = np.abs(vals_k)
@@ -404,7 +413,7 @@ def integerDeriv_numeric_bell(
         logv = np.stack(logv_list, axis=0)
         vsign = np.stack(vsign_list, axis=0)
 
-        # Evaluate CGF using pre‑substituted expression
+        # Evaluate CGF using pre-substituted expression
         cgf_t = np.zeros(n_points)
         for idx in range(n_points):
             cgf_val = cgf_expr_num.subs(subs_list[idx]).evalf()
@@ -423,7 +432,7 @@ def integerDeriv_numeric_bell(
             return log_abs_deriv, sign_B
 
     # ------------------------------------------------------------
-    # 6. Numeric (JAX) path – tuple‑vectorised, no Python loops
+    # 6. Numeric (JAX) path -- tuple-vectorised, no Python loops
     # ------------------------------------------------------------
     if not use_symbolic:
         logger.debug("Evaluating on the tuple-vectorised JAX path.")
@@ -458,7 +467,9 @@ def integerDeriv_numeric_bell(
         vsign = jnp.transpose(vsign)
 
         # Batched Bell
-        log_abs_B, sign_B = bell_polynomial_log_batched(np.asarray(logv), np.asarray(vsign))
+        log_abs_B, sign_B = bell_polynomial_log_batched(
+            np.asarray(logv), np.asarray(vsign)
+        )
 
         # Compute CGF values via vmap (no Python loop)
         if complete:

@@ -22,7 +22,6 @@ If μ is a scalar, it is recycled. If μ is a vector, it must have length n.
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -32,10 +31,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyLevy(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    location: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Lévy likelihood with known location.
 
@@ -49,11 +48,11 @@ def readyLevy(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
-    location : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
-        Known location parameter(s) μ. If scalar, it is recycled to match length of data.
-        If vector, must have same length as data.
+    location : numeric scalar or 1-column pandas DataFrame/Series/array-like
+        Known location parameter(s) μ. If scalar, it is recycled to match
+        length of data. If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
 
     Returns
@@ -70,7 +69,7 @@ def readyLevy(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle location ----
     if _is_1d_dataframe(location):
@@ -87,7 +86,9 @@ def readyLevy(
     # ---- 3. Check support ----
     diff = data_vals - loc_vals
     if np.any(diff <= 0):
-        raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
+        raise ValueError(
+            "data values must be strictly greater than location for Lévy likelihood."
+        )
 
     # ---- 4. Compute sufficient statistics ----
     a = n / 2.0
@@ -100,14 +101,14 @@ def readyLevy(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitLevy(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    location: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Lévy likelihood.
+    Compute per-element sufficient statistics for a Lévy likelihood.
 
     For each observation y_i and known location μ_i:
         a_i = 0.5
@@ -116,10 +117,11 @@ def bereitLevy(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be > location).
-    location : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
-        Known location parameter(s) μ. If scalar, recycled; if vector, same length as data.
+    location : numeric scalar or 1-column pandas DataFrame/Series/array-like
+        Known location parameter(s) μ. If scalar, recycled; if vector, same
+        length as data.
     **kwargs : additional arguments (ignored).
 
     Returns
@@ -130,7 +132,7 @@ def bereitLevy(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle location ----
     if _is_1d_dataframe(location):
@@ -147,9 +149,11 @@ def bereitLevy(
     # ---- Check support ----
     diff = data_vals - loc_vals
     if np.any(diff <= 0):
-        raise ValueError("data values must be strictly greater than location for Lévy likelihood.")
+        raise ValueError(
+            "data values must be strictly greater than location for Lévy likelihood."
+        )
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.full(n, 0.5)
     b_vals = 1.0 / (2.0 * diff)
     log_c_vals = -0.5 * np.log(2.0 * np.pi) - 1.5 * np.log(diff)

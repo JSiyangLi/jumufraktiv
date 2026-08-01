@@ -25,7 +25,6 @@ Thus:
     log_c = Σ log(y_i)
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -35,9 +34,9 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyRayleigh(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Rayleigh likelihood.
 
@@ -51,7 +50,7 @@ def readyRayleigh(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
     **kwargs : additional arguments (ignored, for compatibility).
 
@@ -69,7 +68,7 @@ def readyRayleigh(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Check positivity ----
     if np.any(data_vals <= 0):
@@ -85,13 +84,13 @@ def readyRayleigh(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitRayleigh(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Rayleigh likelihood.
+    Compute per-element sufficient statistics for a Rayleigh likelihood.
 
     For each observation y_i:
         a_i = 1
@@ -100,7 +99,7 @@ def bereitRayleigh(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
     **kwargs : additional arguments (ignored).
 
@@ -112,7 +111,7 @@ def bereitRayleigh(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     if np.any(data_vals <= 0):
         raise ValueError("data values must be positive for Rayleigh likelihood.")

@@ -23,7 +23,6 @@ Thus:
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -33,10 +32,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyNormal(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Normal likelihood with known mean.
 
@@ -50,9 +49,9 @@ def readyNormal(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values.
-    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    mean : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known mean μ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data (though mean is typically scalar).
     **kwargs : additional arguments (ignored, for compatibility).
@@ -71,7 +70,7 @@ def readyNormal(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle mean ----
     if _is_1d_dataframe(mean):
@@ -96,14 +95,14 @@ def readyNormal(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitNormal(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Normal likelihood.
+    Compute per-element sufficient statistics for a Normal likelihood.
 
     For each observation y_i and known mean μ_i:
         a_i = 0.5
@@ -112,9 +111,9 @@ def bereitNormal(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values.
-    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    mean : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known mean μ. If scalar, recycled; if vector, same length as data.
 
     Returns
@@ -125,7 +124,7 @@ def bereitNormal(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle mean ----
     if _is_1d_dataframe(mean):
@@ -139,7 +138,7 @@ def bereitNormal(
         if len(mean_vals) != n:
             raise ValueError("mean must have same length as data or be scalar")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.full(n, 0.5)
     b_vals = (data_vals - mean_vals) ** 2 / 2.0
     log_c_vals = np.full(n, -0.5 * (np.log(2.0) + np.log(np.pi)))

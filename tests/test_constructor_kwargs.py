@@ -11,6 +11,7 @@ reach the layer they belong to.
 """
 
 import inspect
+import warnings
 
 import pytest
 from conftest import ALPHA, BETA, POISSON_DATA, poisson_log_evidence
@@ -78,10 +79,10 @@ def test_likelihood_parameter_reaches_the_likelihood(gamma_prior):
     """A correctly spelled parameter must change the answer."""
     default = MGFDerivative(
         gamma_prior, data=POISSON_DATA, likelihood="poisson"
-    ).evidence()[0]
+    ).evidence()
     scaled = MGFDerivative(
         gamma_prior, data=POISSON_DATA, likelihood="poisson", scale=2.0
-    ).evidence()[0]
+    ).evidence()
 
     assert default != pytest.approx(scaled)
     assert scaled == pytest.approx(
@@ -94,11 +95,19 @@ def test_likelihood_parameter_reaches_the_likelihood(gamma_prior):
     "option", [{"int_tol": 1e-10}, {"integer_method": "bell"}, {"use_tan": True}]
 )
 def test_derivative_options_are_accepted(gamma_prior, option):
-    post = MGFDerivative(
-        gamma_prior, data=POISSON_DATA, likelihood="poisson", scale=1.0, **option
-    )
+    # Accepted means "does not raise", which is a different question from
+    # "changes the answer". Two of these three are read by no route this
+    # posterior takes -- it has an integer order and goes to the expectation
+    # integral -- so PR 12 makes them warn. The warning is asserted where it
+    # belongs, in `test_known_broken.py`; here it would only mask the TypeError
+    # this test exists to rule out, which still propagates.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        post = MGFDerivative(
+            gamma_prior, data=POISSON_DATA, likelihood="poisson", scale=1.0, **option
+        )
 
-    assert post.evidence()[0] == pytest.approx(
+    assert post.evidence() == pytest.approx(
         poisson_log_evidence(POISSON_DATA), rel=1e-8
     )
 
@@ -106,7 +115,7 @@ def test_derivative_options_are_accepted(gamma_prior, option):
 def test_no_extra_kwargs_is_fine(gamma_prior):
     post = MGFDerivative(gamma_prior, data=POISSON_DATA, likelihood="poisson")
 
-    assert post.evidence()[0] == pytest.approx(
+    assert post.evidence() == pytest.approx(
         poisson_log_evidence(POISSON_DATA), rel=1e-10
     )
 
@@ -253,15 +262,23 @@ def test_live_options_are_accepted_by_every_public_entry_point(gamma_prior, name
         "symbolic_timeout": 60.0,
     }.get(name, 1e-9)
 
-    MGFDerivative(
-        gamma_prior,
-        data=POISSON_DATA,
-        likelihood="poisson",
-        scale=1.0,
-        **{name: value},
-    )
-    mgfDerivative(1.5, gamma_prior, method="scipy", t=-1.0, **{name: value})
-    mgfDerivative_fractional(1.5, gamma_prior, method="scipy", t=-1.0, **{name: value})
+    # The property is acceptance, so only a `TypeError` may fail this test. A
+    # name most of these routes cannot read now warns, which is PR 12's repair
+    # of a different defect and is asserted separately; letting it fail here
+    # would make one test answer two questions and neither clearly.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        MGFDerivative(
+            gamma_prior,
+            data=POISSON_DATA,
+            likelihood="poisson",
+            scale=1.0,
+            **{name: value},
+        )
+        mgfDerivative(1.5, gamma_prior, method="scipy", t=-1.0, **{name: value})
+        mgfDerivative_fractional(
+            1.5, gamma_prior, method="scipy", t=-1.0, **{name: value}
+        )
 
 
 def test_the_constructor_does_not_keep_its_own_list_of_options():
@@ -315,7 +332,6 @@ def test_the_option_list_matches_the_backends_in_both_directions():
         "u_points",
         "integer_method",
         "int_tol",
-        "integerDeriv_method",
         "kwargs",
     }
 
@@ -328,7 +344,12 @@ def test_the_option_list_matches_the_backends_in_both_directions():
         mgfDerivative_integer,
     ):
         declared |= set(inspect.signature(backend).parameters)
-    tunable = declared - STRUCTURAL
+
+    # A leading underscore marks a parameter the dispatch layer sets for itself,
+    # never one a caller may pass. Excluded by the rule rather than by name, so
+    # the next such parameter does not fail this test on the day it is added.
+    private = {name for name in declared if name.startswith("_")}
+    tunable = declared - STRUCTURAL - private
 
     accepted_but_unreachable = sorted(set(BACKEND_OPTIONS) - tunable)
     reachable_but_refused = sorted(tunable - set(BACKEND_OPTIONS))
@@ -339,6 +360,75 @@ def test_the_option_list_matches_the_backends_in_both_directions():
     assert not reachable_but_refused, (
         "a backend takes these but the dispatcher refuses them: "
         + ", ".join(reachable_but_refused)
+    )
+
+
+def test_the_route_table_agrees_with_the_backend_signatures():
+    """`ROUTE_OPTIONS` decides what is announced as discarded, so it must be right.
+
+    `BACKEND_OPTIONS` answers "does *any* backend read this?", which is what
+    makes a name valid rather than a misspelling. `ROUTE_OPTIONS` answers "does
+    *this* route read it?", which is what makes a value effective rather than
+    discarded. A route table that overstates what a route reads would silence
+    the warning for an option that is still being dropped -- the exact defect
+    the warning exists to end -- so it is checked against the signatures rather
+    than trusted.
+
+    Two names are checked by hand because the signature does not carry them.
+    `cgf_method` is spelled `cgf_mode` inside the Bell backend, and
+    `integer_method` is consumed by the fractional kernels to choose the
+    integer backend nested inside them.
+    """
+    from jumufraktiv.derivativeDispatch import (
+        BACKEND_OPTIONS,
+        ROUTE_OPTIONS,
+    )
+    from jumufraktiv.numeric_expectation import expectationDeriv
+    from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+    from jumufraktiv.numeric_fractionalDeriv_mpmath import (
+        fractionalDeriv_numeric_mpmath,
+    )
+    from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
+    from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+    from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
+    from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
+
+    #: The function each route ultimately reaches, and any option that function
+    #: reads under a different name than the dispatcher accepts it under.
+    ROUTE_TARGETS = {
+        (None, "expectation"): (expectationDeriv, frozenset()),
+        ("integer", "symbolic"): (integerDeriv_symbolic, frozenset()),
+        ("integer", "bell"): (integerDeriv_numeric_bell, frozenset({"cgf_method"})),
+        ("integer", "jax"): (integerDeriv_numeric_jax, frozenset()),
+        ("fractional", "scipy"): (fractionalDeriv_grid, frozenset()),
+        ("fractional", "mpmath"): (
+            fractionalDeriv_numeric_mpmath,
+            frozenset({"integer_method"}),
+        ),
+        ("fractional", "symbolic"): (fractionalDeriv_symbolic, frozenset()),
+    }
+
+    assert set(ROUTE_OPTIONS) == set(ROUTE_TARGETS), (
+        "a route was added or removed without updating this test"
+    )
+
+    tunable_names = set(BACKEND_OPTIONS) | {"integer_method"}
+    for route, declared_options in ROUTE_OPTIONS.items():
+        target, renamed = ROUTE_TARGETS[route]
+        actually_read = (
+            set(inspect.signature(target).parameters) & tunable_names
+        ) | renamed
+
+        assert declared_options == actually_read, (
+            f"ROUTE_OPTIONS{route} says {sorted(declared_options)} but "
+            f"{target.__name__} reads {sorted(actually_read)}"
+        )
+
+    # And every tunable name must be read by at least one route, or the
+    # dispatcher accepts an option nothing can honour.
+    covered = set().union(*ROUTE_OPTIONS.values())
+    assert tunable_names <= covered, "read by no route: " + ", ".join(
+        sorted(tunable_names - covered)
     )
 
 

@@ -1,9 +1,9 @@
 """
 HalfNormal.py
 
-Functions for preparing Half‑Normal likelihood statistics for MGF marginalisation.
+Functions for preparing Half-Normal likelihood statistics for MGF marginalisation.
 
-For a Half‑Normal distribution with scale parameter σ, the density for y ≥ 0 is:
+For a Half-Normal distribution with scale parameter σ, the density for y ≥ 0 is:
 
     f(y; σ) = (√(2) / (σ √π)) * exp(- y² / (2 σ²))
 
@@ -19,7 +19,6 @@ For a sample of size n:
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -29,11 +28,11 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyHalfNormal(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
-    Compute sufficient statistics for a Half‑Normal likelihood.
+    Compute sufficient statistics for a Half-Normal likelihood.
 
     The likelihood (in terms of precision θ = 1/σ²) is:
         L(θ; y) = √(2/π) * θ^{1/2} * exp(-θ * y² / 2)
@@ -45,8 +44,8 @@ def readyHalfNormal(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
-        Observed values (must be non‑negative).
+    data : pandas DataFrame (1-column), pandas Series, or array-like
+        Observed values (must be non-negative).
     **kwargs : additional arguments (ignored, for compatibility).
 
     Returns
@@ -63,11 +62,11 @@ def readyHalfNormal(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
-    # ---- 2. Check non‑negativity ----
+    # ---- 2. Check non-negativity ----
     if np.any(data_vals < 0):
-        raise ValueError("data values must be non‑negative for Half‑Normal likelihood.")
+        raise ValueError("data values must be non-negative for Half-Normal likelihood.")
 
     # ---- 3. Compute sufficient statistics ----
     a = n / 2.0
@@ -79,13 +78,13 @@ def readyHalfNormal(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitHalfNormal(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Half‑Normal likelihood.
+    Compute per-element sufficient statistics for a Half-Normal likelihood.
 
     For each observation y_i:
         a_i = 0.5
@@ -94,8 +93,8 @@ def bereitHalfNormal(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
-        Observed values (must be non‑negative).
+    data : pandas DataFrame (1-column), pandas Series, or array-like
+        Observed values (must be non-negative).
     **kwargs : additional arguments (ignored).
 
     Returns
@@ -106,10 +105,10 @@ def bereitHalfNormal(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     if np.any(data_vals < 0):
-        raise ValueError("data values must be non‑negative for Half‑Normal likelihood.")
+        raise ValueError("data values must be non-negative for Half-Normal likelihood.")
 
     a_vals = np.full(n, 0.5)
     b_vals = data_vals ** 2 / 2.0
@@ -124,7 +123,7 @@ def bereitHalfNormal(
 
 def cHalfNormal() -> sp.Expr:
     """
-    Return a symbolic expression for the Half‑Normal normalising constant:
+    Return a symbolic expression for the Half-Normal normalising constant:
 
         ∏_{i=1}^{n} √(2/π) = (√(2/π))^n
 

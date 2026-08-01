@@ -121,7 +121,9 @@ def newton_np(
         x_new = x - dx
 
         # Check convergence
-        converged = (np.abs(fx) < tol) | (np.abs(dx) < rel_tol * np.maximum(1.0, np.abs(x)))
+        converged = (np.abs(fx) < tol) | (
+            np.abs(dx) < rel_tol * np.maximum(1.0, np.abs(x))
+        )
         x = x_new
         if np.all(converged):
             break
@@ -140,7 +142,7 @@ def bisectioned_newton_np(
     rel_tol: float = 1e-8,
 ) -> np.ndarray:
     """
-    Vectorised safeguarded Newton method (NumPy) – Newton with bisection fallback.
+    Vectorised safeguarded Newton method (NumPy) -- Newton with bisection fallback.
 
     This is the recommended method for general root finding. It maintains
     brackets [lower, upper] and uses Newton steps when they stay within
@@ -187,7 +189,8 @@ def bisectioned_newton_np(
         dx = fx / dfx_safe
         x_newton = x - dx
 
-        # Fallback to bisection if Newton step is outside bracket or derivative is too small
+        # Fallback to bisection if Newton step is outside bracket or
+        # derivative is too small
         outside_bracket = (x_newton <= lower) | (x_newton >= upper)
         derivative_too_small = np.abs(dfx) < 1e-300
         use_bisection = outside_bracket | derivative_too_small
@@ -206,7 +209,9 @@ def bisectioned_newton_np(
         x = x_new
 
         # Convergence check
-        converged = (np.abs(fx_new) < tol) | (np.abs(x - x_old) < rel_tol * np.maximum(1.0, np.abs(x_old)))
+        converged = (np.abs(fx_new) < tol) | (
+            np.abs(x - x_old) < rel_tol * np.maximum(1.0, np.abs(x_old))
+        )
         if np.all(converged):
             break
 
@@ -349,16 +354,17 @@ def solve_root(
     f : callable
         Function f(x) whose roots are sought.
     df : callable, optional
-        Derivative f'(x). Required for Newton‑based methods.
+        Derivative f'(x). Required for Newton-based methods.
     x0 : array-like, optional
-        Initial guesses. Required for Newton‑based methods.
+        Initial guesses. Required for Newton-based methods.
     lower : array-like, optional
-        Lower brackets. Required for bisection‑based methods.
+        Lower brackets. Required for bisection-based methods.
     upper : array-like, optional
-        Upper brackets. Required for bisection‑based methods.
+        Upper brackets. Required for bisection-based methods.
     root_method : str, optional
         One of:
-            "auto"                      – try methods in order, skipping those with missing args.
+            "auto"                      -- try methods in order, skipping
+                                           those with missing args.
             "bisectioned-newton-jax"
             "newton-jax"
             "bisection-jax"
@@ -400,20 +406,25 @@ def solve_root(
     def try_method(method_name):
         try:
             if method_name == "bisectioned-newton-jax":
-                res = bisectioned_newton_jax(f, df, x0, lower, upper, maxiter, tol, rel_tol)
+                res = bisectioned_newton_jax(
+                    f, df, x0, lower, upper, maxiter, tol, rel_tol
+                )
             elif method_name == "newton-jax":
                 res = newton_jax(f, df, x0, maxiter, tol, rel_tol)
             elif method_name == "bisection-jax":
                 res = bisection_jax(f, lower, upper, maxiter, tol)
             elif method_name == "bisectioned-newton-np":
-                res = bisectioned_newton_np(f, df, x0, lower, upper, maxiter, tol, rel_tol)
+                res = bisectioned_newton_np(
+                    f, df, x0, lower, upper, maxiter, tol, rel_tol
+                )
             elif method_name == "newton-np":
                 res = newton_np(f, df, x0, maxiter, tol, rel_tol)
             elif method_name == "bisection-np":
                 res = bisection_np(f, lower, upper, maxiter, tol)
             else:
                 return None
-            # Sanity check: if result equals initial guess (within 1e-12) and |f(res)| > tol*10, treat as failure
+            # Sanity check: if result equals initial guess (within 1e-12) and
+            # |f(res)| > tol*10, treat as failure
             if x0 is not None and np.allclose(res, x0, rtol=1e-12, atol=1e-12):
                 f_res = f(res)
                 if np.any(np.abs(f_res) > tol * 10):
@@ -447,13 +458,25 @@ def solve_root(
     ]
     # Filter out methods requiring df if df is None
     if df is None:
-        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [
+            m for m in methods
+            if m not in ("bisectioned-newton-jax", "newton-jax",
+                         "bisectioned-newton-np", "newton-np")
+        ]
     # Filter out methods requiring brackets if brackets are missing
     if lower is None or upper is None:
-        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "bisection-jax", "bisectioned-newton-np", "bisection-np")]
+        methods = [
+            m for m in methods
+            if m not in ("bisectioned-newton-jax", "bisection-jax",
+                         "bisectioned-newton-np", "bisection-np")
+        ]
     # Filter out methods requiring x0 if x0 is None (Newton methods)
     if x0 is None:
-        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [
+            m for m in methods
+            if m not in ("bisectioned-newton-jax", "newton-jax",
+                         "bisectioned-newton-np", "newton-np")
+        ]
 
     # Try each method in order
     for method_name in methods:

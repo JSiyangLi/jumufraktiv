@@ -3,8 +3,8 @@ Pareto.py
 
 Functions for preparing Pareto likelihood statistics for MGF marginalisation.
 
-For a Pareto distribution with known scale parameter σ (scalar or vector) and unknown shape θ,
-the density for y ≥ σ is:
+For a Pareto distribution with known scale parameter σ (scalar or vector) and
+unknown shape θ, the density for y ≥ σ is:
 
     f(y; θ, σ) = θ * σ^θ / y^(θ+1) = θ * (σ/y)^θ * (1/y)
 
@@ -21,7 +21,6 @@ For a sample of size n:
 If σ is a scalar, it is recycled. If σ is a vector, it must have length n.
 """
 
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -31,10 +30,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyPareto(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Pareto likelihood with known scale.
 
@@ -48,9 +47,9 @@ def readyPareto(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be >= scale).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) σ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data.
     **kwargs : additional arguments (ignored, for compatibility).
@@ -69,7 +68,7 @@ def readyPareto(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle scale ----
     if _is_1d_dataframe(scale):
@@ -103,12 +102,12 @@ def readyPareto(
     }
 
 def bereitPareto(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    scale: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Pareto likelihood.
+    Compute per-element sufficient statistics for a Pareto likelihood.
 
     For each observation y_i and known scale σ_i:
         a_i = 1
@@ -117,9 +116,9 @@ def bereitPareto(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be >= scale).
-    scale : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    scale : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known scale parameter(s) σ. If scalar, recycled; if vector, same length as data.
     **kwargs : additional arguments (ignored).
 
@@ -131,7 +130,7 @@ def bereitPareto(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle scale ----
     if _is_1d_dataframe(scale):
@@ -151,7 +150,7 @@ def bereitPareto(
     if np.any(data_vals < scale_vals):
         raise ValueError("data values must be >= scale for Pareto likelihood.")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     b_vals = np.log(data_vals / scale_vals)
     log_c_vals = -np.log(data_vals)

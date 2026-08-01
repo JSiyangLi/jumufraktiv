@@ -1,11 +1,11 @@
 """
 numeric_fractionalDeriv_mpmath.py
 
-Numerical computation of Liouville‑Caputo fractional derivatives of MGFs
+Numerical computation of Liouville-Caputo fractional derivatives of MGFs
 using mpmath.quad (arbitrary precision) with the substitution z = e^u.
 
 The main function fractionalDeriv_numeric_mpmath() uses adaptive range expansion
-(default). If that fails or if use_tan=True, it uses the tan‑transform method
+(default). If that fails or if use_tan=True, it uses the tan-transform method
 (fractionalDeriv_numeric_mpmath_tan) which maps (-∞,∞) to (-π/2, π/2).
 
 The formula computed is:
@@ -42,8 +42,8 @@ def fractionalDeriv_numeric_mpmath_tan(
     u: float | np.ndarray | list | None = None
 ):
     """
-    Compute fractional derivative using scaled tan‑transform with mpmath.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
+    Compute fractional derivative using scaled tan-transform with mpmath.
+    Supports tuple-vectorisation: t and u are broadcast to a common shape.
 
     Parameters
     ----------
@@ -70,7 +70,7 @@ def fractionalDeriv_numeric_mpmath_tan(
         Number of decimal digits for mpmath (default 50).
     u : float or array-like, optional
         Truncation point(s) for incomplete MGF (used when complete=False).
-        If array‑like, broadcast with t to form evaluation points (t, u).
+        If array-like, broadcast with t to form evaluation points (t, u).
 
     Returns
     -------
@@ -128,7 +128,8 @@ def fractionalDeriv_numeric_mpmath_tan(
                 simplify=simplify,
                 log=True,
                 complete=complete,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if return_log:
                 return log_abs, sign
@@ -154,7 +155,8 @@ def fractionalDeriv_numeric_mpmath_tan(
                     simplify=simplify,
                     log=True,
                     complete=complete,
-                    u=u_val
+                    u=u_val,
+                    _intermediate=True,
                 )
                 if not math.isfinite(log_abs):
                     return mpf(0.0)
@@ -166,10 +168,10 @@ def fractionalDeriv_numeric_mpmath_tan(
                 # correct limit: as theta -> +pi/2, `z = exp(max_u tan theta)`
                 # runs away, so `y = t - z` runs to -infinity and
                 # `M^{(n+1)}(y)` decays to nothing. Catching `Exception` here
-                # instead would have turned any genuine failure -- a prior with
-                # a broken MGF, a wrong argument type -- into a zero at every
-                # node, and the quadrature would have returned a confident
-                # answer built entirely out of them.
+                # instead would turn any genuine failure -- a prior with a
+                # broken MGF, a wrong argument type -- into a zero at every
+                # node, and the quadrature would return a confident answer
+                # built entirely out of them.
                 return mpf(0.0)
 
         a = -pi / 2 + margin
@@ -178,10 +180,10 @@ def fractionalDeriv_numeric_mpmath_tan(
         try:
             integral = quad(integrand_theta, (a, b), method='tanh-sinh')
         except Exception as e:
-            # This used to print and return NaN. A NaN is not an error: it
-            # compares False against everything, so downstream branches take
-            # their `else` and the failure surfaces somewhere else entirely,
-            # if at all.
+            # Raise rather than return NaN. A NaN is not an error: it compares
+            # False against everything, so downstream branches take their
+            # `else` and the failure surfaces somewhere else entirely, if at
+            # all.
             raise RuntimeError(
                 f"mpmath tan-transform quadrature failed at t={t_val}, "
                 f"u={u_val}, order={order}, dps={mp.dps}."
@@ -229,18 +231,10 @@ def fractionalDeriv_numeric_mpmath_tan(
 def _mp_integer_derivative(prior, n_plus_1, complete):
     """Return a callable giving ``M^{(n+1)}`` at **arbitrary** precision.
 
-    This is what makes ``dps`` mean something. The obvious implementation --
-    calling ``mgfDerivative_integer`` per quadrature node -- returns
-    ``(log_abs, sign)`` as NumPy ``float64`` and takes ``t`` as a Python float,
-    so the mpmath backend was integrating a float-precision function at
-    arbitrary precision: the quadrature exact to ``dps`` digits, of a function
-    known only to 16. Measured, accuracy stopped improving with ``dps`` at
-    around 1e-10 and bounced rather than converging.
-
-    SymPy evaluates to any precision natively, so the derivative expression is
-    built once and evaluated per node with ``evalf(dps)``. Substituting the
-    prior's hyperparameters up front keeps that per-node work to one
-    substitution and one evaluation.
+    This is what makes ``dps`` mean something. SymPy evaluates to any precision
+    natively, so the derivative expression is built once and evaluated per node
+    with ``evalf(dps)``. Substituting the prior's hyperparameters up front keeps
+    that per-node work to one substitution and one evaluation.
 
     Returns ``None`` when no symbolic MGF is available, so the caller can fall
     back rather than fail -- the Bell and JAX backends are float by
@@ -250,6 +244,9 @@ def _mp_integer_derivative(prior, n_plus_1, complete):
     if getattr(prior, attr, None) is None:
         return None
 
+    # Not a per-node `mgfDerivative_integer` call: that route returns
+    # `(log_abs, sign)` as float64 and takes `t` as a Python float, so it would
+    # cap this backend at double precision however high `dps` goes.
     expr = cached_diff(getattr(prior, attr), _t_sym, n_plus_1)
 
     params = getattr(prior, "params", None) or {}
@@ -284,10 +281,7 @@ def _right_endpoint(integrand, gamma_val, tol, start=8.0, cap=709.0):
     measured rather than assumed, by extending until the value at the endpoint
     is below ``tol`` relative to the largest value seen.
 
-    This is a test of the *integrand's* decay. The rule it replaces compared
-    consecutive estimates of the *integral*, which underestimates the remaining
-    tail exactly when convergence is slow -- the failure this whole change is
-    about.
+    This is a test of the *integrand's* decay.
     """
     u_max = start
     while u_max < cap:
@@ -314,8 +308,8 @@ def fractionalDeriv_numeric_mpmath(
     u: float | np.ndarray | list | None = None
 ):
     """
-    Compute the Liouville‑Caputo fractional derivative using mpmath.
-    Supports tuple‑vectorisation: t and u are broadcast to a common shape.
+    Compute the Liouville-Caputo fractional derivative using mpmath.
+    Supports tuple-vectorisation: t and u are broadcast to a common shape.
 
     Parameters
     ----------
@@ -326,7 +320,7 @@ def fractionalDeriv_numeric_mpmath(
     t : float or array-like
         Evaluation point(s) for t.
     method : str, optional
-        'symbolic', 'jax', or 'bell' – method for computing the integer derivative.
+        'symbolic', 'jax', or 'bell' -- method for computing the integer derivative.
     simplify : bool, optional
         Ignored for numeric; kept for interface consistency.
     complete : bool, optional
@@ -336,26 +330,24 @@ def fractionalDeriv_numeric_mpmath(
         If True, return (log_abs, sign) instead of ordinary value.
     tol : float
         Relative tolerance for convergence (default 1e-8).
-
-        `initial_L` and `max_L` used to sit here, as the starting half-width
-        and cap of a doubling loop. PR 6c replaced that loop with a range
-        derived from `dps`, and left the two parameters declared and
-        documented but unread -- so a caller could set `max_L` and be told
-        nothing. They are gone; the range is not tunable because it is no
-        longer discovered.
     use_tan : bool
-        If True, directly use the tan‑transform method.
+        If True, directly use the tan-transform method.
     dps : int
         Number of decimal digits for mpmath (default 50).
     u : float or array-like, optional
         Truncation point(s) for incomplete MGF (used when complete=False).
-        If array‑like, broadcast with t to form evaluation points (t, u).
+        If array-like, broadcast with t to form evaluation points (t, u).
 
     Returns
     -------
     float or tuple (log_abs, sign)
         If t and u are scalar, returns scalar or tuple.
         If either is array, returns array(s) with the broadcasted shape.
+
+    Notes
+    -----
+    The truncation range is derived from ``dps`` -- the target is ``10**-dps``
+    -- and is not tunable by any argument.
     """
     mp.dps = dps
 
@@ -364,7 +356,7 @@ def fractionalDeriv_numeric_mpmath(
 
     # ---- If use_tan=True, delegate to vectorized tan version ----
     if use_tan:
-        # The tan version already handles broadcasting and tuple‑vectorisation.
+        # The tan version already handles broadcasting and tuple-vectorisation.
         return fractionalDeriv_numeric_mpmath_tan(
             order=order, prior=prior, t=t, method=method,
             simplify=simplify, complete=complete,
@@ -416,7 +408,8 @@ def fractionalDeriv_numeric_mpmath(
                 simplify=simplify,
                 log=True,
                 complete=complete,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if return_log:
                 return log_abs, sign
@@ -463,41 +456,31 @@ def fractionalDeriv_numeric_mpmath(
                 simplify=simplify,
                 complete=complete,
                 log=True,
-                u=u_val
+                u=u_val,
+                _intermediate=True,
             )
             if not math.isfinite(log_abs):
                 return mpf(0.0)
             log_integrand = gamma_val * u_var + mpf(log_abs)
             return exp(log_integrand) * sign
 
-        # ---- Derived range, replacing the symmetric doubling loop ---------
+        # ---- Derived range -----------------------------------------------
         #
-        # This used to integrate over (-L, L) with L doubling from 10 until
-        # consecutive estimates agreed. Two things were wrong with that, and
-        # together they returned a confidently wrong number.
+        # The range must NOT be symmetric, because the two tails are nothing
+        # alike. The transformed integrand behaves like e^{gamma*u} as
+        # u -> -infinity and dies quickly to the right, so the left endpoint
+        # needs log(tol)/gamma -- about -64 at gamma = 0.5 -- while the right
+        # needs only a small positive u. A range wide enough on both sides is
+        # numerically zero across almost all of its width, which defeats
+        # tanh-sinh.
         #
-        # The range was SYMMETRIC, but the two tails are nothing alike. The
-        # transformed integrand behaves like e^{gamma*u} as u -> -infinity and
-        # dies quickly to the right, so the left endpoint needs
-        # log(tol)/gamma -- about -64 at gamma = 0.5 -- while the right needs
-        # only a small positive u. Doubling both together drove L to 5120,
-        # integrating over a range where the integrand is numerically zero
-        # across almost all of its width, which is what defeated tanh-sinh.
+        # Deriving both endpoints leaves no stopping rule to be wrong and no
+        # non-convergence branch to return an unconverged iterate from.
         #
-        # And on failing to converge it printed a warning and returned the last
-        # iterate anyway. Measured at order 1.5, t = -1: dps <= 30 returned
-        # +1.119329613307 against a closed-form -1.453832084236 -- wrong sign,
-        # 177% wrong in magnitude -- and was SLOWER than the dps = 50 run that
-        # got the right answer (8.2 s against 5.6 s). `dps` is reachable from
-        # the constructor through DERIVATIVE_KWARGS, so an ordinary caller
-        # could ask for less precision and receive nonsense.
-        #
-        # Deriving the endpoints removes the loop, so there is no stopping rule
-        # left to be wrong and no non-convergence branch to return garbage from.
         # The truncation target is set by `dps`, not by `tol`. A caller asking
         # this backend for 50 digits is asking for 50 digits, and a range
         # derived from `tol` (default 1e-6) would cap the answer at about 1e-8
-        # however high `dps` went -- correct, but silently no better than the
+        # however high `dps` goes -- correct, but silently no better than the
         # scipy backend, which defeats the purpose of using mpmath at all.
         range_tol = mpf(10) ** (-int(dps))
         u_min = log(range_tol) / mpf(gamma_val)
@@ -506,21 +489,20 @@ def fractionalDeriv_numeric_mpmath(
         try:
             # Two details that decide whether `dps` means anything.
             #
-            # The result is NOT cast to float here. Doing so discarded every
-            # digit past the 16th before the log was taken, which capped the
-            # backend at double precision no matter how high `dps` went.
+            # The result is NOT cast to float here. Doing so discards every
+            # digit past the 16th before the log is taken, which caps the
+            # backend at double precision no matter how high `dps` goes.
             #
             # And the interval is split at 0. tanh-sinh clusters its nodes near
             # the endpoints, which is right for endpoint singularities but wrong
             # here: this integrand's mass sits near u = 0 while the interval
-            # runs from about -69 to 8, so almost all the nodes landed where the
-            # integrand is numerically zero. Naming the interior point puts
-            # nodes where the mass is.
+            # runs from about -69 to 8, so without the interior point almost
+            # all the nodes land where the integrand is numerically zero.
             interior = [u_min, mpf(0), u_max] if u_min < 0 < u_max else [u_min, u_max]
             integral_valid = quad(integrand, interior, method="tanh-sinh")
         except Exception as exc:
-            # A genuine quadrature failure is now an error rather than a print
-            # followed by a plausible number.
+            # A genuine quadrature failure must surface as an error rather
+            # than as a plausible number.
             raise RuntimeError(
                 f"mpmath quadrature failed for order={order}, t={t_val}, "
                 f"u={u_val} over the derived range ({float(u_min):.3g}, "

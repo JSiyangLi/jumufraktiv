@@ -1,9 +1,9 @@
 """
 MaxwellBoltzmann.py
 
-Functions for preparing Maxwell‑Boltzmann likelihood statistics for MGF marginalisation.
+Functions for preparing Maxwell-Boltzmann likelihood statistics for MGF marginalisation.
 
-For a Maxwell‑Boltzmann distribution with scale parameter a (or rate θ = 1/(2a²)),
+For a Maxwell-Boltzmann distribution with scale parameter a (or rate θ = 1/(2a²)),
 the density for a speed y ≥ 0 is:
 
     f(y; θ) = (4 / √π) * y² * θ^{3/2} * exp(-θ y²)
@@ -24,7 +24,6 @@ Thus:
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -34,11 +33,11 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyMaxwellBoltzmann(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
-    Compute sufficient statistics for a Maxwell‑Boltzmann likelihood.
+    Compute sufficient statistics for a Maxwell-Boltzmann likelihood.
 
     The likelihood (in terms of rate θ = 1/(2a²)) is:
         L(θ; y) = (4 / √π) * y² * θ^{3/2} * exp(-θ y²)
@@ -50,7 +49,7 @@ def readyMaxwellBoltzmann(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
     **kwargs : additional arguments (ignored, for compatibility).
 
@@ -68,30 +67,35 @@ def readyMaxwellBoltzmann(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Check positivity ----
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Maxwell‑Boltzmann likelihood.")
+        raise ValueError(
+            "data values must be positive for Maxwell-Boltzmann likelihood."
+        )
 
     # ---- 3. Compute sufficient statistics ----
     a = 1.5 * n
     b = np.sum(data_vals ** 2)
     # log_c = n * (log(4) - 0.5 * log(π)) + 2 * Σ log(y_i)
-    log_c = n * (math.log(4.0) - 0.5 * math.log(math.pi)) + 2.0 * np.sum(np.log(data_vals))
+    log_c = (
+        n * (math.log(4.0) - 0.5 * math.log(math.pi))
+        + 2.0 * np.sum(np.log(data_vals))
+    )
 
     return {
         'a': a,
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitMaxwellBoltzmann(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Maxwell‑Boltzmann likelihood.
+    Compute per-element sufficient statistics for a Maxwell-Boltzmann likelihood.
 
     For each observation y_i:
         a_i = 3/2
@@ -100,7 +104,7 @@ def bereitMaxwellBoltzmann(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values (must be positive).
     **kwargs : additional arguments (ignored).
 
@@ -112,10 +116,12 @@ def bereitMaxwellBoltzmann(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     if np.any(data_vals <= 0):
-        raise ValueError("data values must be positive for Maxwell‑Boltzmann likelihood.")
+        raise ValueError(
+            "data values must be positive for Maxwell-Boltzmann likelihood."
+        )
 
     a_vals = np.full(n, 1.5)
     b_vals = data_vals ** 2
@@ -130,7 +136,7 @@ def bereitMaxwellBoltzmann(
 
 def cMaxwellBoltzmann() -> sp.Expr:
     """
-    Return a symbolic expression for the Maxwell‑Boltzmann normalising constant:
+    Return a symbolic expression for the Maxwell-Boltzmann normalising constant:
 
         ∏_{i=1}^{n} (4 / √π) * y_i² = (4 / √π)^n * ∏ y_i²
 

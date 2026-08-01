@@ -20,7 +20,6 @@ Thus:
 """
 
 import math
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -30,10 +29,10 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
 
 def readyLaplace(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Laplace likelihood with known mean.
 
@@ -47,9 +46,9 @@ def readyLaplace(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values.
-    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    mean : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known mean μ. If scalar, it is recycled to match length of data.
         If vector, must have same length as data (though mean is typically scalar).
     **kwargs : additional arguments (ignored, for compatibility).
@@ -68,10 +67,10 @@ def readyLaplace(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- 2. Handle mean ----
-    # Check if mean is a 1‑column DataFrame
+    # Check if mean is a 1-column DataFrame
     if _is_1d_dataframe(mean):
         mean_vals = _extract_1d(mean, "mean")
         if len(mean_vals) != n:
@@ -79,7 +78,7 @@ def readyLaplace(
     elif isinstance(mean, (int, float)):
         mean_vals = _extract_1d(np.full(n, float(mean)), "mean")
     else:
-        # Try to treat as array‑like
+        # Try to treat as array-like
         mean_vals = _extract_1d(mean, "mean")
         if len(mean_vals) != n:
             raise ValueError("mean must have same length as data or be scalar")
@@ -94,14 +93,14 @@ def readyLaplace(
         'b': b,
         'log_c': log_c
     }
-    
+
 def bereitLaplace(
-    data: Union[pd.DataFrame, pd.Series, list, np.ndarray],
-    mean: Union[float, int, pd.DataFrame, pd.Series, list, np.ndarray],
+    data: pd.DataFrame | pd.Series | list | np.ndarray,
+    mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
-    Compute per‑element sufficient statistics for a Laplace likelihood.
+    Compute per-element sufficient statistics for a Laplace likelihood.
 
     For each observation y_i and known mean μ_i:
         a_i = 1
@@ -110,9 +109,9 @@ def bereitLaplace(
 
     Parameters
     ----------
-    data : pandas DataFrame (1‑column), pandas Series, or array‑like
+    data : pandas DataFrame (1-column), pandas Series, or array-like
         Observed values.
-    mean : numeric scalar or 1‑column pandas DataFrame/Series/array‑like
+    mean : numeric scalar or 1-column pandas DataFrame/Series/array-like
         Known mean μ. If scalar, recycled; if vector, same length as data.
 
     Returns
@@ -123,7 +122,7 @@ def bereitLaplace(
     data_vals = _extract_1d(data)
     n = len(data_vals)
     if n == 0:
-        raise ValueError("data must be non‑empty")
+        raise ValueError("data must be non-empty")
 
     # ---- Handle mean ----
     if _is_1d_dataframe(mean):
@@ -137,7 +136,7 @@ def bereitLaplace(
         if len(mean_vals) != n:
             raise ValueError("mean must have same length as data or be scalar")
 
-    # ---- Per‑element statistics ----
+    # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     b_vals = np.abs(data_vals - mean_vals)
     log_c_vals = np.full(n, -np.log(2.0))   # log(1/2)

@@ -160,6 +160,17 @@ extend-exclude = ["notebooks"]
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 
+# Greek letters carry the mathematics in this package's docstrings, matching the
+# notation of the reference paper. Ruff flags them because they resemble Latin
+# letters -- alpha for a, rho for p, sigma for o, gamma for y -- which is the
+# right default for prose and the wrong one here.
+#
+# Listing them is what let RUF001-003 come out of the per-file ignores. Blanket
+# suppression could not tell these apart from the non-breaking hyphen that was
+# standing in for `-` in 336 places, 41 of them inside error messages, where it
+# defeats a grep for the message text.
+allowed-confusables = ["α", "ρ", "σ", "γ", "−"]
+
 [tool.ruff.lint.per-file-ignores]
 # ---------------------------------------------------------------------------
 # Lint debt baseline for the pre-audit library code.
@@ -180,24 +191,52 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # would have undone the repair PR 5 made for `sp.Integer(2)`. That line
 # carries a `noqa` with the reason; the genuinely redundant one is gone.
 #
+# PR 12 removed the four annotation codes -- UP006, UP007, UP035 and UP045 --
+# in 122 places across the library. All four are the same modernisation:
+# `Dict[str, float]` becomes `dict[str, float]`, `Union[int, str]` becomes
+# `int | str`, `Optional[float]` becomes `float | None`, and the `typing`
+# imports that existed only to spell those go with them. The whole rule group
+# `UP` is now clean, so nothing in this baseline exempts it any more.
+#
+# The choice is not stylistic here: `requires-python` is `>=3.10`, where the
+# PEP 585 and PEP 604 spellings are the language's own and the `typing`
+# aliases are deprecated. Keeping both spellings in one package meant the
+# public signatures read differently depending on which module a reader
+# opened.
+#
 # F821 (undefined-name) and F811 (redefined-while-unused) were never exempted
 # package-wide, because they find defects rather than style. As of PR 8 they
 # have no per-file exemptions either, so both block everywhere.
 # ---------------------------------------------------------------------------
-"jumufraktiv/**" = [
-    "E501",   # line-too-long                          -> PR 14 (docstring sweep)
-    # The one remaining F841 is `pareto_logimgf`'s discarded `sign`, inside a
-    # function that returns NaN at every argument. Recorded under
-    # "Known-broken" in CLAUDE.md; unscheduled, because it is a numerical
-    # repair rather than a lint fix.
-    "F841",   # unused-variable                        -> unscheduled
-    "UP006",  # non-pep585-annotation                  -> PR 12 (API surface)
-    "UP007",  # non-pep604-annotation-union            -> PR 12
-    "UP035",  # deprecated-import                      -> PR 12
-    "UP045",  # non-pep604-annotation-optional         -> PR 12
-    "RUF001", # ambiguous-unicode-character-string     -> PR 14
-    "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
-    "RUF003", # ambiguous-unicode-character-comment    -> PR 14
-    "W291",   # trailing-whitespace                    -> PR 14
-    "W293",   # whitespace-on-blank-line               -> PR 14
-]
+#
+# PR 12 also removed F841, RUF001, RUF002, RUF003, W291 and W293.
+#
+# F841's one remaining site was `pareto_logimgf`'s discarded `sign`, and the
+# discarded sign was the least of what was wrong with that function: it
+# returned NaN at every argument. Repairing the function cleared the rule,
+# which is the order these two belong in -- the lint was the symptom.
+#
+# The three RUF00x codes had been filed as cosmetic, and were not. They were
+# suppressed wholesale because nobody had separated a look-alike from
+# legitimate notation. Of 520 flagged characters, 336 were U+2011 NON-BREAKING
+# HYPHEN standing in for `-`, and 41 of those sat inside error messages, where
+# it silently defeats a grep or a copy-paste search for the message text; the
+# rest are Greek letters carrying the mathematics, which `allowed-confusables`
+# above now permits by name. Blanket suppression could not tell the two apart,
+# which is why it hid the first group for the whole audit.
+#
+# E501 went too, and the reason it had survived is worth recording because it
+# was wrong twice. The entry said that fixing it meant running `ruff format`
+# over the library, and that this would bury the real diffs of whatever PR
+# carried it. The second half is true and is why the formatter is still its own
+# scheduled change. The first half is not: the 99 over-length lines were
+# rewrapped directly, in a diff that touches only those lines. And `ruff
+# format` would not have fixed them anyway -- it leaves 40 of the 99, because
+# it does not reflow strings, docstrings or comments, which is where 68 of them
+# lived.
+#
+# THE LIST IS NOW EMPTY, and that is the point: the library is held to the same
+# rules as `tests/`. An entry added here from now on is a new exemption, not an
+# inherited one, and should be argued for rather than assumed.
+# ---------------------------------------------------------------------------
+"jumufraktiv/**" = []

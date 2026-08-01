@@ -193,9 +193,8 @@ class TestCustomPrior:
             likelihood="poisson",
             scale=POISSON_SCALE,
         )
-        log_ev, sign = post.evidence()
+        log_ev = post.evidence()
 
-        assert sign == 1
         assert log_ev == pytest.approx(poisson_log_evidence(POISSON_DATA), rel=1e-10)
 
     def test_custom_prior_without_imgf_reports_no_imgf(self):

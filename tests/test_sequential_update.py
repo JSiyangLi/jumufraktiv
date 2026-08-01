@@ -22,9 +22,15 @@ from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 
 def _evidence(posterior):
-    log_abs, sign = posterior.evidence()
-    assert sign == 1, "the evidence is a probability and must be positive"
-    return float(log_abs)
+    """The log evidence, checked finite.
+
+    No sign to check: the evidence is a probability, so a negative value is a
+    numerical failure and the constructor refuses it rather than returning a
+    flag. See `MGFDerivative.evidence`.
+    """
+    log_evidence = float(posterior.evidence())
+    assert np.isfinite(log_evidence)
+    return log_evidence
 
 
 @pytest.mark.parametrize(

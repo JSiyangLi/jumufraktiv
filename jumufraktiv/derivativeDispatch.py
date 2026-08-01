@@ -28,7 +28,7 @@ Backends:
     - JAX : JAX `jet` or `grad` (integer orders).
     - Grid : fixed-grid trapezoid on the z = e^u substitution, with exact
       near-integer singularity subtraction (fractional; the `scipy` method).
-    - Mpmath : high‑precision quadrature (fractional).
+    - Mpmath : high-precision quadrature (fractional).
 
 Incomplete MGF (iMGF) derivatives are supported via the `complete=False` flag,
 which uses the prior's `imgf_sym` or `imgf_jax` functions.
@@ -58,23 +58,18 @@ from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
 from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 from jumufraktiv.symbolic_cache import cached_lambdify
 from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
-from jumufraktiv.symbols import t as t_sym  # <-- import canonical u
+from jumufraktiv.symbols import t as t_sym
 from jumufraktiv.symbols import u as u_sym
 
 #: Tuning options the derivative layer understands, and which backend consumes
 #: each. This is the authoritative list: :data:`MGFDerivative_class.
 #: DERIVATIVE_KWARGS` is built from it rather than restated, so the constructor
 #: and the ``mgfDerivative*`` functions cannot disagree about what a valid
-#: option is.
-#:
-#: They used to disagree, and in the direction that hides mistakes. The
-#: constructor rejects an unknown keyword argument with a ``TypeError`` and a
-#: "did you mean" suggestion (PR 3b), while the functions accepted anything and
-#: filtered it away just before the call -- so ``epsrel=1e-14`` raised through
-#: one public entry point and was silently ignored through the other, and so
-#: was a plain misspelling like ``epsrell``.
+#: option is. Both refuse an unrecognised name with a ``TypeError`` and a "did
+#: you mean" suggestion; two separate lists would eventually let one entry
+#: point raise where the other quietly filtered the name away.
 BACKEND_OPTIONS = {
-    "tol": "the fixed-grid and mpmath fractional kernels",
+    "tol": "the fixed-grid and mpmath fractional kernels, and the expectation route",
     "dps": "the mpmath fractional kernel",
     "use_tan": "the mpmath fractional kernel",
     "cgf_method": "the Bell integer backend",
@@ -85,6 +80,105 @@ BACKEND_OPTIONS = {
 #: Every option name the derivative layer accepts, including the named
 #: parameters of :func:`mgfDerivative` itself that a caller may reasonably set.
 DERIVATIVE_OPTIONS = frozenset(BACKEND_OPTIONS) | {"integer_method", "int_tol"}
+
+#: Which tuning options each route actually reads, keyed by
+#: ``(order type, backend)``. The expectation route serves either order type,
+#: so it is keyed on ``None``.
+#:
+#: Distinct from :data:`BACKEND_OPTIONS`, and the two must not be merged.
+#: That one answers "does *any* backend read this name?", which is what
+#: separates an option from a misspelling. This one answers "does *the route
+#: about to run* read it?", which is what separates a value that takes effect
+#: from one that is discarded. A name can pass the first and fail the second,
+#: which is what :func:`_warn_discarded_options` reports.
+#:
+#: ``int_tol`` appears nowhere because :func:`resolve_backend` consumes it
+#: before any route is chosen, so it is never discarded.
+ROUTE_OPTIONS = {
+    (None, "expectation"): frozenset({"tol"}),
+    ("integer", "symbolic"): frozenset(),
+    ("integer", "bell"): frozenset({"cgf_method", "symbolic_timeout"}),
+    ("integer", "jax"): frozenset(),
+    ("fractional", "scipy"): frozenset({"tol", "integer_method"}),
+    ("fractional", "mpmath"): frozenset(
+        {"tol", "dps", "use_tan", "integer_method"}
+    ),
+    ("fractional", "symbolic"): frozenset({"timeout_seconds"}),
+}
+
+
+def _route_description(order_type, backend):
+    """Name a route the way a caller would ask for it."""
+    if backend == "expectation":
+        return "the direct-expectation route"
+    article = "an" if str(order_type)[:1] in "aeiou" else "a"
+    return f"method='{backend}' at {article} {order_type} order"
+
+
+def _warn_discarded_options(requested, order_type, backend, function_name):
+    """Warn for options the selected route cannot read.
+
+    Parameters
+    ----------
+    requested : set of str
+        Option names the caller *set*, as opposed to left at their defaults.
+    order_type : {'integer', 'fractional'} or None
+        As returned by :func:`resolve_backend`.
+    backend : str
+        The route about to run: a backend name, or ``'expectation'``.
+    function_name : str
+        Quoted in the message so the caller knows which call to fix.
+
+    Notes
+    -----
+    A warning rather than an error, so that a caller may carry one tuning
+    dictionary across several backends. The message names an alternative
+    wherever one exists for this order type, since knowing that ``dps`` was
+    ignored is only useful alongside knowing that ``method='mpmath'`` reads it.
+    """
+    key = (None, backend) if backend == "expectation" else (order_type, backend)
+    if key not in ROUTE_OPTIONS:
+        # A route this table does not describe -- a symbolic *order*, which
+        # raises a few lines further on. Saying nothing beats warning about the
+        # tuning of a result the caller is not going to receive.
+        return
+
+    discarded = sorted(set(requested) - ROUTE_OPTIONS[key])
+    if not discarded:
+        return
+
+    lines = []
+    for name in discarded:
+        here = sorted(
+            other_backend
+            for (other_type, other_backend), options in ROUTE_OPTIONS.items()
+            if name in options and other_type in (None, order_type)
+        )
+        elsewhere = sorted(
+            {
+                other_type
+                for (other_type, _), options in ROUTE_OPTIONS.items()
+                if name in options and other_type is not None
+            }
+        )
+        if here:
+            lines.append(
+                f"{name} (honoured by "
+                + ", ".join(f"method={backend_name!r}" for backend_name in here)
+                + ")"
+            )
+        elif elsewhere:
+            lines.append(f"{name} (read only at {' or '.join(elsewhere)} orders)")
+        else:
+            lines.append(name)
+
+    warnings.warn(
+        f"{function_name}() was given tuning option(s) that "
+        f"{_route_description(order_type, backend)} does not read, so they had "
+        f"no effect: " + "; ".join(lines) + ".",
+        UserWarning,
+        stacklevel=3,
+    )
 
 
 def _reject_unknown_options(kwargs, function_name):
@@ -107,10 +201,11 @@ def _reject_unknown_options(kwargs, function_name):
     -----
     Only names that reach *no* backend are refused here. A name that some
     backend understands but the selected one does not -- ``dps`` under
-    ``method="scipy"``, say -- is still accepted and dropped. That is a
-    narrower defect with a real design question behind it (reject, warn, or
-    honour by switching backends?), it predates this guard, and PR 12 owns it;
-    see "Known-broken" in :file:`CLAUDE.md`.
+    ``method="scipy"``, say -- is accepted, dropped, and reported by
+    :func:`_warn_discarded_options` as a ``UserWarning`` naming a method that
+    would read it. The distinction matters under ``filterwarnings = error``,
+    where the second case raises and this one does too, but with different
+    text.
     """
     unknown = sorted(set(kwargs) - DERIVATIVE_OPTIONS)
     if not unknown:
@@ -141,11 +236,12 @@ def mgfDerivative_integer(
     complete: bool = True,
     symbolic_timeout: float = 600.0,
     cgf_method: str = "auto",
+    _intermediate: bool = False,
 ):
     """
     Compute an integer-order derivative of a prior MGF.
 
-    This function respects the **symbol‑numeric principle**: the return type
+    This function respects the **symbol-numeric principle**: the return type
     depends only on whether unresolved symbols remain.
 
     - If `t` is `None` or if the substituted expression still contains free
@@ -153,14 +249,14 @@ def mgfDerivative_integer(
     - If all symbols are resolved (numeric `t` and `u`), the derivative is
       evaluated numerically.
 
-    The function also supports **tuple‑vectorisation**: if `t` or `u` are
-    array‑like, they are broadcast to a common shape and the derivative is
+    The function also supports **tuple-vectorisation**: if `t` or `u` are
+    array-like, they are broadcast to a common shape and the derivative is
     evaluated for all points simultaneously.
 
     Parameters
     ----------
     order : int or sympy.Expr
-        Non‑negative derivative order. If symbolic, returns an unevaluated
+        Non-negative derivative order. If symbolic, returns an unevaluated
         `Derivative` object.
     prior : mitMGFprior
         Prior object providing symbolic and/or backend MGF/PDF representations.
@@ -173,7 +269,7 @@ def mgfDerivative_integer(
         Evaluation point(s) for the canonical variable `t`.
     u : float or array-like, optional
         Truncation point(s) for the incomplete MGF (used when `complete=False`).
-        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        If array-like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     simplify : bool, optional
         If True, simplify the symbolic derivative expression.
@@ -187,6 +283,13 @@ def mgfDerivative_integer(
         Maximum time (seconds) for symbolic computation in the Bell backend.
     cgf_method : str, optional
         Method for CGF derivatives in the Bell backend (`'auto'`, `'jet'`, `'grad'`).
+    _intermediate : bool, optional
+        Private. Set by the fractional kernels, which call this at order
+        `floor(a) + 1` as a step towards the caller's order `a`. It suppresses
+        the `t = 0` moment check, which asks whether `E[Theta^order]` exists —
+        a question about what the caller requested, not about an internal step.
+        `E[Theta^1.5]` is finite for Pareto(alpha=2) even though `E[Theta^2]`
+        is not, so checking the intermediate would refuse a computable answer.
 
     Returns
     -------
@@ -207,7 +310,8 @@ def mgfDerivative_integer(
     >>> # Complete MGF, 2nd derivative, symbolic expression
     >>> expr = mgfDerivative_integer(2, prior, method='symbolic')
     >>> # Evaluate at t = -1.0
-    >>> log_abs, sign = mgfDerivative_integer(2, prior, method='symbolic', t=-1.0, log=True)
+    >>> log_abs, sign = mgfDerivative_integer(2, prior, method='symbolic',
+    ...                                       t=-1.0, log=True)
 
     >>> # Incomplete MGF derivative for multiple t and u
     >>> t_vals = np.linspace(-1.0, 1.0, 10)
@@ -218,6 +322,22 @@ def mgfDerivative_integer(
     method = method.lower()
     if method not in {"symbolic", "bell", "jax"}:
         raise ValueError("method must be one of {'symbolic','bell','jax'}.")
+
+    # Applied at every public entry point, not only at `mgfDerivative`. The
+    # fractional kernels pass `_intermediate=True` because the order they ask
+    # for here is floor(a) + 1, an internal step, not what the caller
+    # requested -- see the parameter's description above.
+    if not _intermediate:
+        _check_moment_exists_at_origin(order, prior, t)
+
+    requested_options = set()
+    if symbolic_timeout != 600.0:
+        requested_options.add("symbolic_timeout")
+    if cgf_method != "auto":
+        requested_options.add("cgf_method")
+    _warn_discarded_options(
+        requested_options, "integer", method, "mgfDerivative_integer"
+    )
 
     # ---------------------------------------------------------
     # Symbolic differentiation
@@ -265,10 +385,9 @@ def mgfDerivative_integer(
         results_sign = np.ones(n_points, dtype=int)
         # Also store symbolic results if any free symbols remain. The flag is
         # tracked rather than rediscovered: `all(r is None for r in
-        # results_expr)` is a Python loop over the whole batch, and the batch
-        # here is (n_nodes x n_points) -- 50,244 iterations for a 20-point
-        # request through the fixed-grid kernel, to learn something the loop
-        # below already knew.
+        # results_expr)` is a Python loop over the whole batch, which the
+        # fixed-grid kernel makes (n_nodes x n_points) long, to learn something
+        # the loop below already knows.
         results_expr = [None] * n_points
         any_symbolic = False
 
@@ -282,19 +401,17 @@ def mgfDerivative_integer(
 
         # ---- Fast path: compile once, evaluate the whole batch -----------
         #
-        # `expr.subs(...).evalf()` per point was 97.6% of the runtime of the
-        # `scipy` fractional route -- 5,024 SymPy substitutions for two
-        # evaluation points, because the fixed-grid kernel hands this function
-        # an (n_nodes x n_points) array of shifted points and it took them one
-        # at a time. `CLAUDE.md` recorded the remedy under "Numerical policy",
-        # measured at ~6400x, and it had never been applied here.
+        # The fixed-grid kernel hands this function an (n_nodes x n_points)
+        # array of shifted points, so `expr.subs(...).evalf()` taken one point
+        # at a time dominates the `scipy` fractional route. `lambdify` compiles
+        # the derivative to a NumPy function evaluated on the whole array at
+        # once instead.
         #
-        # `lambdify` compiles the derivative to a NumPy function evaluated on
-        # the whole array at once. It works in float64, so it cannot represent
-        # `M^(301)`; the exact path below still runs, but only for the elements
-        # where float64 overflowed, underflowed, or produced a NaN. Those are
-        # rare, so the loop survives for correctness at the extremes while the
-        # ordinary case never enters it.
+        # It works in float64, so it cannot represent `M^(301)`; the exact path
+        # below still runs, but only for the elements where float64 overflowed,
+        # underflowed, or produced a NaN. Those are rare, so the loop survives
+        # for correctness at the extremes while the ordinary case never enters
+        # it. The fast path may only skip work, never change an answer.
         pending = list(range(n_points))
         symbols_left = expr.free_symbols - ({t_sym} if complete else {t_sym, u_sym})
         if not symbols_left and n_points:
@@ -337,15 +454,10 @@ def mgfDerivative_integer(
                     # a Python float that has overflowed or underflowed. Taking
                     # the log first keeps the exponent in range, so a large
                     # derivative order returns its true magnitude instead of
-                    # `inf` or `-inf`.
-                    #
-                    # This is a SECOND source of the recorded large-order
-                    # overflow, and the audit attributes that defect entirely to
-                    # the outer quadrature accumulating in linear space. Fixing
-                    # only the accumulation is not enough: M^(301) of the Gamma
-                    # MGF at t = -1 came back as `inf` here, where M^(151) is
-                    # exact to 1.4e-16, so the fractional derivative built on it
-                    # was wrong before any accumulation happened.
+                    # `inf` or `-inf`: M^(301) of the Gamma MGF at t = -1
+                    # exceeds float64 where M^(151) is still exact. The
+                    # fractional kernels build on this value, so an `inf` here
+                    # is wrong before any accumulation happens.
                     results_log_abs[idx] = float(sp.log(sp.Abs(evaluated)).evalf())
                     results_sign[idx] = 1 if evaluated > 0 else -1
                 elif abs(val) < 1e-300:
@@ -374,13 +486,15 @@ def mgfDerivative_integer(
         else:
             # If any free symbols remain, we cannot return a uniform numeric array.
             # For scalar input, return the expression (first element)
-            # For array input, return a list of expressions (some may be numeric, some symbolic)
+            # For array input, return a list of expressions (some may be
+            # numeric, some symbolic)
             # We'll return a list with mixed types.
             if scalar_input:
                 return results_expr[0] if log else sp.exp(results_expr[0])
             else:
                 # Return list of results (could be mixed numeric/expr)
-                # But we want to respect log flag: if log=True, return log_abs or expression; else exponentiate.
+                # But we want to respect log flag: if log=True, return log_abs
+                # or expression; else exponentiate.
                 if log:
                     # For numeric points, we have log_abs; for symbolic, we have expr.
                     # We'll return a list of the appropriate items.
@@ -390,7 +504,11 @@ def mgfDerivative_integer(
                             out.append(results_log_abs[idx])
                         else:
                             out.append(results_expr[idx])
-                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
+                    return (
+                        np.array(out).reshape(batch_shape)
+                        if all(isinstance(x, (int, float)) for x in out)
+                        else out
+                    )
                 else:
                     out = []
                     for idx in range(n_points):
@@ -399,7 +517,11 @@ def mgfDerivative_integer(
                             out.append(val)
                         else:
                             out.append(sp.exp(results_expr[idx]))
-                    return np.array(out).reshape(batch_shape) if all(isinstance(x, (int, float)) for x in out) else out
+                    return (
+                        np.array(out).reshape(batch_shape)
+                        if all(isinstance(x, (int, float)) for x in out)
+                        else out
+                    )
 
     # ---------------------------------------------------------
     # Bell polynomial backend (vectorized)
@@ -446,14 +568,14 @@ def mgfDerivative_fractional(
     simplify: bool = False,
     complete: bool = True,
     log: bool = True,
-    integerDeriv_method: str = "symbolic",
+    integer_method: str = "symbolic",
     u: float | np.ndarray | list | None = None,
     **kwargs
 ):
     """
     Unified interface for fractional derivatives of the MGF.
 
-    This function respects the **symbol‑numeric principle**: the return type
+    This function respects the **symbol-numeric principle**: the return type
     depends only on whether unresolved symbols remain.
 
     - If `method='symbolic'` and `t` is `None` or the expression still contains
@@ -461,7 +583,7 @@ def mgfDerivative_fractional(
     - If `t` is numeric (scalar or array), the derivative is evaluated numerically
       using either `scipy` or `mpmath` backend.
 
-    The function supports **tuple‑vectorisation**: `t` and `u` (for incomplete MGF)
+    The function supports **tuple-vectorisation**: `t` and `u` (for incomplete MGF)
     are broadcast to a common shape, and the derivative is evaluated for all
     points simultaneously.
 
@@ -489,12 +611,13 @@ def mgfDerivative_fractional(
         If True, numeric output is `(log_abs, sign)` where `log_abs` is the
         natural logarithm of the absolute derivative and `sign` is ±1.
         If False, return the ordinary derivative as a float.
-    integerDeriv_method : str, default 'symbolic'
+    integer_method : str, default 'symbolic'
         Method for integer derivatives inside the fractional integrator:
-        `'symbolic'`, `'bell'`, or `'jax'`.
+        `'symbolic'`, `'bell'`, or `'jax'`. Spelled the same way here as in
+        `mgfDerivative`.
     u : float or array-like, optional
         Truncation point(s) for the incomplete MGF (used when `complete=False`).
-        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        If array-like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
         Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
@@ -519,15 +642,20 @@ def mgfDerivative_fractional(
     - The `scipy` backend uses a fixed-grid trapezoid rule on the `z = e^u`
       substitution, with the range derived from `gamma = floor(order)+1-order`;
       the `mpmath` backend uses `tanh-sinh` quadrature at arbitrary precision.
+    - A tuning option the selected backend does not read is accepted and
+      warned about rather than refused, since the same option may be valid for
+      a sibling backend. See `ROUTE_OPTIONS` for which backend reads what.
 
     Examples
     --------
     >>> # Fractional derivative of order 1.5 at t = -1.0 (scipy)
-    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=-1.0, log=True)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy',
+    ...                                          t=-1.0, log=True)
 
     >>> # Vectorised evaluation at multiple t values
     >>> t_vals = np.linspace(-2.0, 0.0, 10)
-    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy', t=t_vals, log=True)
+    >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='scipy',
+    ...                                          t=t_vals, log=True)
 
     >>> # Incomplete MGF derivative (complete=False)
     >>> log_abs, sign = mgfDerivative_fractional(1.5, prior, method='mpmath',
@@ -537,6 +665,17 @@ def mgfDerivative_fractional(
     >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
     _reject_unknown_options(kwargs, "mgfDerivative_fractional")
+
+    # Applied at every public entry point, not only at `mgfDerivative`. It is
+    # idempotent, so the extra call when dispatched from there costs nothing.
+    _check_moment_exists_at_origin(order, prior, t)
+
+    requested_options = set(kwargs)
+    if integer_method != "symbolic":
+        requested_options.add("integer_method")
+    _warn_discarded_options(
+        requested_options, "fractional", method.lower(), "mgfDerivative_fractional"
+    )
 
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
@@ -610,7 +749,8 @@ def mgfDerivative_fractional(
             if expr_sub.free_symbols:
                 if n_points > 1:
                     raise ValueError(
-                        f"Symbolic expression still has free symbols at point {idx}: {expr_sub.free_symbols}. "
+                        f"Symbolic expression still has free symbols at point "
+                        f"{idx}: {expr_sub.free_symbols}. "
                         "Cannot vectorize symbolic evaluation."
                     )
                 # Scalar input: return expression
@@ -648,11 +788,9 @@ def mgfDerivative_fractional(
 
     # ---- scipy ----
     if method.lower() == "scipy":
-        # The same fixed-grid kernel `mgfDerivative` uses. Until PR 8 these two
-        # entry points reached *different* implementations: `mgfDerivative`
-        # was moved onto the grid kernel by PR 6b while this one was left on
-        # the adaptive scheme the grid kernel replaced, so the answer depended
-        # on which public function the caller happened to reach for.
+        # The same fixed-grid kernel `mgfDerivative` uses. Both public entry
+        # points must reach one implementation, or the answer would depend on
+        # which of them the caller happened to reach for.
         from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
 
         grid_keys = {"tol"}
@@ -662,7 +800,7 @@ def mgfDerivative_fractional(
             t_points=t,
             u_points=u,
             complete=complete,
-            integer_method=integerDeriv_method,
+            integer_method=integer_method,
             log=log,
             **{k: v for k, v in kwargs.items() if k in grid_keys},
         )
@@ -676,7 +814,7 @@ def mgfDerivative_fractional(
             order=order,
             prior=prior,
             t=t,
-            method=integerDeriv_method,
+            method=integer_method,
             simplify=simplify,
             return_log=log,
             complete=complete,
@@ -684,7 +822,9 @@ def mgfDerivative_fractional(
             **kwargs
         )
 
-    raise ValueError(f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'.")
+    raise ValueError(
+        f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'."
+    )
 
 def _check_moment_exists_at_origin(order, prior, t) -> None:
     """
@@ -708,8 +848,7 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
     -----
     ``Dᵃ M(t) = E[Θᵃ e^{tΘ}]``. For ``t < 0`` the exponential dominates any
     polynomial, so the moment condition is *not* required and must not be
-    enforced — that is what lets heavy-tailed priors such as ``pareto`` work,
-    and it is stated as a rule in CLAUDE.md.
+    enforced — that is what lets heavy-tailed priors such as ``pareto`` work.
 
     At ``t = 0`` exactly, the exponential is 1 and the identity reduces to
     ``E[Θᵃ]``, so the moment must exist. That boundary is reachable from
@@ -718,15 +857,15 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
     (``pareto``) — measure-zero for continuous data, but common once data is
     rounded.
 
-    Without this check the failure is silent or misleading. With the registry's
-    Pareto(α=2) prior at ``t = 0``: order 1 returns a correct value, order 2
-    returns ``inf``, and order 3 raises ``TypeError: Cannot convert complex to
-    float`` from inside the quadrature.
-
     The bound is a property of the *prior*, not of the data, which is why this
     lives here rather than in ``like_stats`` — those modules are pure functions
     of the data and cannot see the prior. The same ``b = 0`` is perfectly valid
     against a Gamma prior at every order.
+
+    Every public entry point applies it. Without it the failure is silent or
+    misleading rather than absent: against Pareto(α=2) at ``t = 0``, order 2
+    returns ``inf`` and order 3 raises ``TypeError: Cannot convert complex to
+    float`` from inside the quadrature.
     """
     if t is None or isinstance(order, sp.Basic):
         return
@@ -760,8 +899,8 @@ def resolve_backend(
 ):
     """Classify a derivative order and settle which backend will serve it.
 
-    This is the single place where the backend matrix in ``CLAUDE.md`` is
-    encoded. :func:`mgfDerivative` calls it to dispatch, and callers that need
+    This is the single place where the backend matrix is encoded.
+    :func:`mgfDerivative` calls it to dispatch, and callers that need
     to know *how* a request will be served — before serving it — call it for
     that answer rather than re-deriving the rules.
 
@@ -815,10 +954,10 @@ def resolve_backend(
     >>> resolve_backend(2, 'SYMBOLIC')
     ('integer', 'symbolic', 'symbolic')
     """
-    # Canonicalise before anything else. The backends have always matched
-    # method names case-insensitively, so 'SYMBOLIC' is a legal spelling; a
-    # caller comparing the *returned* name against a lowercase literal would
-    # otherwise silently take the wrong branch.
+    # Canonicalise before anything else. The backends match method names
+    # case-insensitively, so 'SYMBOLIC' is a legal spelling; a caller comparing
+    # the *returned* name against a lowercase literal would otherwise silently
+    # take the wrong branch.
     method = method.lower()
     integer_method = integer_method.lower()
 
@@ -832,20 +971,14 @@ def resolve_backend(
 
     # ---- Resolve 'auto' ----
     #
-    # `auto` keeps choosing a DIFFERENTIATING backend here, because this
-    # function decides the derivative's *representation* as well as how it is
-    # evaluated. Only the symbolic backend can build a representation before an
-    # evaluation point is known, and `MGFDerivative` branches on that to offer
+    # `auto` chooses a DIFFERENTIATING backend here, because this function
+    # decides the derivative's *representation* as well as how it is evaluated.
+    # Only the symbolic backend can build a representation before an evaluation
+    # point is known, and `MGFDerivative` branches on that to offer
     # `post_density(theta)`, `post_mgf`, `post_cdf(u)` and sequential updating
-    # symbolically.
-    #
-    # An earlier version of this sent `auto` straight to the expectation route.
-    # That fixed the cancellation but silently removed the symbolic
-    # representation from every `auto` posterior -- `_deriv_is_symbolic` became
-    # permanently False, `int_tol` stopped affecting anything, and asking for a
-    # density as an expression stopped working. The sweep that justified the
-    # switch measured numbers, not capabilities, so it could not have caught
-    # that; the suite did.
+    # symbolically. Sending `auto` straight to the expectation route from here
+    # would leave `_deriv_is_symbolic` permanently False and take all of that
+    # away, without any number changing to show it.
     #
     # The expectation route is preferred at the point of NUMERIC EVALUATION
     # instead, in `mgfDerivative` below, where `t` is known. That gets the
@@ -914,7 +1047,7 @@ def mgfDerivative(
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
 
-    This function respects the **symbol‑numeric principle**: the return type
+    This function respects the **symbol-numeric principle**: the return type
     depends only on whether unresolved symbols remain.
 
     - If `order` contains symbolic variables, or if `t` is `None` or the
@@ -922,11 +1055,11 @@ def mgfDerivative(
     - If `order`, `t`, and `u` (if applicable) are fully numeric, the derivative
       is evaluated numerically using the selected backend.
 
-    The function supports **tuple‑vectorisation**: if `t` or `u` are array‑like,
+    The function supports **tuple-vectorisation**: if `t` or `u` are array-like,
     they are broadcast to a common shape and the derivative is evaluated for
     all points simultaneously.
 
-    If `order` is array‑like, each order is dispatched independently and the
+    If `order` is array-like, each order is dispatched independently and the
     results are returned in the shape of the broadcast request. An `order` of
     shape ``(2, 3)`` against a scalar `t` returns arrays of shape ``(2, 3)``;
     an `order` of shape ``(3,)`` against a `t` of shape ``(3,)`` pairs them
@@ -934,7 +1067,7 @@ def mgfDerivative(
 
     Elements are not coerced. A fractional order stays fractional, `t` may be
     `None` — in which case an array of expressions is returned, per the
-    symbol‑numeric principle — and `u` is passed through unchanged.
+    symbol-numeric principle — and `u` is passed through unchanged.
 
     Parameters
     ----------
@@ -966,7 +1099,7 @@ def mgfDerivative(
         the order is treated as an integer.
     u : float or array-like, optional
         Truncation point(s) for the incomplete MGF (used when `complete=False`).
-        If array‑like, it is broadcast with `t` to form a batch of evaluation
+        If array-like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
         Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
@@ -1027,20 +1160,29 @@ def mgfDerivative(
     # is scalar or array-valued, and whether the request ends up symbolic.
     _reject_unknown_options(kwargs, "mgfDerivative")
 
+    # What the caller *set*, captured before the pops below empty `kwargs`.
+    # `integer_method` counts only when it differs from the default, or the
+    # warning would fire on almost every call to say that a value equal to the
+    # default was not used.
+    requested_options = set(kwargs)
+    if integer_method != "symbolic":
+        requested_options.add("integer_method")
+
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to
         # broadcast the request, forward each element unchanged, and reassemble
-        # the answers in the caller's shape. Every coercion it used to apply
-        # was a defect:
+        # the answers in the caller's shape. No coercion belongs here:
         #
-        #   int(o)     turned a fractional order into a whole one, returning
-        #              the answer for a different derivative. Not a rounding
-        #              question -- at order 2.5 both int() and round() give 2
-        #              and the result is 15% wrong either way.
-        #   float(tt)  rejected t=None, so an array order could not produce a
-        #              symbolic result, violating the symbol-numeric principle.
-        #   float(uu)  did the same for the incomplete-MGF truncation point.
+        #   int(o)     would turn a fractional order into a whole one and
+        #              return the answer for a different derivative. Not a
+        #              rounding question -- at order 2.5 both int() and round()
+        #              give 2, which is a different derivative either way.
+        #   float(tt)  would reject t=None, so an array order could not produce
+        #              a symbolic result, violating the symbol-numeric
+        #              principle.
+        #   float(uu)  would do the same to the incomplete-MGF truncation
+        #              point.
         #
         # `order_arr.shape` is the shape of the whole request once broadcast,
         # so reassembling into it preserves the caller's shape instead of
@@ -1049,7 +1191,9 @@ def mgfDerivative(
         if complete:
             if u is not None:
                 raise ValueError("u must be None when complete=True")
-            order_arr, t_arr = np.broadcast_arrays(order_arr, np.asarray(t, dtype=object))
+            order_arr, t_arr = np.broadcast_arrays(
+                order_arr, np.asarray(t, dtype=object)
+            )
             u_flat = [None] * order_arr.size
         else:
             if u is None:
@@ -1094,7 +1238,7 @@ def mgfDerivative(
 
         return np.array(results).reshape(batch_shape)
 
-    # ---- Continue with scalar order (original logic) ----
+    # ---- Continue with scalar order ----
     cgf_method = kwargs.pop('cgf_method', 'auto')
     symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
 
@@ -1113,20 +1257,17 @@ def mgfDerivative(
     # asking for a representation, and only a differentiating backend can
     # produce one, so `auto` must not be diverted then.
     #
-    # Measured over 240 cases -- four priors, ten orders from 0.5 to 30, six
-    # evaluation points from -0.5 to -50, scored against mpmath at 60 digits
-    # with each density written out independently:
+    # It is preferred because its integrand, `theta^a e^{t theta} p(theta)`, is
+    # positive and so cannot cancel, whereas differentiating an alternating CGF
+    # does: the Uniform prior at orders 12-30 with `t` near zero cancels
+    # through 25-26 digits, losing the sign as well as the magnitude.
     #
-    #                          differentiating   expectation
-    #   unacceptable (>1e-8)   5 of 240          0 of 240
-    #   wrong sign             2                 0
-    #   worst case             2.46e+00          1.17e-11
-    #   median                 6.3e-17           1.0e-16
-    #
-    # All five failures are the Uniform prior at orders 12-30 with `t` near
-    # zero, where its alternating CGF cancels through 25-26 digits; the
-    # expectation route cannot cancel because its integrand is positive. It is
-    # also 5-8x faster.
+    # Accuracy is the whole of the argument, and it is bought with time: at a
+    # fractional order this route costs 3.5x to 24x more per evaluation point
+    # than `method='scipy'`, the fixed-grid kernel, worst at a single point and
+    # narrowing as the batch grows. A caller who knows their prior's CGF has
+    # one-signed derivatives -- gamma and exponential do -- can ask for `scipy`
+    # and keep the speed.
     #
     # An explicit `method=` is never diverted -- only `auto` is.
     prefer_expectation = (
@@ -1136,8 +1277,11 @@ def mgfDerivative(
         and expectation_is_available(prior)
     )
     if method == "expectation" or prefer_expectation:
-        from jumufraktiv.numeric_expectation import expectationDeriv
+        from jumufraktiv.numeric_expectation import DEFAULT_TOL, expectationDeriv
 
+        _warn_discarded_options(
+            requested_options, order_type, "expectation", "mgfDerivative"
+        )
         return expectationDeriv(
             order=float(order),
             prior=prior,
@@ -1145,23 +1289,30 @@ def mgfDerivative(
             u=u,
             complete=complete,
             log=log,
+            tol=kwargs.get("tol", DEFAULT_TOL),
         )
 
+    _warn_discarded_options(requested_options, order_type, method, "mgfDerivative")
+
+    # Only the Bell backend reads these, so only it is given them: forwarding
+    # them regardless would make `mgfDerivative_integer` re-issue the warning
+    # above, naming itself for an option passed to this function.
+    bell_options = (
+        {"symbolic_timeout": symbolic_timeout, "cgf_method": cgf_method}
+        if method == "bell"
+        else {}
+    )
+
     if order_type == "symbolic":
-        # No warning here any more. It used to promise that the result "is
-        # often the analytic continuation to non-integer orders", which was
-        # never true: `sympy.diff` needs a concrete number of times to
-        # differentiate, so an order carrying free symbols has always ended in
-        # an exception rather than in an expression. Warning about the quality
-        # of a result that does not exist told the caller nothing, and it fired
-        # *before* the failure, so the last thing they saw was a claim about an
-        # analytic continuation they never received.
+        # An order carrying free symbols cannot be served: `sympy.diff` needs a
+        # concrete number of times to differentiate. `integerDeriv_symbolic`
+        # raises NotImplementedError naming those symbols and saying what to do
+        # instead, so nothing may warn here about the quality of a result the
+        # caller is not going to receive.
         #
-        # `integerDeriv_symbolic` now raises NotImplementedError naming the
-        # free symbols and saying what to do instead. An order that is
-        # integer-valued but not a Python `int` -- `sympy.Integer(2)`, which
-        # SymPy arithmetic produces routinely -- is classified as symbolic
-        # here and now succeeds, where before it hit the same dead end.
+        # An order that is integer-valued but not a Python `int` --
+        # `sympy.Integer(2)`, which SymPy arithmetic produces routinely -- is
+        # classified as symbolic here and is served normally.
         return mgfDerivative_integer(
             order=order,
             prior=prior,
@@ -1171,15 +1322,13 @@ def mgfDerivative(
             complete=complete,
             log=log,
             u=u,
-            symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method,
         )
 
     elif order_type == "integer":
         # `int(...)` is NOT redundant here, whatever RUF046 says: for a
         # SymPy order `round()` returns a `sympy.Integer`, and
-        # `mgfDerivative_integer` needs a Python `int`. PR 5 made
-        # `sp.Integer(2)` behave like `2`; dropping this cast undoes it.
+        # `mgfDerivative_integer` needs a Python `int`. Dropping the cast is
+        # what stops `sp.Integer(2)` behaving like `2`.
         int_order = int(round(order))  # noqa: RUF046
         return mgfDerivative_integer(
             order=int_order,
@@ -1190,31 +1339,24 @@ def mgfDerivative(
             complete=complete,
             log=log,
             u=u,
-            symbolic_timeout=symbolic_timeout,
-            cgf_method=cgf_method,
+            **bell_options,
         )
 
     else:
         # Fractional order. The backend and integer_method were settled, and
         # any 'bell'/'jax' reinterpretation applied, by resolve_backend above.
 
-        # The near-integer interpolation branch is gone, and so is the module
-        # behind it. It fitted a 4-point cubic spline *in the order* whenever
-        # the fractional part exceeded max(d_vec) = 0.95, which was less
-        # accurate than the plain quadrature just below that threshold, cost
-        # four times the work, and took its sign from an endpoint.
-        #
-        # The difficulty it was working around is real: as the order approaches
-        # an integer from below, gamma -> 0 and the answer is computed as
-        # (1/Gamma(gamma)) x (a diverging integral), i.e. 0 x infinity. But that
-        # has an exact fix rather than an interpolated one -- subtracting a
-        # function with the same value at z = 0 and a known weighted integral --
-        # which `numeric_fractionalDeriv_grid` applies. Measured relative error
-        # at order 1.999: 0.96 through the spline, 2.9e-16 through the kernel.
+        # Near-integer orders need no special branch here. As the order
+        # approaches an integer from below, gamma -> 0 and the answer is
+        # computed as (1/Gamma(gamma)) x (a diverging integral), i.e.
+        # 0 x infinity. That has an exact fix rather than an interpolated one
+        # -- subtracting a function with the same value at z = 0 and a known
+        # weighted integral -- and `numeric_fractionalDeriv_grid` applies it.
+        # Interpolating in the order instead is neither exact nor cheaper, and
+        # takes its sign from an endpoint.
         if method == "scipy":
             from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
 
-            grid_keys = {"tol"}
             return fractionalDeriv_grid(
                 order=order,
                 prior=prior,
@@ -1223,10 +1365,20 @@ def mgfDerivative(
                 complete=complete,
                 integer_method=integer_method,
                 log=log,
-                **{k: v for k, v in kwargs.items() if k in grid_keys},
+                **{
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in ROUTE_OPTIONS[("fractional", "scipy")]
+                },
             )
 
-        # `mpmath` and `symbolic` keep their own routes.
+        # `mpmath` and `symbolic` keep their own routes. Forwarding only what
+        # the route reads keeps the warning above from being re-issued there.
+        kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ROUTE_OPTIONS[("fractional", method)]
+        }
         return mgfDerivative_fractional(
             order=order,
             prior=prior,
@@ -1235,7 +1387,7 @@ def mgfDerivative(
             simplify=simplify,
             complete=complete,
             log=log,
-            integerDeriv_method=integer_method,
+            integer_method=integer_method,
             u=u,
             **kwargs
         )

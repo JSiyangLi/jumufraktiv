@@ -8,16 +8,16 @@ likelihood (evidence) and provides a wide range of inference methods:
 - Posterior density (`post_density`)
 - Cumulative distribution function (`post_cdf`)
 - Quantiles (`post_quantile`)
-- Moment‑generating function (`post_mgf`)
+- Moment-generating function (`post_mgf`)
 - Raw and central moments (`post_raw_moment`, `post_central_moment`)
 - Credible intervals (`post_interval`)
 - Posterior sampling (`post_sample`)
 - Posterior predictive density (`post_predictive`)
 
 The class supports both symbolic and numeric evaluation, respecting the
-**symbol‑numeric principle**: the return type depends only on whether
+**symbol-numeric principle**: the return type depends only on whether
 unresolved symbols remain. Numeric methods are fully vectorised for array
-inputs, following the **tuple‑vectorisation principle** for evaluation
+inputs, following the **tuple-vectorisation principle** for evaluation
 points `(t, u)`.
 
 Priors are represented as `mitMGFprior` objects. The class also supports
@@ -25,11 +25,12 @@ sequential Bayesian updating via the `update` method, which treats the
 current posterior as the prior for a new dataset.
 
 Likelihoods are registered with `ready_func` (aggregated sufficient
-statistics) and `bereit_func` (per‑element statistics for vectorised
+statistics) and `bereit_func` (per-element statistics for vectorised
 predictive evaluation).
 """
 
 import difflib
+import functools
 import inspect
 import math
 import warnings
@@ -79,9 +80,9 @@ from jumufraktiv.root_finding import solve_root
 
 # `q` is deliberately absent. The moment methods take a parameter named `q`
 # that may itself be the canonical symbol -- the caller imports it and passes
-# it in -- so every `q` in this file is that parameter. Importing the symbol
-# here as well bound a module-level name nothing read, and left every moment
-# method's signature shadowing it.
+# it in -- so every `q` in this file is that parameter, and importing the
+# symbol here would only bind a module-level name that each of those
+# signatures shadows.
 from jumufraktiv.symbols import r, t, theta, u
 
 # ============================================================
@@ -93,7 +94,9 @@ LIKELIHOOD_REGISTRY = {
     'laplace': (readyLaplace, cLaplace, bereitLaplace),
     'normal': (readyNormal, cNormal, bereitNormal),
     'rayleigh': (readyRayleigh, cRayleigh, bereitRayleigh),
-    'maxwell-boltzmann': (readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann),
+    'maxwell-boltzmann': (
+        readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann
+    ),
     'inverse gamma': (readyInverseGamma, cInverseGamma, bereitInverseGamma),
     'levy': (readyLevy, cLevy, bereitLevy),
     'weibull': (readyWeibull, cWeibull, bereitWeibull),
@@ -112,18 +115,10 @@ LIKELIHOOD_REGISTRY = {
 #: :func:`~jumufraktiv.derivativeDispatch.mgfDerivative` and, through it, to the
 #: selected backend.
 #:
-#: **Imported, not restated.** It used to be a literal set written out here,
-#: and it had drifted from what the backends actually consume: it still listed
-#: `use_interpolation` and `d_vec`, which tuned the interpolation module PR 6b
-#: deleted, and `epsabs`, `epsrel`, `limit`, `initial_L` and `max_L`, which
-#: tuned the adaptive quadrature PR 8 deleted. Seven names the constructor
-#: accepted reached no code at all -- the caller who set `initial_L` to widen
-#: the truncation range got the default, silently, which is the same outcome as
-#: being rejected minus the error message.
-#:
-#: Deleting the seven fixed the symptom. Taking the set from one place fixes
-#: the cause: two lists that must agree will eventually not, and the drift is
-#: invisible because both sides keep working.
+#: **Imported, not restated**, so that the constructor and the
+#: ``mgfDerivative*`` functions cannot disagree about what a valid option is. A
+#: literal set written out here would be a second copy of the dispatcher's
+#: list, free to drift from it.
 DERIVATIVE_KWARGS = DERIVATIVE_OPTIONS
 
 #: Arguments this class supplies to ``mgfDerivative`` itself. A caller must not
@@ -136,6 +131,7 @@ _RESERVED_DERIVATIVE_KWARGS = frozenset({
 })
 
 
+@functools.cache
 def _likelihood_kwargs(ready_func) -> frozenset:
     """Return the keyword arguments a likelihood's ``ready`` function accepts.
 
@@ -153,8 +149,10 @@ def _likelihood_kwargs(ready_func) -> frozenset:
     frozenset of str
         Named parameters other than ``data``. A trailing ``**kwargs`` on the
         function is deliberately ignored: every ``ready`` function has one, and
-        it is what silently absorbed misspelled arguments.
+        absorbing unknown names into it is what this set exists to prevent.
     """
+    # Cached because the predictive path consults it per evaluation, and there
+    # are only fourteen `ready` functions, so the cache is bounded.
     parameters = inspect.signature(ready_func).parameters
     return frozenset(
         name
@@ -188,17 +186,12 @@ def _split_kwargs(kwargs, ready_func, likelihood):
 
     Notes
     -----
-    The previous implementation matched against the *union* of every
-    likelihood's parameter names and sent everything else to the derivative
-    layer, where ``**kwargs`` absorbed it. Two mistakes were therefore silent
-    and produced a confidently wrong number rather than an error:
-
-    - a misspelling (``scal=2.0``) fell through to the derivative layer, so the
-      likelihood used its default and the evidence was wrong by 0.92 nats;
-    - a parameter valid for a *different* likelihood (``rho=`` on a Poisson) was
-      forwarded into ``ready_func`` and swallowed by its ``**kwargs``.
-
-    Both now raise.
+    Names are matched against the chosen likelihood's own signature, never
+    against the union of all fourteen, and the trailing ``**kwargs`` every
+    ``ready`` function carries is deliberately not counted as accepting a name.
+    A misspelling (``scal=2.0``), or a parameter belonging to a different
+    likelihood (``rho=`` on a Poisson), therefore raises rather than being
+    absorbed and the likelihood's own default used in its place.
     """
     accepted = _likelihood_kwargs(ready_func)
 
@@ -207,29 +200,55 @@ def _split_kwargs(kwargs, ready_func, likelihood):
 
     unknown = set(kwargs) - accepted - DERIVATIVE_KWARGS
     if unknown:
-        raise TypeError(_unknown_kwargs_message(unknown, accepted, likelihood))
+        raise TypeError(
+            _unknown_kwargs_message(unknown, accepted, likelihood, "MGFDerivative")
+        )
 
     return likelihood_kwargs, derivative_kwargs
 
 
-def _unknown_kwargs_message(unknown, accepted, likelihood):
-    """Build an actionable message for unrecognised keyword arguments."""
+def _unknown_kwargs_message(
+    unknown, accepted, likelihood, caller, derivative_options=DERIVATIVE_KWARGS
+):
+    """Build an actionable message for unrecognised keyword arguments.
+
+    Parameters
+    ----------
+    unknown : set of str
+        The names that matched nothing.
+    accepted : frozenset of str
+        The chosen likelihood's own parameters.
+    likelihood : str
+        Name of the chosen likelihood, quoted in the message.
+    caller : str
+        What to name as the thing that was called, so the message sends the
+        reader to the right line.
+    derivative_options : frozenset of str, optional
+        Options the *derivative layer* accepts, if this caller forwards to it.
+        Pass an empty set for an entry point that forwards only to the
+        likelihood, so the message neither lists nor suggests a name the caller
+        cannot use.
+    """
+    candidates = sorted(accepted | derivative_options)
+
     lines = []
     for name in sorted(unknown):
-        suggestions = difflib.get_close_matches(
-            name, sorted(accepted | DERIVATIVE_KWARGS), n=1, cutoff=0.7
-        )
+        suggestions = difflib.get_close_matches(name, candidates, n=1, cutoff=0.7)
         if suggestions:
             lines.append(f"'{name}' (did you mean '{suggestions[0]}'?)")
         else:
             lines.append(f"'{name}'")
 
     accepted_text = ", ".join(sorted(accepted)) if accepted else "none"
-    return (
-        f"Unexpected keyword argument(s) for MGFDerivative: {', '.join(lines)}. "
-        f"The '{likelihood}' likelihood accepts: {accepted_text}. "
-        f"Derivative options are: {', '.join(sorted(DERIVATIVE_KWARGS))}."
+    message = (
+        f"Unexpected keyword argument(s) for {caller}: {', '.join(lines)}. "
+        f"The '{likelihood}' likelihood accepts: {accepted_text}."
     )
+    if derivative_options:
+        message += (
+            f" Derivative options are: {', '.join(sorted(derivative_options))}."
+        )
+    return message
 
 
 # ============================================================
@@ -240,13 +259,13 @@ class MGFDerivative:
     Posterior distribution derived via MGF marginalisation.
 
     This class encapsulates a posterior distribution obtained from a prior
-    (a `mitMGFprior` object) and a likelihood from the MGF‑marginalisable
+    (a `mitMGFprior` object) and a likelihood from the MGF-marginalisable
     family. It computes the posterior normalising constant (evidence) and
     provides methods for density, CDF, quantiles, moments, and predictive
     inference.
 
     The core computation is based on fractional derivatives of the prior
-    moment‑generating function (MGF), evaluated at the posterior location
+    moment-generating function (MGF), evaluated at the posterior location
     `t = -b`. The class stores either a symbolic expression or a numeric
     value for the normalising constant, depending on the chosen backend.
 
@@ -259,9 +278,9 @@ class MGFDerivative:
     b : float
         Evaluation point, entering as `t = -b`. See `a`.
     log_c : float
-        Log‑normalising constant from the likelihood.
+        Log-normalising constant from the likelihood.
     log : bool
-        Whether the normalising constant is stored in log‑scale.
+        Whether the normalising constant is stored in log-scale.
     prior : mitMGFprior
         The prior object used.
     method : str
@@ -308,18 +327,20 @@ class MGFDerivative:
     Notes
     -----
     The class supports both symbolic and numeric evaluation, following the
-    **symbol‑numeric principle**: the return type of methods depends on
+    **symbol-numeric principle**: the return type of methods depends on
     whether free symbols remain. Numeric methods are vectorised for array
-    inputs (tuple‑vectorisation for `(t, u)` pairs).
+    inputs (tuple-vectorisation for `(t, u)` pairs).
 
     Examples
     --------
     >>> from jumufraktiv.mitMGFprior_class import mitMGFprior
     >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
-    >>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
-    >>> deriv = MGFDerivative(gamma_prior, data=[1.0, 2.0], likelihood='poisson', scale=1.0)
-    >>> log_ev, sign = deriv.evidence()
-    >>> print(log_ev)
+    >>> gamma_params = {'alpha':2.0, 'beta':3.0}
+    >>> gamma_prior = mitMGFprior.from_registry('gamma', params=gamma_params)
+    >>> data = [1.0, 2.0]
+    >>> deriv = MGFDerivative(gamma_prior, data=data, likelihood='poisson', scale=1.0)
+    >>> log_evidence = deriv.evidence()
+    >>> print(log_evidence)
     """
     def __init__(
         self,
@@ -355,7 +376,9 @@ class MGFDerivative:
         if self.likelihood not in LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unknown likelihood: {likelihood}")
 
-        self.ready_func, self.c_func, self.bereit_func = LIKELIHOOD_REGISTRY[self.likelihood]
+        self.ready_func, self.c_func, self.bereit_func = (
+            LIKELIHOOD_REGISTRY[self.likelihood]
+        )
 
         # ----------------------------------------------------
         # Separate kwargs for ready vs derivative
@@ -400,19 +423,33 @@ class MGFDerivative:
         ``bereit_func`` needs them again, because those functions take them as
         required positional arguments.
 
-        ``post_predictive`` used to forward only the *caller's* keyword
-        arguments, so ten of the fourteen likelihoods raised
-        ``TypeError: bereitNormal() missing 1 required positional argument:
-        'mean'`` for a parameter the object was already holding. The four that
-        worked are exactly the four with no known parameters, which is why the
-        suite never saw it: every predictive test uses Poisson, whose one
-        parameter has a default.
+        An override replaces the stored value for this call only, so the
+        predictive can be evaluated under a different known parameter than the
+        posterior was built with -- a new observation from a different Weibull
+        shape, say.
 
-        Overrides are honoured rather than ignored, so a caller can still
-        evaluate the predictive under a different known parameter than the one
-        the posterior was built with -- passing ``rho`` for a new observation
-        from a different Weibull shape, say.
+        Raises
+        ------
+        TypeError
+            For an override the likelihood does not accept, with the same "did
+            you mean" suggestion the constructor gives.
         """
+        # Validated here rather than in `post_predictive` because this is the
+        # funnel: the vectorised path and the symbolic scalar path both call
+        # it, so one check covers both.
+        accepted = _likelihood_kwargs(self.ready_func)
+        unknown = set(overrides) - accepted
+        if unknown:
+            raise TypeError(
+                _unknown_kwargs_message(
+                    unknown,
+                    accepted,
+                    self.likelihood,
+                    "post_predictive",
+                    derivative_options=frozenset(),
+                )
+            )
+
         merged = dict(self._ready_kwargs)
         merged.update(overrides)
         return merged
@@ -425,20 +462,21 @@ class MGFDerivative:
         differentiates the prior's MGF and hands back a `sympy.Expr` in `t`,
         which later methods substitute into as often as they like. Every
         numeric backend quadratures at a *particular* `t` and so has nothing to
-        return until one is known.
-
-        For those, this method stores a callable instead — a thunk that runs
-        the same `mgfDerivative` call once an evaluation point arrives. The
-        arrangement is what `_evaluate_derivative`'s callable branch has always
-        expected; until now nothing produced a callable, so the branch was
-        unreachable and every numeric backend raised
-        ``ValueError: t must be provided`` during construction.
+        return until one is known; for those this stores a thunk that runs the
+        same `mgfDerivative` call once an evaluation point arrives.
 
         Notes
         -----
         Which case applies is asked of `resolve_backend`, so this method does
         not need to know the backend matrix — that stays in the dispatch layer,
         as the layer rule requires.
+
+        The thunk is built either way. Holding a symbolic representation and
+        evaluating numerically through the dispatcher are not alternatives:
+        `post_density`, `post_cdf`, `post_mgf` and `update` need the
+        expression, while a numeric evaluation point should reach whichever
+        backend `mgfDerivative` would choose for it. See
+        `_evaluate_derivative`.
         """
         _, resolved_method, _ = resolve_backend(
             self.a,
@@ -447,6 +485,8 @@ class MGFDerivative:
             self._deriv_kwargs.get("int_tol", 1e-12),
             prior=self.prior,
         )
+
+        self._deriv_numeric = self._deferred_derivative()
 
         if resolved_method == "symbolic":
             self._deriv = mgfDerivative(
@@ -461,20 +501,24 @@ class MGFDerivative:
                 **self._deriv_kwargs
             )
         else:
-            self._deriv = self._deferred_derivative()
+            self._deriv = self._deriv_numeric
 
         # Do I have an unevaluated symbolic derivative function representation
         # DM(t)? It tells you whether you can work with it symbolically.
         self._deriv_is_symbolic = isinstance(self._deriv, sp.Expr)
 
+        # Whether substituting a number for `t` leaves a number. False when the
+        # prior's hyperparameters are unbound, in which case the answer stays
+        # symbolic and no numeric backend could produce it.
+        self._deriv_is_bound = (
+            self._deriv_is_symbolic and self._deriv.free_symbols <= {t}
+        )
+
     def _deferred_derivative(self):
         """Return a thunk evaluating ``D^a M`` at a `t` supplied later.
 
         The thunk closes over the backend options, so callers pass only the
-        evaluation point. Re-passing ``**self._deriv_kwargs`` at call time —
-        which `_evaluate_derivative` used to do — would raise ``TypeError: got
-        an unexpected keyword argument`` for any option the closure already
-        holds.
+        evaluation point.
 
         It is built with ``log=self.log`` rather than a fixed ``log=False``:
         `_store_result` requires a ``(log_abs, sign)`` tuple whenever
@@ -499,6 +543,26 @@ class MGFDerivative:
         return deferred
 
     def _evaluate_derivative(self, t_value):
+        """Evaluate the stored derivative at ``t_value``.
+
+        Notes
+        -----
+        Holding a symbolic representation does not mean evaluating through it.
+        ``method="auto"`` asks for the best route for the request, and for a
+        numeric evaluation point that is the direct-expectation route, whose
+        integrand is positive and therefore cannot cancel. Substituting into
+        the differentiated MGF instead reaches an answer that cancels through
+        as many digits as the prior's CGF alternates: for Uniform(0.5, 2) with
+        Poisson data summing to 27 the two differ by 5.4e-7 relative, and by 60
+        the substituted value is negative, which `_store_result` refuses.
+
+        An explicit ``method=`` is never diverted, and neither is a request
+        whose answer stays symbolic -- an unbound hyperparameter leaves free
+        symbols that no numeric backend can resolve.
+        """
+        if self._should_dispatch_numerically(t_value):
+            return self._deriv_numeric(t_value)
+
         if isinstance(self._deriv, sp.Basic):
             val = self._deriv.subs(t, t_value)
             if not val.free_symbols:
@@ -513,8 +577,26 @@ class MGFDerivative:
                     return numeric_val
             return val
         else:
-            # Deferred numeric backend: the thunk already holds the options.
+            # Deferred numeric backend. The thunk already holds the backend
+            # options, so it takes the evaluation point and nothing else:
+            # re-forwarding `**self._deriv_kwargs` here raises TypeError for
+            # every option the closure already carries.
             return self._deriv(t_value)
+
+    def _should_dispatch_numerically(self, t_value) -> bool:
+        """Whether to route this evaluation point through `mgfDerivative`.
+
+        True only for `method="auto"` at a concrete point whose answer is a
+        number. The three conditions are separate refusals, not one test:
+        an explicit backend must be honoured as asked, a symbolic evaluation
+        point has no numeric answer, and an unbound hyperparameter leaves one
+        that no backend can produce.
+        """
+        if not self._deriv_is_symbolic or self.method != "auto":
+            return False
+        if not self._deriv_is_bound:
+            return False
+        return not (isinstance(t_value, sp.Basic) and t_value.free_symbols)
 
 
     def _compute(self):
@@ -591,7 +673,7 @@ class MGFDerivative:
     @property
     def is_symbolic(self):
         return self._is_symbolic
-    
+
     @property
     def value_numeric(self):
         if self._is_symbolic:
@@ -601,7 +683,7 @@ class MGFDerivative:
             return self._sign * np.exp(self.log_abs)
 
         return self.value
-    
+
     @property
     def prior_has_iMGF(self) -> bool:
         return self.prior.has_iMGF()
@@ -618,15 +700,14 @@ class MGFDerivative:
 
         Returns
         -------
-        sympy.Expr or tuple or float
-            - If the posterior is symbolic (`self._is_symbolic is True`):
-                Returns a SymPy expression for the evidence.
-            - If the posterior is numeric:
-                - If `self.log is True`: returns a tuple `(log_abs, sign)` where
-                `log_abs` is the natural logarithm of the absolute evidence,
-                and `sign` is the sign (±1) of the evidence.
-                - If `self.log is False`: returns the ordinary float value of the
-                evidence.
+        sympy.Expr or float
+            A SymPy expression if the posterior is symbolic; otherwise
+            `log p(y)` when `self.log` is True and `p(y)` when it is False.
+
+        Raises
+        ------
+        ValueError
+            At construction, if the derivative at `t = -b` came out negative.
 
         Notes
         -----
@@ -635,10 +716,21 @@ class MGFDerivative:
         where `c_func` is the likelihood's normalising constant and the
         derivative is evaluated at the posterior mode location `t = -b`.
 
+        No sign accompanies the logarithm, because the evidence cannot be
+        negative: `p(y) = c(y) D^a M(-b)`, `c(y) > 0`, and
+        `D^a M(t) = E[Theta^a e^{t Theta}] > 0` for positive `Theta`. A negative
+        value therefore means the computation failed rather than that the
+        quantity is signed, and the constructor rejects it outright rather than
+        returning a flag for the caller to notice.
+
+        `post_central_moment` is the one method here that does return
+        `(log_abs, sign)`, because an odd central moment genuinely can be
+        negative.
+
         Examples
         --------
-        >>> evidence_log, sign = deriv.evidence()
-        >>> print(f"log evidence = {evidence_log:.4f}, sign = {sign}")
+        >>> log_evidence = deriv.evidence()
+        >>> print(f"log evidence = {log_evidence:.4f}")
         """
 
         if self._is_symbolic:
@@ -647,38 +739,37 @@ class MGFDerivative:
             # `c_func()` returns the likelihood's normalising constant as a
             # general formula -- for Poisson,
             # `Product(s[i]**y[i]/factorial(y[i]), (i, 1, n))` -- written over
-            # indexed symbols that are never bound to this object's data. The
-            # symbolic evidence therefore came back carrying free `n`, `s` and
-            # `y` and an unevaluated `Product`, which no substitution available
-            # to the caller could resolve.
+            # indexed symbols that are never bound to this object's data, so it
+            # would leave the symbolic evidence carrying free `n`, `s` and `y`
+            # and an unevaluated `Product` that no substitution available to
+            # the caller can resolve.
             #
             # `log_c` is the same constant already evaluated on the actual data
             # by the likelihood's `ready` function, so this returns an
             # expression whose only free symbols are the prior's
-            # hyperparameters -- which the caller can substitute. It also makes
-            # the symbolic and numeric branches agree on where the constant
-            # comes from, which they did not before.
+            # hyperparameters -- which the caller can substitute -- and both
+            # branches take the constant from the same place.
             return sp.exp(self.log_c) * self._result_expr
 
         if self.log:
-            return self.log_c + self.log_abs, self._sign
+            return self.log_c + self.log_abs
 
         return np.exp(self.log_c) * self.value
 
     # ========================================================
     # POSTERIOR DENSITY
     # ========================================================
-        
+
     def post_density(self, theta_val=None, log=True):
         """
         Compute the posterior density (or log-density) at given θ.
 
-        This method respects the **symbol‑numeric principle**: the return type
+        This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain, not on the path taken.
 
-        - If `theta_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.theta`),
-        or if the derivative expression still contains free symbols, a symbolic
-        expression is returned.
+        - If `theta_val` is a SymPy symbol (canonically
+        :data:`jumufraktiv.symbols.theta`), or if the derivative expression
+        still contains free symbols, a symbolic expression is returned.
         - If `theta_val` is numeric (scalar or array), the expression is evaluated
         numerically, respecting vectorisation.
 
@@ -695,8 +786,9 @@ class MGFDerivative:
         -------
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
-            - NumPy array for array‑like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - NumPy array for array-like input.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -723,7 +815,9 @@ class MGFDerivative:
         >>> expr = deriv.post_density(theta, log=False)  # SymPy expression
         """
         # ---- Symbolic path ----
-        if self._deriv_is_symbolic and (theta_val is None or isinstance(theta_val, sp.Symbol)):
+        if self._deriv_is_symbolic and (
+            theta_val is None or isinstance(theta_val, sp.Symbol)
+        ):
             try:
                 denom_expr = self._deriv.subs(t, -self.b)
 
@@ -745,14 +839,10 @@ class MGFDerivative:
                 log_post = log_num - sp.log(denom_expr)
 
                 # Substitute the known hyperparameters into the ASSEMBLED
-                # expression. Two things were wrong before. The substitution was
-                # applied to `pdf_sym` after `log_prior` had already been formed
-                # from it, so it was computed and discarded; and even correctly
-                # ordered it would have reached only the prior's density, while
-                # the normalising constant `denom_expr` -- the derivative of the
-                # prior MGF -- carries the same hyperparameters. Substituting
-                # once, here, covers both. This mirrors `post_cdf`, which always
-                # substituted into its assembled expression.
+                # expression, not into `pdf_sym` alone. The normalising
+                # constant `denom_expr` -- the derivative of the prior MGF --
+                # carries the same hyperparameters, so one substitution here
+                # reaches both halves of the ratio. `post_cdf` does the same.
                 if self.params is not None:
                     subs_dict = {sym: self.params[sym.name]
                                  for sym in log_post.free_symbols
@@ -771,7 +861,8 @@ class MGFDerivative:
 
                     # Pre-allocate results
                     results_log = np.zeros(batch)
-                    results_sym = [None] * batch  # store expressions if any remain symbolic
+                    # store expressions if any remain symbolic
+                    results_sym = [None] * batch
 
                     for idx, t_val in enumerate(theta_arr):
                         evaluated = log_post.subs(theta_sym, t_val).evalf()
@@ -781,7 +872,8 @@ class MGFDerivative:
                             if batch == 1:
                                 return evaluated if log else sp.exp(evaluated)
                             else:
-                                # Store expression and continue; later we may raise or return mixed.
+                                # Store expression and continue; later we may
+                                # raise or return mixed.
                                 results_sym[idx] = evaluated
                         else:
                             results_log[idx] = float(evaluated)
@@ -789,8 +881,9 @@ class MGFDerivative:
 
                     # Check if any symbolic results remain
                     if any(r is not None for r in results_sym):
-                        # For array input with mixed symbolic/numeric, we cannot return a uniform array.
-                        # We'll raise an error to avoid confusion.
+                        # For array input with mixed symbolic/numeric, we
+                        # cannot return a uniform array. We'll raise an error
+                        # to avoid confusion.
                         raise ValueError(
                             "Vectorized symbolic evaluation failed: some theta values "
                             "still have free symbols. Use scalar symbolic input."
@@ -807,7 +900,9 @@ class MGFDerivative:
                     return log_post if log else sp.exp(log_post)
 
             except Exception as e:
-                raise RuntimeError(f"Symbolic posterior density computation failed: {e}") from e
+                raise RuntimeError(
+                    f"Symbolic posterior density computation failed: {e}"
+                ) from e
 
         # ---- Numeric path (vectorized) ----
         if theta_val is None:
@@ -830,13 +925,9 @@ class MGFDerivative:
         # ---- Domain guard ----------------------------------------------
         # `theta` is strictly positive, so the density is exactly 0 outside
         # the support. Answering that is better than computing `log(theta)`
-        # for a non-positive `theta` and producing NaN, which is what happened:
-        # `post_quantile` evaluates this as the derivative for its Newton step
-        # and can propose a non-positive point, and the resulting
-        # "invalid value encountered in log" is escalated to an exception by
-        # the test suite's `filterwarnings = ["error"]` while ordinary users
-        # see only a warning and a NaN. That difference between harness and
-        # user is precisely the hazard CLAUDE.md records.
+        # at a non-positive `theta`, which warns and returns NaN. The guard is
+        # reachable in ordinary use: `post_quantile` evaluates this as the
+        # derivative for its Newton step and can propose a non-positive point.
         in_support = theta_arr > 0.0
         theta_safe = np.where(in_support, theta_arr, 1.0)
 
@@ -867,22 +958,22 @@ class MGFDerivative:
             return float(log_post[0]) if log else float(np.exp(log_post[0]))
         else:
             return log_post if log else np.exp(log_post)
-        
+
     # ========================================================
     # POSTERIOR CUMULATIVE DENSITY
     # ========================================================
     def post_cdf(self, u_val=None, log=True):
         """
-        Compute the posterior CDF F(Θ ≤ u | y) (or log‑CDF) at threshold(s) u.
+        Compute the posterior CDF F(Θ ≤ u | y) (or log-CDF) at threshold(s) u.
 
-        This method respects the **symbol‑numeric principle**: the return type
+        This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain.
 
         - If `u_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.u`),
         or if the expression still contains free symbols, a symbolic expression
         is returned.
         - If `u_val` is numeric (scalar or array), the CDF is evaluated numerically,
-        supporting tuple‑vectorisation: the evaluation point is the pair `(t, u)`,
+        supporting tuple-vectorisation: the evaluation point is the pair `(t, u)`,
         where `t = -self.b` is fixed and `u` is broadcast to match the input.
 
         Parameters
@@ -898,8 +989,9 @@ class MGFDerivative:
         -------
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
-            - NumPy array for array‑like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - NumPy array for array-like input.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Raises
         ------
@@ -933,15 +1025,9 @@ class MGFDerivative:
 
         # ---- Symbolic path ----
         #
-        # This block used to be wrapped in `except Exception` and re-raised as
-        # RuntimeError("Symbolic posterior CDF computation failed: ..."). That
-        # wrapper is gone. It added nothing a caller could act on, and it was
-        # actively harmful here: the block referenced two names, `t_sym` and
-        # `u_sym`, that this module has never defined -- it imports `t` and `u`
-        # -- so every call raised NameError and the wrapper reported it as a
-        # failed computation rather than as the typo it was. A genuine failure
-        # inside SymPy now reaches the caller with its own message and its own
-        # traceback.
+        # Deliberately not wrapped in `except Exception`: a failure inside
+        # SymPy must reach the caller with its own message and traceback,
+        # rather than as a generic "symbolic CDF computation failed".
         if self._is_symbolic:
             # Build symbolic derivative of incomplete MGF once
             num_expr = mgfDerivative(
@@ -991,7 +1077,7 @@ class MGFDerivative:
                 results = np.exp(results)
             return results.item() if np.ndim(results) == 0 else results
 
-        # ---- Numeric path (vectorised with tuple‑vectorisation) ----
+        # ---- Numeric path (vectorised with tuple-vectorisation) ----
         if u_val is None:
             raise ValueError("For numeric evaluation, u must be provided.")
 
@@ -1007,11 +1093,10 @@ class MGFDerivative:
         # for u <= 0. That is a legitimate question with a known answer, not a
         # caller error, so it is answered rather than refused.
         #
-        # It has to be answered *before* evaluation, not corrected afterwards.
-        # Passing a non-positive u into the incomplete-MGF derivative below
-        # either recursed until `RecursionError` (u = -1e-9) or returned a
-        # log-CDF above zero -- a probability of 2.43 at u = -0.5 -- because
-        # nothing downstream knows where the support starts.
+        # It has to be answered *before* evaluation, not corrected afterwards:
+        # nothing downstream knows where the support starts, so a non-positive
+        # u passed into the incomplete-MGF derivative below can recurse without
+        # terminating, or return a log-CDF above zero.
         in_support = u_arr > 0.0
         if not np.any(in_support):
             log_ratio = np.full(u_arr.shape, -np.inf).reshape(orig_shape)
@@ -1024,8 +1109,9 @@ class MGFDerivative:
         # the array, which the tuple-vectorisation principle asks for.
         u_eval = np.where(in_support, u_arr, np.max(u_arr[in_support]))
 
-        # Numerator: derivative of incomplete MGF at t = -b for all u values
-        # mgfDerivative now supports tuple‑vectorisation: it will broadcast t=-self.b with u_arr.
+        # Numerator: derivative of the incomplete MGF at t = -b for all u
+        # values. `mgfDerivative` broadcasts t = -self.b against the u array,
+        # so this is one batched call (tuple-vectorisation).
         log_abs_num, sign_num = mgfDerivative(
             order=self.a,
             prior=self.prior,
@@ -1060,7 +1146,7 @@ class MGFDerivative:
 
         # Consistency check: CDF must be non-negative
         if np.any(sign_ratio < 0):
-            raise RuntimeError("Posterior CDF became negative – numerical issue.")
+            raise RuntimeError("Posterior CDF became negative -- numerical issue.")
 
         if scalar_input:
             if log:
@@ -1080,17 +1166,38 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR PREDICTIVE
     # ========================================================
-    def _post_predictive_symbolic_scalar(self, x, log=True, **kwargs):
+    def _post_predictive_symbolic(self, x, log=True, **kwargs):
         """
-        Compute symbolic predictive density for a single scalar observation.
-        This is the original scalar logic, kept unchanged.
+        Compute the symbolic predictive density for one or more observations.
+
+        Parameters
+        ----------
+        x : scalar or array-like
+            New observation(s). An array gives the *joint* predictive, since
+            the likelihood statistics aggregate over it.
+        log : bool, optional
+            Return the log predictive if True.
+        **kwargs
+            Known likelihood parameters, overriding those stored at
+            construction.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior is not symbolic.
         """
         if not self._is_symbolic:
             raise RuntimeError("This helper is only for symbolic posterior.")
 
         try:
-            # Wrap scalar in a list for ready_func (expects array‑like)
-            stats_new = self.ready_func([x], **self._likelihood_arguments(**kwargs))
+            # `atleast_1d` rather than `[x]`: the joint branch passes an array,
+            # and wrapping that in a list makes it 2-D, which `_extract_1d`
+            # rejects. A scalar still becomes the one-element array
+            # `ready_func` expects.
+            observations = np.atleast_1d(np.asarray(x)).ravel()
+            stats_new = self.ready_func(
+                observations, **self._likelihood_arguments(**kwargs)
+            )
             a_new = stats_new['a']
             b_new = stats_new['b']
             log_c_new = stats_new['log_c']
@@ -1109,7 +1216,9 @@ class MGFDerivative:
             )
 
             if isinstance(num, tuple):
-                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+                raise RuntimeError(
+                    "Symbolic predictive unexpectedly received numeric derivative."
+                )
 
             denom = self._evaluate_derivative(-self.b)
 
@@ -1117,7 +1226,9 @@ class MGFDerivative:
 
             if self.params is not None:
                 log_pred = log_pred.subs(
-                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
+                    {sym: self.params[sym.name]
+                     for sym in log_pred.free_symbols
+                     if sym.name in self.params}
                 )
 
             if log_pred.free_symbols:
@@ -1132,7 +1243,7 @@ class MGFDerivative:
         """
         Compute the posterior predictive density (or log-density) for new data.
 
-        This method respects the **symbol‑numeric principle**: the return type
+        This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain.
 
         - If `new_data` is a SymPy symbol, the posterior is symbolic, and a
@@ -1150,13 +1261,15 @@ class MGFDerivative:
         ----------
         new_data : scalar, array-like, or sympy.Symbol
             New observation(s). If array-like, each element is treated separately.
-            If a SymPy symbol, the posterior must be symbolic (`self._is_symbolic` is True).
+            If a SymPy symbol, the posterior must be symbolic
+            (`self._is_symbolic` is True).
         log : bool, optional
             If True, return log-density; otherwise ordinary density.
         individual : bool, optional
             If True (default), return an array of densities for each new data point.
             If False, return the joint density (product of individual densities).
-        **kwargs : additional arguments passed to the likelihood's `ready_func` or `bereit_func`.
+        **kwargs : additional arguments passed to the likelihood's
+            `ready_func` or `bereit_func`.
             For example, `scale` for Poisson or `shape` for Gamma.
 
         Returns
@@ -1173,9 +1286,10 @@ class MGFDerivative:
         where `M_{post}` is the posterior MGF, and `c`, `a`, `b` are the likelihood
         statistics.
 
-        For a symbolic posterior, the computation uses the original scalar symbolic
-        logic; for array `new_data` with `individual=True`, it loops over elements
-        using a scalar helper (`_post_predictive_symbolic_scalar`).
+        With a symbolic posterior and `individual=True`, an array `new_data` is
+        evaluated one element at a time -- a full symbolic derivative per
+        observation, so the cost grows linearly with the array. The numeric
+        path evaluates all points in a single batched call.
 
         Examples
         --------
@@ -1189,7 +1303,9 @@ class MGFDerivative:
         >>> pred_masses = np.exp(log_pred)  # array of masses
 
         >>> # Joint predictive density for two new observations
-        >>> joint_log = deriv.post_predictive([14, 15], scale=125.76, log=True, individual=False)
+        >>> joint_log = deriv.post_predictive(
+        ...     [14, 15], scale=125.76, log=True, individual=False
+        ... )
 
         >>> # Symbolic predictive mass for a new observation
         >>> from sympy import Symbol
@@ -1199,8 +1315,12 @@ class MGFDerivative:
         # ---- Symbolic new_data (single symbol) ----
         if isinstance(new_data, sp.Symbol):
             if not self._is_symbolic:
-                raise ValueError("Cannot compute predictive density symbolically with a numeric posterior.")
-            # Directly build symbolic expression for the joint density (same as helper, but with symbolic stats)
+                raise ValueError(
+                    "Cannot compute predictive density symbolically with a "
+                    "numeric posterior."
+                )
+            # Directly build symbolic expression for the joint density
+            # (same as helper, but with symbolic stats)
             a_new = sp.Symbol('a_new', real=True)
             b_new = sp.Symbol('b_new', real=True)
             log_c_new = sp.Symbol('log_c_new', real=True)
@@ -1216,12 +1336,16 @@ class MGFDerivative:
                 log=True
             )
             if isinstance(num, tuple):
-                raise RuntimeError("Symbolic predictive unexpectedly received numeric derivative.")
+                raise RuntimeError(
+                    "Symbolic predictive unexpectedly received numeric derivative."
+                )
             denom = self._evaluate_derivative(-self.b)
             log_pred = log_c_new + sp.log(num) - sp.log(denom)
             if self.params is not None:
                 log_pred = log_pred.subs(
-                    {sym: self.params[sym.name] for sym in log_pred.free_symbols if sym.name in self.params}
+                    {sym: self.params[sym.name]
+                     for sym in log_pred.free_symbols
+                     if sym.name in self.params}
                 )
             if log_pred.free_symbols:
                 return log_pred if log else sp.exp(log_pred)
@@ -1234,10 +1358,10 @@ class MGFDerivative:
             scalar_input = len(new_data_arr) == 1
 
             if individual:
-                # Compute per‑element densities using the scalar helper
+                # Compute per-element densities using the scalar helper
                 results = []
                 for x in new_data_arr:
-                    res = self._post_predictive_symbolic_scalar(x, log=log, **kwargs)
+                    res = self._post_predictive_symbolic(x, log=log, **kwargs)
                     results.append(res)
                 # If any result is symbolic, return a list; otherwise convert to array
                 if any(isinstance(r, sp.Expr) for r in results):
@@ -1245,14 +1369,11 @@ class MGFDerivative:
                 else:
                     return float(results[0]) if scalar_input else np.array(results)
             else:
-                # Joint density: the helper aggregates the statistics itself.
-                # An identical `ready_func` call used to sit here, its result
-                # discarded on the next line; it is gone rather than merely
-                # rewritten, since forwarding the stored parameters into a
-                # computation nothing reads would only make the waste tidier.
-                return self._post_predictive_symbolic_scalar(new_data_arr, log=log, **kwargs)
+                # Joint density: the helper aggregates the statistics itself,
+                # so no `ready_func` call belongs here.
+                return self._post_predictive_symbolic(new_data_arr, log=log, **kwargs)
 
-        # ---- Numeric path (non‑symbolic posterior, vectorised) ----
+        # ---- Numeric path (non-symbolic posterior, vectorised) ----
         new_data_arr = np.asarray(new_data).ravel()
         scalar_input = len(new_data_arr) == 1
 
@@ -1290,8 +1411,13 @@ class MGFDerivative:
                 if log:
                     return float(log_pred_vals[0])
                 else:
-                    sign_pred = sign_num[0] * (self._sign if self._sign is not None else 1)
-                    return 0.0 if log_pred_vals[0] == -np.inf else sign_pred * np.exp(log_pred_vals[0])
+                    sign_pred = sign_num[0] * (
+                        self._sign if self._sign is not None else 1
+                    )
+                    return (
+                        0.0 if log_pred_vals[0] == -np.inf
+                        else sign_pred * np.exp(log_pred_vals[0])
+                    )
             else:
                 if log:
                     return log_pred_vals
@@ -1307,16 +1433,19 @@ class MGFDerivative:
             else:
                 sign_prod = np.prod(sign_num) if not scalar_input else sign_num[0]
                 sign_prod *= (self._sign if self._sign is not None else 1)
-                return 0.0 if log_pred_joint == -np.inf else sign_prod * np.exp(log_pred_joint)
+                return (
+                    0.0 if log_pred_joint == -np.inf
+                    else sign_prod * np.exp(log_pred_joint)
+                )
 
     # ========================================================
     # POSTERIOR MGF
     # ========================================================
     def post_mgf(self, r_val, log=True):
         """
-        Compute the posterior moment‑generating function (MGF) at given r.
+        Compute the posterior moment-generating function (MGF) at given r.
 
-        This method respects the **symbol‑numeric principle**: the return type
+        This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain.
 
         - If `r_val` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.r`),
@@ -1338,8 +1467,9 @@ class MGFDerivative:
         -------
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
-            - NumPy array for array‑like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - NumPy array for array-like input.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -1417,7 +1547,10 @@ class MGFDerivative:
                     if all(isinstance(v, (float, int, np.floating)) for v in results):
                         val = np.array(results, dtype=float).reshape(orig_shape)
                         if scalar_input:
-                            return float(val.item()) if log else np.exp(float(val.item()))
+                            return (
+                                float(val.item()) if log
+                                else np.exp(float(val.item()))
+                            )
                         else:
                             return val if log else np.exp(val)
                     else:
@@ -1428,10 +1561,16 @@ class MGFDerivative:
                         else:
                             # If log=False, exponentiate symbolic expressions
                             if log:
-                                out = np.array(results, dtype=object).reshape(orig_shape)
+                                out = np.array(
+                                    results, dtype=object
+                                ).reshape(orig_shape)
                                 return out
                             else:
-                                out = [sp.exp(res) if isinstance(res, sp.Expr) else np.exp(res) for res in results]
+                                out = [
+                                    sp.exp(res) if isinstance(res, sp.Expr)
+                                    else np.exp(res)
+                                    for res in results
+                                ]
                                 return np.array(out, dtype=object).reshape(orig_shape)
 
                 # Case 3: r_val is scalar numeric (int, float, or None)
@@ -1493,7 +1632,7 @@ class MGFDerivative:
         """
         Compute the posterior raw moment of order q.
 
-        This method respects the **symbol‑numeric principle**: the return type
+        This method respects the **symbol-numeric principle**: the return type
         depends only on whether unresolved symbols remain.
 
         - If `q` is a SymPy symbol (canonically :data:`jumufraktiv.symbols.q`),
@@ -1502,7 +1641,7 @@ class MGFDerivative:
         - If `q` is numeric (scalar or array), the moment is evaluated numerically,
         supporting vectorisation.
 
-        For integer orders 1–4, the computation is typically fast; for higher
+        For integer orders 1--4, the computation is typically fast; for higher
         orders, a warning is emitted as the calculation may be slow.
 
         Parameters
@@ -1512,14 +1651,15 @@ class MGFDerivative:
         numerator_method : str, optional
             Method for derivative computation (passed to `mgfDerivative`).
         log : bool, optional
-            If True, return the log‑moment; otherwise the ordinary moment.
+            If True, return the log-moment; otherwise the ordinary moment.
 
         Returns
         -------
         scalar, np.ndarray, or sympy.Expr
             - Scalar float for scalar numeric input.
-            - NumPy array for array‑like input.
-            - SymPy expression if symbolic evaluation is requested or free symbols remain.
+            - NumPy array for array-like input.
+            - SymPy expression if symbolic evaluation is requested or free
+              symbols remain.
 
         Notes
         -----
@@ -1627,7 +1767,9 @@ class MGFDerivative:
                     return val if log else np.exp(val)
 
             except Exception as e:
-                raise RuntimeError(f"Symbolic computation failed: {e}. Falling back to numeric.") from e
+                raise RuntimeError(
+                    f"Symbolic computation failed: {e}. Falling back to numeric."
+                ) from e
 
         # ---- Numeric path (vectorized) ----
         orders = self.a + q_arr if is_array else self.a + q
@@ -1660,16 +1802,16 @@ class MGFDerivative:
                 if log_ratio == -np.inf:
                     return 0.0
                 return float(result)
-    
+
     # ========================================================
     # POSTERIOR CENTRAL MOMENT
-    # ======================================================== 
+    # ========================================================
     def post_central_moment(self, order=None, log=True, numerator_method='auto'):
         """
         Compute central moments of the posterior distribution.
 
         Supported orders are 1 (mean), 2 (variance), 3 (skewness-related), and
-        4 (kurtosis-related). The method respects the **symbol‑numeric principle**:
+        4 (kurtosis-related). The method respects the **symbol-numeric principle**:
         if the raw moments are symbolic, the central moment will be a SymPy
         expression; otherwise it is numeric.
 
@@ -1739,7 +1881,9 @@ class MGFDerivative:
         max_order = max(orders)
         # We need raw moments up to max_order (including 0)
         q_all = list(range(0, max_order + 1))   # e.g., [0,1,2,3,4]
-        raw_all = self.post_raw_moment(q_all, log=False, numerator_method=numerator_method)
+        raw_all = self.post_raw_moment(
+            q_all, log=False, numerator_method=numerator_method
+        )
         # raw_all is an array or list of raw moments for orders 0..max_order.
         # Ensure it's a list for indexing.
         if not isinstance(raw_all, (list, np.ndarray)):
@@ -1778,7 +1922,9 @@ class MGFDerivative:
                     else:
                         result = (sp.log(sp.Abs(central)), sp.sign(central))
                 else:
-                    raise TypeError(f"Unexpected type for central moment: {type(central)}")
+                    raise TypeError(
+                        f"Unexpected type for central moment: {type(central)}"
+                    )
             else:
                 result = central
 
@@ -1789,11 +1935,11 @@ class MGFDerivative:
             return results[orders[0]]
         else:
             return results
-     
-      
+
+
     # ========================================================
     # POSTERIOR QUANTILE
-    # ========================================================        
+    # ========================================================
     # Inside the MGFDerivative class
     def post_quantile(
         self,
@@ -1811,28 +1957,32 @@ class MGFDerivative:
         Compute quantiles (inverse CDF) for given probabilities.
 
         This method numerically inverts the posterior CDF `F(u) = p` using
-        vectorised root‑finding. It supports both scalar and array inputs for `p`,
+        vectorised root-finding. It supports both scalar and array inputs for `p`,
         and automatically finds a valid bracketing interval if not supplied.
 
         Parameters
         ----------
         p : float or array-like
-            Probabilities (must be strictly between 0 and 1). If array‑like,
+            Probabilities (must be strictly between 0 and 1). If array-like,
             returns quantiles of the same shape.
         root_method : str, optional
-            Root‑finding method passed to `solve_root`. Options include:
+            Root-finding method passed to `solve_root`. Options include:
             - `"auto"` (default): tries JAX methods first, then NumPy fallbacks.
             - `"bisectioned-newton-np"`, `"newton-np"`, `"bisection-np"` (NumPy).
             - `"bisectioned-newton-jax"`, `"newton-jax"`, `"bisection-jax"` (JAX).
             See `jumufraktiv.root_finding.solve_root` for full list.
         lower, upper : array-like, optional
-            Search interval bounds. If not provided, an automatic expansion
-            from `1e-6` to `1e6` is performed until `CDF(lower) < p < CDF(upper)`.
+            Search interval bounds. If not provided, the bracket starts at half
+            and twice the posterior's own scale `(a + 1) / b` — or at 0.5 and
+            2.0 when `b` is not positive — then halves the lower end and
+            doubles the upper end for at most ten rounds, until
+            `CDF(lower) < p < CDF(upper)`. `RuntimeError` if that fails.
+            See the Notes before supplying a small `lower` by hand.
         x0 : array-like, optional
-            Initial guess for Newton‑based methods. If `None`, uses the midpoint
+            Initial guess for Newton-based methods. If `None`, uses the midpoint
             of the bracket.
         maxiter : int, optional
-            Maximum number of root‑finding iterations.
+            Maximum number of root-finding iterations.
         tol : float, optional
             Absolute tolerance for `|CDF(x) - p|`.
         rel_tol : float, optional
@@ -1851,6 +2001,13 @@ class MGFDerivative:
         is fully vectorised over the elements of `p`.
         - If the automatic bracket expansion fails, you can provide explicit
         `lower` and `upper` bounds to improve robustness.
+        - **Do not set `lower` far into the lower tail.** The CDF is computed
+        from the incomplete-MGF derivative, which is inaccurate below about
+        `u = 1e-2` and badly wrong below `1e-4` — against the exact Gamma(8, 6)
+        posterior its log is off by 17.8 nats at `u = 1e-4` and by 45 nats at
+        `u = 1e-6`, with the sign flipped, which then trips the non-negativity
+        guard in `post_cdf`. This bounds how far into the lower tail any
+        CDF-based method here can be trusted.
 
         Examples
         --------
@@ -1864,7 +2021,9 @@ class MGFDerivative:
         >>> print(quantiles)  # array of three quantiles
 
         >>> # Using a specific root method and providing a bracket
-        >>> q = deriv.post_quantile(0.5, root_method='bisection-np', lower=0.0, upper=1.0)
+        >>> q = deriv.post_quantile(
+        ...     0.5, root_method='bisection-np', lower=0.0, upper=1.0
+        ... )
         """
 
         p_arr = np.asarray(p)
@@ -1882,24 +2041,15 @@ class MGFDerivative:
             return self.post_density(x, log=False)
 
         if lower is None or upper is None:
-            # Start from the posterior's own scale, not from a fixed 1e-6.
+            # Start from the posterior's own scale. A fixed small lower bound
+            # must not be substituted here: the CDF comes from the
+            # incomplete-MGF derivative, which is unusable below u ~ 1e-2 (see
+            # Notes), so the bracket has to begin inside the accurate region
+            # and grow outwards rather than start wide.
             #
-            # The old bracket ran 1e-6 to 1e6, and the lower end is not merely
-            # wasteful -- it is outside the region where the incomplete-MGF
-            # derivative is accurate. Measured against the exact Gamma(8, 6)
-            # posterior of the canonical test problem, the numerator's log at
-            # u = 1e-6 comes out as -65.17 where the true value is -110.41: a
-            # 45-nat error, with the computed sign flipped negative, which then
-            # trips the non-negativity guard in `post_cdf`. It is already wrong
-            # by 17.8 nats at u = 1e-4, and only becomes trustworthy around
-            # u = 1e-2. So every call failed before the root finder started.
-            #
-            # The likelihood's own statistics give a scale for free: the
-            # posterior is proportional to `theta**a * exp(-b*theta)` times the
-            # prior, whose density peaks at `a/b` and has mean `(a+1)/b`. That
-            # is the right order of magnitude for the quantiles of interest and
-            # sits well inside the accurate region, so the expansion below
-            # reaches the root without ever probing where the CDF is unusable.
+            # `theta**a * exp(-b*theta)` times the prior peaks at `a/b` and has
+            # mean `(a+1)/b`, which is the right order of magnitude for the
+            # quantiles of interest.
             scale = (self.a + 1.0) / self.b if self.b > 0 else 1.0
             lower_init = np.full_like(p_arr, scale * 0.5, dtype=float)
             upper_init = np.full_like(p_arr, scale * 2.0, dtype=float)
@@ -1926,9 +2076,7 @@ class MGFDerivative:
         # `solve_root`'s "auto" mode tries methods in order and accepts the
         # first that does not raise -- but a non-finite or out-of-bracket
         # result is not an exception, so a diverged Newton step counts as
-        # success. That is how `post_quantile(0.025)` came back as 7.7e+300
-        # while `post_quantile` on the same probability inside an array came
-        # back correct: different methods in the ordering won.
+        # success and can return a value nowhere near the root.
         #
         # A bracket is already in hand and the CDF is monotone, so bisection
         # cannot fail here. Verifying and falling back costs one cheap check on
@@ -1971,13 +2119,22 @@ class MGFDerivative:
             if not np.any(need_lower | need_upper):
                 break
         if np.any(f(lower) >= 0) or np.any(f(upper) <= 0):
-            raise RuntimeError("Could not find valid brackets; provide explicit lower/upper.")
+            raise RuntimeError(
+                "Could not find valid brackets; provide explicit lower/upper."
+            )
         return lower, upper
-    
+
     # ========================================================
     # POSTERIOR SAMPLE
-    # ========================================================     
-    def post_sample(self, n: int | None = None, u: np.ndarray | None = None, root_method: str = "auto", **kwargs) -> np.ndarray:
+    # ========================================================
+    def post_sample(
+        self,
+        n: int | None = None,
+        u: np.ndarray | None = None,
+        root_method: str = "auto",
+        rng=None,
+        **kwargs
+    ) -> np.ndarray:
         """
         Generate posterior samples using inverse transform sampling.
 
@@ -1993,8 +2150,13 @@ class MGFDerivative:
             Uniform random numbers in (0, 1). If provided, `n` is ignored.
             These are used as the probabilities for `post_quantile`.
         root_method : str, optional
-            Root‑finding method passed to `post_quantile`. See
+            Root-finding method passed to `post_quantile`. See
             `post_quantile` and `solve_root` for options.
+        rng : numpy.random.Generator, int, or None, optional
+            Source of the uniform variates when `u` is not supplied. Pass a
+            `Generator` or an integer seed for a reproducible draw; `None`
+            (the default) draws fresh entropy. Ignored when `u` is given,
+            since then the caller supplies the randomness.
         **kwargs : additional keyword arguments passed to `post_quantile`
             (e.g., `maxiter`, `tol`, `lower`, `upper`).
 
@@ -2015,18 +2177,35 @@ class MGFDerivative:
         >>> # Generate 1000 posterior samples
         >>> samples = deriv.post_sample(n=1000)
 
-        >>> # Use custom uniform variates for reproducibility
-        >>> rng = np.random.default_rng(42)
-        >>> u = rng.random(500)
-        >>> samples = deriv.post_sample(u=u)
+        >>> # A reproducible draw
+        >>> first = deriv.post_sample(n=500, rng=np.random.default_rng(42))
+        >>> second = deriv.post_sample(n=500, rng=np.random.default_rng(42))
+        >>> np.array_equal(first, second)
+        True
 
-        >>> # Control the root‑finding method and tolerance
+        >>> # Or supply the variates directly
+        >>> samples = deriv.post_sample(u=np.random.default_rng(42).random(500))
+
+        >>> # Control the root-finding method and tolerance
         >>> samples = deriv.post_sample(n=100, root_method='bisection-np', tol=1e-10)
         """
         if u is None:
             if n is None:
                 raise ValueError("Either n or u must be provided.")
-            u = np.random.rand(n)
+
+            # `default_rng` only passes a Generator through unchanged from
+            # NumPy 1.25, and this package supports 1.24.
+            generator = (
+                rng
+                if isinstance(rng, np.random.Generator)
+                else np.random.default_rng(rng)
+            )
+            u = generator.random(n)
+
+            # `Generator.random` draws from [0, 1), and `post_quantile(0)` has
+            # no finite answer -- the same rule the caller-supplied branch below
+            # enforces.
+            u = np.where(u == 0.0, np.finfo(float).tiny, u)
         else:
             u = np.asarray(u)
             if np.any((u <= 0) | (u >= 1)):
@@ -2034,10 +2213,10 @@ class MGFDerivative:
 
         result = self.post_quantile(u, root_method=root_method, **kwargs)
         return np.asarray(result)
-    
+
     # ========================================================
     # CENTRAL POSTERIOR CREDIBLE INTERVAL
-    # ========================================================     
+    # ========================================================
     def post_interval(
         self,
         level: float | np.ndarray = 0.95,
@@ -2055,10 +2234,10 @@ class MGFDerivative:
         Parameters
         ----------
         level : float or array-like, optional (default 0.95)
-            Credible level(s). Must be in (0, 1). If array‑like, returns
+            Credible level(s). Must be in (0, 1). If array-like, returns
             intervals for each level.
         root_method : str, optional
-            Root‑finding method passed to `post_quantile`. See `post_quantile`
+            Root-finding method passed to `post_quantile`. See `post_quantile`
             and `solve_root` for options.
         **kwargs : additional keyword arguments passed to `post_quantile`
             (e.g., `maxiter`, `tol`, `lower`, `upper`).
@@ -2067,7 +2246,7 @@ class MGFDerivative:
         -------
         If `level` is scalar:
             tuple (lower, upper) where both are Python floats.
-        If `level` is array‑like:
+        If `level` is array-like:
             np.ndarray of shape `(len(level), 2)` where each row is `[lower, upper]`.
 
         Notes
@@ -2133,9 +2312,9 @@ class MGFDerivative:
         with `t` to become a prior MGF. The posterior PDF is expressed in terms
         of the canonical `theta`.
 
-        If symbolic construction fails (e.g., the posterior is numeric or the
-        symbolic expression cannot be formed), it falls back to a **numeric**
-        backend prior that wraps the numeric `post_mgf` and `post_density` methods.
+        If the posterior's derivative is not symbolic, or the MGF and PDF do not
+        both come back as expressions, it falls back to a **numeric** backend
+        prior that wraps the numeric `post_mgf` and `post_density` methods.
 
         Returns
         -------
@@ -2160,13 +2339,13 @@ class MGFDerivative:
         """
 
         if self._deriv_is_symbolic:
-            # No blanket `except Exception` here any more. It caught every
-            # failure, printed "Symbolic construction failed:" with a traceback,
-            # and fell through to the numeric route -- so a genuine bug in the
-            # symbolic path surfaced as a silently different kind of prior,
-            # announced only on stdout. A failure here now propagates.
+            # A failure in the symbolic route propagates. It must not be caught
+            # and turned into a fall-through to the numeric route below, which
+            # would hand back a silently different kind of prior in place of
+            # reporting the bug.
             mgf_sym_expr = self.post_mgf(r, log=False)
-            mgf_sym_expr = mgf_sym_expr.subs(r, t)  # posterior MGF of r becomes the prior MGF of t
+            # posterior MGF of r becomes the prior MGF of t
+            mgf_sym_expr = mgf_sym_expr.subs(r, t)
             pdf_sym_expr = self.post_density(theta, log=False)  # use canonical theta
 
             if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):
@@ -2179,13 +2358,11 @@ class MGFDerivative:
 
         # ---- Backend (numeric) route ----
         #
-        # `log=False`, not `log=self.log`. These are the prior's *density* and
-        # *MGF*; a container expecting p(theta) was being handed log p(theta)
-        # whenever the posterior stored its constant in log scale, which is the
-        # default. The result was a prior whose "density" went negative --
-        # measured at theta = 1.0 it returned -3.14 where the density is 0.0432
-        # -- and nothing downstream could detect that, because a log density is
-        # a perfectly well-formed float.
+        # `log=False`, not `log=self.log`. These callbacks are the prior's
+        # *density* and *MGF*, and the container expects p(theta) rather than
+        # log p(theta). Passing a log-scale value here yields a prior whose
+        # "density" can be negative, and nothing downstream can detect it,
+        # because a log density is a perfectly well-formed float.
         def mgf_backend(t_val, xp=np, **params):
             return self.post_mgf(t_val, log=False)
 
@@ -2210,7 +2387,7 @@ class MGFDerivative:
 
         Parameters
         ----------
-        new_data : array‑like
+        new_data : array-like
             New observations to condition on. Must be compatible with the likelihood's
             `ready_func` or `bereit_func`.
         **kwargs : additional keyword arguments
@@ -2223,7 +2400,7 @@ class MGFDerivative:
             - simplify : bool, optional
                 Whether to simplify symbolic expressions. Defaults to current setting.
             - log : bool, optional
-                Whether to store the normalising constant in log‑scale.
+                Whether to store the normalising constant in log-scale.
                 Defaults to current setting.
             - Other arguments are passed to the new `MGFDerivative` constructor.
 
@@ -2244,7 +2421,7 @@ class MGFDerivative:
         -----
         - This method is the primary way to perform sequential Bayesian updating.
         - The new object's `log` parameter can differ from the current one,
-        allowing you to switch between log‑scale and ordinary‑scale storage
+        allowing you to switch between log-scale and ordinary-scale storage
         at each update.
 
         Examples
@@ -2252,7 +2429,7 @@ class MGFDerivative:
         >>> # Sequential update: add two new observations
         >>> deriv2 = deriv.update(new_data=[5, 7], likelihood='poisson', scale=1.0)
         >>> # Check the updated evidence
-        >>> log_ev, sign = deriv2.evidence()
+        >>> log_evidence = deriv2.evidence()
         """
         # Extract known arguments
         method = kwargs.pop("method", self.method)
@@ -2261,39 +2438,27 @@ class MGFDerivative:
         log = kwargs.pop("log", self.log)
 
         # ----------------------------------------------------
-        # Sequential updating, and why it now works numerically
+        # Which backends can serve a sequential update
         # ----------------------------------------------------
-        # This used to refuse every numeric posterior. `to_prior_object` builds
-        # the updated prior from this one, and its numeric route returns a prior
-        # carrying `pdf_backend`/`mgf_backend` and no `mgf_sym`/`cgf_sym` --
-        # which no *differentiating* backend can consume: `bell` raises "Prior
-        # does not provide a symbolic CGF", `jax` raises inside its tracer, and
-        # the quadrature backends returned -inf because a blanket
-        # `except Exception: return 0.0` turned the missing MGF into a zero at
-        # every node. Since no symbolic backend serves fractional orders, that
-        # ruled out sequential updating for fractional posteriors entirely.
-        #
-        # The direct-expectation route removes the obstacle rather than working
-        # around it. It computes `E[theta^a e^{t theta}]` from the prior's
-        # DENSITY and never touches its MGF, so the numeric prior above is
-        # exactly what it needs.
-        #
-        # What the guard below tests is `self._deriv_is_symbolic` -- a property
-        # of *this* posterior, not of the prior about to be built -- because
-        # that is precisely what decides which kind of prior comes out:
-        # symbolic in, symbolic prior out, which every backend can consume;
-        # numeric in, density-only prior out, which only the expectation route
-        # can. Testing it here avoids constructing the prior twice.
-        #
-        # Every DIFFERENTIATING backend needs the prior's symbolic MGF or CGF,
-        # and the prior built from a numeric posterior has only a density. So
-        # an explicit `method=` naming one of them still cannot update -- that
-        # is a limit of those backends, not of updating, and it is reported
-        # here rather than surfacing as "Prior does not provide a symbolic MGF"
-        # from inside a quadrature or as a TracerArrayConversionError from JAX.
+        # `to_prior_object` builds the updated prior from this one, and its
+        # numeric route returns a prior carrying `pdf_backend`/`mgf_backend`
+        # and no `mgf_sym`/`cgf_sym`. Every DIFFERENTIATING backend needs the
+        # prior's symbolic MGF or CGF, so an explicit `method=` naming one of
+        # them cannot update from a numeric posterior. That is a limit of those
+        # backends, not of updating, and it is reported here rather than
+        # surfacing as "Prior does not provide a symbolic MGF" from inside a
+        # quadrature or as a TracerArrayConversionError from JAX.
         #
         # `auto` and `expectation` both work, because the direct-expectation
-        # route reads the density and never touches the MGF.
+        # route computes `E[theta^a e^{t theta}]` from the prior's DENSITY and
+        # never touches its MGF.
+        #
+        # The guard tests `self._deriv_is_symbolic` -- a property of *this*
+        # posterior, not of the prior about to be built -- because that is
+        # precisely what decides which kind of prior comes out: symbolic in,
+        # symbolic prior out, which every backend can consume; numeric in,
+        # density-only prior out, which only the expectation route can. Testing
+        # it here avoids constructing the prior twice.
         requested = str(kwargs.get("method", method)).lower()
         differentiating = {"symbolic", "bell", "jax", "scipy", "mpmath"}
         if not self._deriv_is_symbolic and requested in differentiating:

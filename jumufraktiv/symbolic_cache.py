@@ -1,28 +1,25 @@
 """A memo for repeated symbolic differentiation.
 
 Every backend that differentiates a prior's MGF asks SymPy for the same
-derivative over and over. Measured on one quick pass of the test suite:
-**97,308 calls to** ``sp.diff`` **for 40 distinct** ``(expression, symbol,
-order)`` **triples** — a redundancy factor of about 2,400 — costing 155 s
-inside ``sp.diff`` out of a 338 s run. Nearly all of it comes from one line:
-95,573 of those calls are ``symbolic_integerDeriv.py``'s single ``sp.diff``.
-
-The reason is structural rather than careless. A prior's symbolic MGF is fixed
-once the hyperparameters are substituted, but the quantities built from it —
-evidence, density, CDF, moments, the posterior predictive — each re-enter the
-dispatcher, and a quadrature evaluates its integrand at every node. The
-expression being differentiated does not change across any of that.
+derivative over and over, and the redundancy is structural rather than
+careless. A prior's symbolic MGF is fixed once the hyperparameters are
+substituted, but the quantities built from it — evidence, density, CDF,
+moments, the posterior predictive — each re-enter the dispatcher, and a
+quadrature evaluates its integrand at every node. The expression being
+differentiated does not change across any of that, so a handful of distinct
+``(expression, symbol, order)`` triples serve every call the package makes.
 
 Notes
 -----
 **The key is the expression object, not its** ``srepr``. Both are correct, and
-the object is far cheaper: 0.36 µs against 68.1 µs per lookup, measured on this
+the object is far cheaper: 0.36 μs against 68.1 μs per lookup, measured on this
 package's Gamma MGF. Correctness rests on SymPy's ``__eq__`` being structural
 and precision-aware — ``Float(9.0, 53) == Float(9.0, 24)`` is ``False``, so two
 expressions that agree in value but differ in precision are *not* conflated,
 and a derivative computed at one precision is never returned for the other.
-That was verified before choosing the key rather than assumed; ``srepr`` was
-the obvious conservative choice and turned out not to be necessary.
+Should SymPy's equality ever stop distinguishing precisions, the key must
+become ``srepr``; :file:`tests/test_symbolic_cache.py` asserts the property
+directly, so that change cannot pass unnoticed.
 
 Returning a cached expression is safe because SymPy expressions are immutable,
 so a caller cannot alter what the next caller receives.
@@ -115,23 +112,17 @@ def cached_lambdify(expr, args, probe=None):
 
     Notes
     -----
-    **The modules argument is not a preference, and it is not sufficient
-    either.** ``modules=["scipy", "numpy"]`` is required because ``"numpy"``
-    alone has no ``lowergamma``, ``uppergamma``, ``polygamma`` or ``Ei``, all
-    of which appear in this package's priors. :file:`CLAUDE.md` recorded that
-    much and stopped there, and the list turned out to be incomplete: the
-    Pareto prior's MGF is written with ``expint``, the generalised exponential
-    integral, which **neither** module provides. SymPy compiles it happily and
-    the result raises ``NameError`` on the first call.
+    Compiling successfully is not evidence that the compiled function runs. An
+    expression containing ``expint``, the generalised exponential integral used
+    by the Pareto prior's MGF, compiles without complaint and then raises
+    ``NameError`` on the first call. That makes an unprobed compiled function a
+    correctness question rather than a performance one, so pass a ``probe``
+    whenever the result will be used inside a quadrature: the failure is then
+    found once, at setup, on a value the caller knows is in domain.
 
-    That is why the probe exists. A compiled function that cannot run is not a
-    performance question but a correctness one, and the only safe way to find
-    out is to call it -- once, on a value the caller knows is in domain, at
-    setup rather than from inside a quadrature.
-
-    Returning ``None`` rather than raising is deliberate. The symbolic path
-    computes the same quantity, exactly; a prior whose expression will not
-    compile should be slower, not broken.
+    ``None`` is returned rather than raised because the symbolic path computes
+    the same quantity, exactly; a prior whose expression will not compile
+    should be slower, not broken.
     """
     key = (expr, args)
     try:
@@ -145,6 +136,11 @@ def cached_lambdify(expr, args, probe=None):
         return hit
 
     try:
+        # `scipy` cannot be dropped from `modules`: NumPy alone has no
+        # `lowergamma`, `uppergamma`, `polygamma` or `Ei`, all of which appear
+        # in this package's priors. Nor is it sufficient -- `expint` is in
+        # neither module, and SymPy compiles it anyway, which is what the probe
+        # call below catches.
         compiled = sp.lambdify(args, expr, modules=["scipy", "numpy"])
         if probe is not None:
             compiled(*probe)
