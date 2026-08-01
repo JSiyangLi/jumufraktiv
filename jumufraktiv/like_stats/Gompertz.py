@@ -192,19 +192,3 @@ def cGompertz() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar scale
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5]})
-    scale_scalar = 1.2
-    stats = readyGompertz(data_df, scale_scalar)
-    print("Scalar scale (β=1.2):", stats)
-
-    # Vector scale
-    scale_vec = pd.DataFrame({'beta': [1.0, 1.5, 2.0]})
-    stats2 = readyGompertz(data_df, scale_vec)
-    print("Vector scale:", stats2)
-
-    # Symbolic constant
-    c_expr = cGompertz()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

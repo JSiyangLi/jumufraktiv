@@ -189,19 +189,3 @@ def cPareto() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar scale
-    data_df = pd.DataFrame({'y': [2.0, 3.0, 4.0]})
-    scale_scalar = 1.0
-    stats = readyPareto(data_df, scale_scalar)
-    print("Scalar scale (σ=1):", stats)
-
-    # Vector scale
-    scale_vec = pd.DataFrame({'scale': [1.0, 2.0, 1.5]})
-    stats2 = readyPareto(data_df, scale_vec)
-    print("Vector scale:", stats2)
-
-    # Symbolic constant
-    c_expr = cPareto()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

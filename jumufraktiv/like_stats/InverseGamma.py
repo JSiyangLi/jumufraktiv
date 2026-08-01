@@ -188,19 +188,3 @@ def cInverseGamma() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar shape
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0]})
-    shape_scalar = 2.0
-    stats = readyInverseGamma(data_df, shape_scalar)
-    print("Scalar shape (α=2):", stats)
-
-    # Vector shape
-    shape_vec = pd.DataFrame({'alpha': [1.5, 2.0, 2.5]})
-    stats2 = readyInverseGamma(data_df, shape_vec)
-    print("Vector shape:", stats2)
-
-    # Symbolic constant
-    c_expr = cInverseGamma()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

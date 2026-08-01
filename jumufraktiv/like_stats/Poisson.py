@@ -209,21 +209,4 @@ def cPoisson() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # ---- readyPoisson examples ----
-    data_df = pd.DataFrame({'counts': [1, 2, 3, 4]})
-    stats_default = readyPoisson(data_df)   # scale defaults to 1.0
-    print("With default scale (1.0):", stats_default)
-
-    stats_scalar = readyPoisson(data_df, scale=2.0)
-    print("With scalar scale 2.0:", stats_scalar)
-
-    scale_df = pd.DataFrame({'exposure': [0.5, 1.0, 1.5, 2.0]})
-    stats_vector = readyPoisson(data_df, scale=scale_df)
-    print("With vector scale:", stats_vector)
-
-    # ---- cPoisson example ----
-    c_expr = cPoisson()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)
     # Optional: show that it can be substituted later

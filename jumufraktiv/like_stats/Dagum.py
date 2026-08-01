@@ -228,21 +228,3 @@ def cDagum() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar r and s
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5]})
-    r_scalar = 2.0
-    s_scalar = 1.0
-    stats = readyDagum(data_df, r_scalar, s_scalar)
-    print("Scalar r=2, s=1:", stats)
-
-    # Vector r and s
-    r_vec = pd.DataFrame({'r': [2.0, 3.0, 1.5]})
-    s_vec = pd.DataFrame({'s': [1.0, 0.8, 1.2]})
-    stats2 = readyDagum(data_df, r_vec, s_vec)
-    print("Vector r and s:", stats2)
-
-    # Symbolic constant
-    c_expr = cDagum()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

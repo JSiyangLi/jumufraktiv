@@ -127,25 +127,3 @@ def suggest_method_Mellin(expr, x, s, numeric_params=None, timeout=2.0):
 # ----------------------------------------------------------------------
 # Example usage (when run as a script)
 # ----------------------------------------------------------------------
-if __name__ == "__main__":
-    print("="*60)
-    print("Testing suggest_method_integerDeriv")
-    print("="*60)
-
-    # Define symbols and Gamma MGF
-    t, alpha, beta = sp.symbols('t alpha beta', positive=True)
-    gamma_mgf = (beta / (beta - t)) ** alpha
-
-    # Test differentiation at order 3
-    suggest_method_integerDeriv(gamma_mgf, t, 3)
-
-    print("\n" + "="*60)
-    print("Testing suggest_method_Mellin")
-    print("="*60)
-
-    # Define a simple function for Mellin transform: f(x) = exp(-x)
-    x, s = sp.symbols('x s')
-    f = sp.exp(-x)
-
-    # Test with numeric s=0.5
-    suggest_method_Mellin(f, x, s, numeric_params={'s_val': 0.5})

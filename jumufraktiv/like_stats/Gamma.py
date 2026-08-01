@@ -194,19 +194,3 @@ def cGamma() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Example with scalar shape
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0, 4.0]})
-    shape_scalar = 2.5
-    stats = readyGamma(data_df, shape_scalar)
-    print("Scalar shape:", stats)
-
-    # Example with vector shape
-    shape_df = pd.DataFrame({'alpha': [1.5, 2.0, 3.0, 2.5]})
-    stats2 = readyGamma(data_df, shape_df)
-    print("Vector shape:", stats2)
-
-    # Symbolic constant
-    c_expr = cGamma()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

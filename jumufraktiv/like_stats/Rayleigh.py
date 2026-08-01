@@ -149,13 +149,3 @@ def cRayleigh() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0]})
-    stats = readyRayleigh(data_df)
-    print("Statistics for Rayleigh:", stats)
-
-    # Symbolic constant
-    c_expr = cRayleigh()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

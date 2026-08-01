@@ -201,19 +201,3 @@ def cBurrXII() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar known_shape
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5]})
-    known_shape_scalar = 2.0
-    stats = readyBurrXII(data_df, known_shape=known_shape_scalar)
-    print("Scalar known_shape (value=2.0):", stats)
-
-    # Vector known_shape
-    known_shape_vec = pd.DataFrame({'known_shape': [2.0, 3.0, 1.5]})
-    stats2 = readyBurrXII(data_df, known_shape=known_shape_vec)
-    print("Vector known_shape:", stats2)
-
-    # Symbolic constant
-    c_expr = cBurrXII()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

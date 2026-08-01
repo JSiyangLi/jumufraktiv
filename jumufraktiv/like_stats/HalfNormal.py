@@ -140,13 +140,3 @@ def cHalfNormal() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [0.5, 1.0, 1.5, 2.0]})
-    stats = readyHalfNormal(data_df)
-    print("Statistics for Half‑Normal:", stats)
-
-    # Symbolic constant
-    c_expr = cHalfNormal()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

@@ -172,19 +172,3 @@ def cLaplace() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Example with scalar mean
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0, 4.0]})
-    mean_scalar = 2.5
-    stats = readyLaplace(data_df, mean_scalar)
-    print("Scalar mean:", stats)
-
-    # Example with vector mean (unusual, but supported)
-    mean_vec = pd.DataFrame({'mean': [2.0, 2.5, 3.0, 3.5]})
-    stats2 = readyLaplace(data_df, mean_vec)
-    print("Vector mean:", stats2)
-
-    # Symbolic constant
-    c_expr = cLaplace()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

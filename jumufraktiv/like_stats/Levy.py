@@ -190,19 +190,3 @@ def cLevy() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Scalar location
-    data_df = pd.DataFrame({'y': [1.5, 2.0, 3.0]})
-    loc_scalar = 1.0
-    stats = readyLevy(data_df, loc_scalar)
-    print("Scalar location (μ=1):", stats)
-
-    # Vector location (unusual, but supported)
-    loc_vec = pd.DataFrame({'loc': [1.0, 1.5, 2.0]})
-    stats2 = readyLevy(data_df, loc_vec)
-    print("Vector location:", stats2)
-
-    # Symbolic constant
-    c_expr = cLevy()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)

@@ -149,13 +149,3 @@ def cMaxwellBoltzmann() -> sp.Expr:
 
 
 # ===== Example usage =====
-if __name__ == "__main__":
-    # Example data
-    data_df = pd.DataFrame({'y': [1.0, 2.0, 3.0]})
-    stats = readyMaxwellBoltzmann(data_df)
-    print("Statistics for Maxwell‑Boltzmann:", stats)
-
-    # Symbolic constant
-    c_expr = cMaxwellBoltzmann()
-    print("\nSymbolic normalising constant:")
-    sp.pprint(c_expr)
