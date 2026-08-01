@@ -308,8 +308,6 @@ def fractionalDeriv_numeric_mpmath(
     complete: bool = True,
     simplify: bool = False,
     return_log: bool = False,
-    initial_L: float = 10.0,
-    max_L: float = 1e4,
     tol: float = 1e-8,
     use_tan: bool = False,
     dps: int = 50,
@@ -336,12 +334,15 @@ def fractionalDeriv_numeric_mpmath(
         If False, differentiate the incomplete MGF.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
-    initial_L : float
-        Starting half‑width for integration range (adaptive method only).
-    max_L : float
-        Maximum allowed half‑width.
     tol : float
         Relative tolerance for convergence (default 1e-8).
+
+        `initial_L` and `max_L` used to sit here, as the starting half-width
+        and cap of a doubling loop. PR 6c replaced that loop with a range
+        derived from `dps`, and left the two parameters declared and
+        documented but unread -- so a caller could set `max_L` and be told
+        nothing. They are gone; the range is not tunable because it is no
+        longer discovered.
     use_tan : bool
         If True, directly use the tan‑transform method.
     dps : int

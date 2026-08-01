@@ -38,6 +38,7 @@ import numpy as np
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import (
+    DERIVATIVE_OPTIONS,
     _check_moment_exists_at_origin,
     mgfDerivative,
     resolve_backend,
@@ -107,28 +108,23 @@ LIKELIHOOD_REGISTRY = {
 # ============================================================
 # Keyword-argument routing
 # ============================================================
-#: Keyword arguments understood by the derivative layer. These are forwarded to
+#: Keyword arguments understood by the derivative layer, forwarded to
 #: :func:`~jumufraktiv.derivativeDispatch.mgfDerivative` and, through it, to the
-#: selected backend. Kept explicit rather than inferred, because the backends
-#: terminate in ``**kwargs`` and so cannot be introspected reliably.
-#: Every name here is consumed by some backend. That is a property worth
-#: stating, because the set had drifted: `use_interpolation` and `d_vec` tuned
-#: the near-integer interpolation module PR 6b deleted, and `epsabs`, `epsrel`,
-#: `limit`, `initial_L` and `max_L` tuned the adaptive quadrature PR 8 deleted.
-#: Seven names the constructor accepted therefore reached no code at all -- the
-#: caller who set `initial_L` to widen the truncation range got the default,
-#: silently, which is the same failure mode as rejecting the option except
-#: harder to notice.
-DERIVATIVE_KWARGS = frozenset({
-    # mgfDerivative's own named parameters that a caller may reasonably set
-    "integer_method", "int_tol",
-    # popped from **kwargs inside mgfDerivative
-    "cgf_method", "symbolic_timeout",
-    # fixed-grid fractional kernel
-    "tol",
-    # mpmath backend
-    "dps", "use_tan",
-})
+#: selected backend.
+#:
+#: **Imported, not restated.** It used to be a literal set written out here,
+#: and it had drifted from what the backends actually consume: it still listed
+#: `use_interpolation` and `d_vec`, which tuned the interpolation module PR 6b
+#: deleted, and `epsabs`, `epsrel`, `limit`, `initial_L` and `max_L`, which
+#: tuned the adaptive quadrature PR 8 deleted. Seven names the constructor
+#: accepted reached no code at all -- the caller who set `initial_L` to widen
+#: the truncation range got the default, silently, which is the same outcome as
+#: being rejected minus the error message.
+#:
+#: Deleting the seven fixed the symptom. Taking the set from one place fixes
+#: the cause: two lists that must agree will eventually not, and the drift is
+#: invisible because both sides keep working.
+DERIVATIVE_KWARGS = DERIVATIVE_OPTIONS
 
 #: Arguments this class supplies to ``mgfDerivative`` itself. A caller must not
 #: be able to set them: ``complete`` in particular is ``True`` for the evidence

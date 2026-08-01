@@ -21,6 +21,7 @@ import pytest
 import sympy as sp
 
 from jumufraktiv.derivativeDispatch import mgfDerivative
+from jumufraktiv.MGFDerivative_class import MGFDerivative
 
 # ==========================================================================
 # PR 3 — import and registry integrity
@@ -203,6 +204,108 @@ def test_pareto_symbolic_incomplete_mgf_is_correct():
 # ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================
+# Three findings from PR 8's review, all the same shape: a check that exists at
+# one entry point and not at the neighbouring one. Recorded rather than fixed,
+# because PR 12 owns the interface decisions behind them.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    # The test fails by *not* raising, which pytest reports as its own
+    # `Failed`, not as the TypeError the body asks for.
+    raises=pytest.fail.Exception,
+    reason="PR 12: post_predictive merges **kwargs straight into the "
+    "likelihood's own **kwargs with no validation, so a misspelled parameter "
+    "is swallowed and the default silently used",
+)
+def test_post_predictive_rejects_a_misspelled_parameter(gamma_prior):
+    """The constructor catches this typo; the method one call away does not.
+
+    `MGFDerivative(..., likelihood="weibull", rh=2.0)` raises with "did you
+    mean 'rho'?". `post.post_predictive([2.0], rh=9.0)` returns
+    -1.1053356325054668 -- exactly the value for the default -- where
+    `rho=9.0` gives -14.108023936618837. A typo costs 13.003 nats, silently.
+
+    PR 12a fixed the neighbouring half of this: `post_predictive` used to
+    ignore the parameters stored at construction. The forwarding was repaired
+    in `_likelihood_arguments`; the validation was not.
+    """
+    post = MGFDerivative(
+        gamma_prior, data=[1.0, 2.0, 3.0], likelihood="weibull", rho=2.0
+    )
+
+    with pytest.raises(TypeError, match="rh"):
+        post.post_predictive([2.0], rh=9.0)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="PR 12: the two public fractional entry points name the same option "
+    "differently -- mgfDerivative calls it integer_method, "
+    "mgfDerivative_fractional calls it integerDeriv_method -- so the sibling's "
+    "spelling is accepted and dropped",
+)
+def test_the_two_fractional_entry_points_name_options_alike():
+    """Both spellings are valid layer options, so no guard can catch the mix-up.
+
+    `mgfDerivative_fractional(..., integer_method="bell")` reaches the kernel
+    with `integer_method="symbolic"`, the default. The value is discarded
+    because the parameter is spelled `integerDeriv_method` here, and
+    `integer_method` is a perfectly good name elsewhere in the layer -- so it
+    passes the unknown-option guard and lands in `**kwargs`, where nothing
+    reads it.
+    """
+    import inspect
+
+    from jumufraktiv.derivativeDispatch import (
+        mgfDerivative,
+        mgfDerivative_fractional,
+    )
+
+    unified = set(inspect.signature(mgfDerivative).parameters)
+    fractional = set(inspect.signature(mgfDerivative_fractional).parameters)
+
+    assert "integer_method" in unified and "integer_method" in fractional
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="PR 12: since PR 6c made the direct-expectation route the default "
+    "for numeric evaluation, every tuning option is inert under method='auto' "
+    "-- expectationDeriv has no tuning parameters at all",
+)
+def test_tol_reaches_the_kernel_on_the_default_path(gamma_prior):
+    """`tol` is documented as tuning the fixed-grid kernel. By default it is not.
+
+    Measured for a Gamma(2, 3) prior at order 1.5, t = -1:
+
+    ==================  =====================
+    call                log of the derivative
+    ==================  =====================
+    auto, tol=1e-14     -1.4538320842478814
+    auto, tol=1e-1      -1.4538320842478814
+    scipy, tol=1e-14    -1.4538320842363235
+    scipy, tol=1e-1     -1.4542925617536986
+    ==================  =====================
+
+    So the option is real -- it moves the answer by 4.6e-4 through `scipy` --
+    and simply unreachable through `auto`, which routes to the expectation
+    integral instead. The same holds for `dps`, `use_tan`, `cgf_method`,
+    `symbolic_timeout` and `integer_method`.
+
+    Not a defect in the expectation route, which is more accurate and faster;
+    a defect in an interface that accepts options the chosen route cannot use.
+    """
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    loose = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-1)
+    tight = mgfDerivative(1.5, gamma_prior, method="auto", t=-1.0, log=True, tol=1e-14)
+
+    assert loose[0] != tight[0]
+
+
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,

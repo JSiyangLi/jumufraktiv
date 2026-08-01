@@ -46,6 +46,7 @@ Functions:
     - mgfDerivative(order, prior, method='auto', t=None, ...)
 """
 
+import difflib
 import math
 import warnings
 
@@ -58,6 +59,74 @@ from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
 from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
 from jumufraktiv.symbols import t as t_sym  # <-- import canonical u
 from jumufraktiv.symbols import u as u_sym
+
+#: Tuning options the derivative layer understands, and which backend consumes
+#: each. This is the authoritative list: :data:`MGFDerivative_class.
+#: DERIVATIVE_KWARGS` is built from it rather than restated, so the constructor
+#: and the ``mgfDerivative*`` functions cannot disagree about what a valid
+#: option is.
+#:
+#: They used to disagree, and in the direction that hides mistakes. The
+#: constructor rejects an unknown keyword argument with a ``TypeError`` and a
+#: "did you mean" suggestion (PR 3b), while the functions accepted anything and
+#: filtered it away just before the call -- so ``epsrel=1e-14`` raised through
+#: one public entry point and was silently ignored through the other, and so
+#: was a plain misspelling like ``epsrell``.
+BACKEND_OPTIONS = {
+    "tol": "the fixed-grid and mpmath fractional kernels",
+    "dps": "the mpmath fractional kernel",
+    "use_tan": "the mpmath fractional kernel",
+    "cgf_method": "the Bell integer backend",
+    "symbolic_timeout": "the Bell integer backend",
+    "timeout_seconds": "the symbolic fractional backend",
+}
+
+#: Every option name the derivative layer accepts, including the named
+#: parameters of :func:`mgfDerivative` itself that a caller may reasonably set.
+DERIVATIVE_OPTIONS = frozenset(BACKEND_OPTIONS) | {"integer_method", "int_tol"}
+
+
+def _reject_unknown_options(kwargs, function_name):
+    """Raise ``TypeError`` for any keyword argument no backend consumes.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Leftover keyword arguments, after the caller's named parameters bind.
+    function_name : str
+        Name to quote in the message, so the caller knows which call to fix.
+
+    Raises
+    ------
+    TypeError
+        Naming each unrecognised option, what the layer does accept, and a
+        close match where one exists.
+
+    Notes
+    -----
+    Only names that reach *no* backend are refused here. A name that some
+    backend understands but the selected one does not -- ``dps`` under
+    ``method="scipy"``, say -- is still accepted and dropped. That is a
+    narrower defect with a real design question behind it (reject, warn, or
+    honour by switching backends?), it predates this guard, and PR 12 owns it;
+    see "Known-broken" in :file:`CLAUDE.md`.
+    """
+    unknown = sorted(set(kwargs) - DERIVATIVE_OPTIONS)
+    if not unknown:
+        return
+
+    parts = []
+    for name in unknown:
+        close = difflib.get_close_matches(name, sorted(DERIVATIVE_OPTIONS), n=1)
+        parts.append(f"'{name}'" + (f" (did you mean '{close[0]}'?)" if close else ""))
+
+    raise TypeError(
+        f"{function_name}() got unexpected keyword argument(s): "
+        + ", ".join(parts)
+        + ". Options the derivative layer accepts: "
+        + ", ".join(sorted(DERIVATIVE_OPTIONS))
+        + "."
+    )
 
 
 def mgfDerivative_integer(
@@ -378,9 +447,10 @@ def mgfDerivative_fractional(
         If array‑like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
-        For `'scipy'`: `tol`.
-        For `'mpmath'`: `dps`, `tol`, `use_tan`.
-        For `'symbolic'`: `timeout_seconds`.
+        Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
+        `TypeError` naming it. For `'scipy'`: `tol`. For `'mpmath'`: `dps`,
+        `tol`, `use_tan`. A name valid for a backend other than the one
+        selected is accepted and ignored — see `BACKEND_OPTIONS`.
 
     Returns
     -------
@@ -416,6 +486,8 @@ def mgfDerivative_fractional(
     >>> # Symbolic fractional derivative (warning: slow)
     >>> expr = mgfDerivative_fractional(1.5, prior, method='symbolic')
     """
+    _reject_unknown_options(kwargs, "mgfDerivative_fractional")
+
     # ---- Symbolic path ----
     if method.lower() == "symbolic":
         warnings.warn(
@@ -847,8 +919,9 @@ def mgfDerivative(
         If array‑like, it is broadcast with `t` to form a batch of evaluation
         points `(t, u)`.
     **kwargs : additional keyword arguments passed to the underlying backend.
-        For integer methods: `symbolic_timeout`, `cgf_method`.
-        For fractional methods: `epsabs`, `epsrel`, `limit`, `dps`, `tol`, etc.
+        Only the names in `BACKEND_OPTIONS` are accepted; anything else raises
+        `TypeError`. For integer methods: `symbolic_timeout`, `cgf_method`.
+        For fractional methods: `tol`, and `dps` / `use_tan` for `'mpmath'`.
 
     Returns
     -------
@@ -900,6 +973,10 @@ def mgfDerivative(
     >>> log_abs, sign = mgfDerivative(orders, prior, method='auto', t=-2.0, log=True)
     # Returns arrays of shape (2, 2), not (4,)
     """
+    # Before anything else, so a misspelled option is refused whether the order
+    # is scalar or array-valued, and whether the request ends up symbolic.
+    _reject_unknown_options(kwargs, "mgfDerivative")
+
     # ---- Dispatch for array-like order ----
     if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to

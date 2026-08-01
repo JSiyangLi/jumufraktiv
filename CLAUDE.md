@@ -557,7 +557,7 @@ PRs touching the same files for different reasons. Where it lands:
 | 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** — **done**; re-measured at 1,236 lines and 287 of 329, leaving 17 runtime prints to convert |
 | 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** — **done**; 454 lines at the transitive fixed point, plus a 704-line superseded kernel |
 | `to_prior_object`'s numeric route and the two broad `except Exception` clauses that fabricate finite numbers | **PR 6** |
-| `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12** — `use_loop` is moot: it selected a scalar loop inside the adaptive scipy kernel PR 8 deleted. `return_log` still stands |
+| `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12** — `use_loop` is moot: it selected a scalar loop inside the adaptive scipy kernel PR 8 deleted. `return_log` still stands, joined by the wrong-backend option case below |
 | Tests that pass against the defect they were written for | **PR 6** |
 | `pytest -n 4 --dist loadfile` (2.22×) as a documented opt-in | **PR 13**, with the other developer commands |
 | `CHANGELOG.md` has had no entry since PR 4a, leaving 4b, 4c, 4d and 12a unrecorded | **PR 13**, as a catch-up pass |
@@ -647,6 +647,54 @@ where noted as "no runtime repro".
   the deferred "replace `(log_abs, sign)` with a small result type" decision
   rather than a numerical repair. Recorded here so the two are not confused.
   *(deferred — see "Deferred decisions")*
+- **Every tuning option is inert on the default path, and `tol` is the one
+  that shows it.** Since PR 6c made the direct-expectation route the default
+  for numeric evaluation, `method="auto"` with a concrete `t` calls
+  `expectationDeriv`, which has **no tuning parameters at all**. So `tol`,
+  `dps`, `use_tan`, `cgf_method`, `symbolic_timeout` and `integer_method` are
+  accepted and discarded. Measured for Gamma(2, 3) at order 1.5, `t = −1`:
+
+  | call | log of the derivative |
+  |------|----------------------|
+  | `auto`, `tol=1e-14` | −1.4538320842478814 |
+  | `auto`, `tol=1e-1` | −1.4538320842478814 |
+  | `scipy`, `tol=1e-14` | −1.4538320842363235 |
+  | `scipy`, `tol=1e-1` | −1.4542925617536986 |
+
+  The option is real — it moves the answer by 4.6e−4 through `scipy` — and
+  simply unreachable through `auto`. This is not a defect in the expectation
+  route, which is more accurate and 5–8× faster; it is a defect in an
+  interface that accepts options the chosen route cannot use. The honest
+  resolutions are to refuse them, to warn, or to let a tuning option select a
+  route that can honour it. *(PR 12)*
+
+- **The two public fractional entry points name the same option differently.**
+  `mgfDerivative` calls it `integer_method`; `mgfDerivative_fractional` calls
+  it `integerDeriv_method`. Passing the sibling's spelling is accepted and
+  dropped, and **no unknown-option guard can catch it**, because both names are
+  valid somewhere in the layer. Measured:
+  `mgfDerivative_fractional(1.5, prior, method="scipy", t=−1, integer_method="bell")`
+  reaches the kernel with `integer_method="symbolic"`, the default. *(PR 12)*
+
+- **`post_predictive` does not validate its keyword arguments**, though the
+  constructor one call away does. `MGFDerivative(..., likelihood="weibull",
+  rh=2.0)` raises `TypeError: ... did you mean 'rho'?`; the same typo in
+  `post.post_predictive([2.0], rh=9.0)` returns `−1.1053356325054668`, exactly
+  the default's value, where `rho=9.0` gives `−14.108023936618837`. **A
+  misspelling costs 13.003 nats, silently.** PR 12a repaired the neighbouring
+  half — `post_predictive` used to ignore the parameters stored at
+  construction — by fixing `_likelihood_arguments`; the validation was not
+  carried across. *(PR 12)*
+
+  The three above share a shape, and it is the one PR 8 kept meeting: **a check
+  that exists in one place and not in the neighbouring one.** The constructor
+  has rejected unknown options since PR 3b, with a "did you mean" suggestion,
+  and the `mgfDerivative*` functions never did — so for the whole audit the
+  same name raised through one door and vanished through the other. PR 8 closed
+  that particular gap: names reaching **no** backend, misspellings included,
+  now raise from all three entry layers, and the constructor's list of valid
+  names is the dispatcher's object rather than a second copy of it. What
+  remains above is a genuine interface decision rather than an oversight.
 - **The Pareto prior's numeric incomplete MGF returns NaN at every argument,
   and its JAX twin raises.** `pareto_imgf` and `pareto_logimgf` call SciPy's
   `gammaincc(a, z)` with `a = −α < 0`, which is outside its domain, so both
