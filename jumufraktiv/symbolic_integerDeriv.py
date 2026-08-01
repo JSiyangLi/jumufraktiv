@@ -22,6 +22,7 @@ The module uses the canonical symbol `t` from `jumufraktiv.symbols`.
 
 import numpy as np
 import sympy as sp
+
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.symbols import t  # only t is needed for differentiation

@@ -351,8 +351,16 @@ statistics alongside `ready*` for aggregated ones). Anglicising the internals
 while keeping the package name is planned for a later wave; until then, follow
 the existing convention rather than mixing a third one in.
 
-**Diagnostics.** Library code should use `logging` and `warnings`, not `print`.
-A large amount of existing code still prints; do not add more.
+**Diagnostics.** Library code uses `logging` and `warnings`, never `print`.
+This is now enforced — `tests/test_diagnostics_policy.py` fails the build on a
+`print` call anywhere under `jumufraktiv/`, and on an `if __name__ ==
+"__main__":` block, which is where 287 of the old 329 prints lived.
+
+Which of the two to reach for: `warnings.warn` when the *caller's result* is
+affected and they may need to act, `logger.debug` when you are recording which
+branch the library took. Always pass `stacklevel=2` to `warnings.warn`, so the
+warning names the caller's line rather than the library's — the caller's line
+is the only one they can do anything about.
 
 **Errors.** Catch narrowly. Never let a broad `except` turn a real failure into
 a warning or a silently wrong number — the registry once dropped half its
@@ -439,6 +447,8 @@ number cannot tell a refactor from a regression.
 | `test_batch_evaluation.py` | array evaluation points vs. the closed form, and independence from the caller's warning filter |
 | `test_array_order.py` | array-valued derivative orders: closed form, shape, symbolic `t`, and the parity cases |
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
+| `test_no_unreachable_code.py` | that no module-level function is unreachable |
+| `test_diagnostics_policy.py` | no `print`, and no `__main__` block, in library code |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
 Each test asserts the *correct* behaviour and is marked `xfail(strict=True)`,
@@ -450,9 +460,21 @@ expect a red build and remove the marker; do not weaken the assertion.
 **Lint debt.** `pyproject.toml` carries an itemised `per-file-ignores` baseline
 for the pre-audit library code — one entry per rule, each annotated with the PR
 that removes it. It is a shrinking list, not a blanket suppression. `tests/`
-has no exemptions. `F821` (undefined-name) and `F811` (redefined-while-unused)
-are deliberately left blocking wherever possible, because they found real
-defects rather than style issues.
+has no exemptions.
+
+PR 8 removed thirteen rules (`E402`, `E713`, `E731`, `F401`, `F541`, `I001`,
+`B028`, `B904` and the five `SIM` codes), plus `RUF059` and `W292`, which its
+deletions happened to clear. **`F821` and `F811` now have no exemptions at
+all**, package-wide or per-file, which is the state they were always meant to
+reach: they are blocking because they find defects rather than style issues,
+and an exemption for them is a contradiction carried on sufferance.
+
+What remains is fourteen rules, and the split is worth knowing: eleven are
+cosmetic and belong to the documentation waves (`E501`, the three `RUF00x`
+ambiguous-unicode codes, `W291`, `W293`, and the four `UP` annotation codes),
+while three sit on real work — `B007` and `B905` on the vectorisation PR, and a
+single `F841` that is not a lint issue at all but the visible end of the Pareto
+incomplete-MGF defect recorded under "Known-broken".
 
 `ruff format` currently runs over `tests/` only. Reformatting 13k lines of
 library code would bury the audit's real diffs; that lands as its own PR in
@@ -477,12 +499,12 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 1 | 4c | Array-valued derivative orders | **merged** |
 | 1 | 4d | Symbolic fractional backend | **merged** |
 | 1 | 12a | Posterior predictive's known parameters; the inert `torch` extra | **merged** |
-| 2 | 5 | Symbolic-path correctness | **in review** |
+| 2 | 5 | Symbolic-path correctness | **merged** |
 | 2 | 6a | Domain guards; the three unusable posterior methods; `logminus` | **merged** |
 | 2 | 6b | The fixed-grid quadrature kernel | **merged** |
-| 2 | 6c | mpmath precision, the expectation route, sequential update | **in review** |
+| 2 | 6c | mpmath precision, the expectation route, sequential update | **merged** |
 | 3 | 7 | De-duplicate `like_stats` | **merged** |
-| 3 | 8 | Module layout, dead code, and the diagnostics policy | planned |
+| 3 | 8 | Module layout, dead code, and the diagnostics policy | **in review** |
 | 4 | 9 | Vectorisation | planned |
 | 4 | 10 | Caching and dispatch | **merged** |
 | 5 | 12 | Public API surface (less what 12a already took) | planned |
@@ -504,10 +526,13 @@ change numbers that currently look right?", and the three answer it differently.
   splitting further would mean shipping a half-replaced kernel. This is the
   only one of the three that moves existing numbers, which is why it goes
   second: any surprise is then attributable.
-- **6c** covers what cannot be computed away and must instead become loud —
-  mpmath's `dps` floor and the alternating-CGF cancellation — plus sequential
-  updating for numeric backends, which is a missing capability rather than a
-  numerical defect but has no better home.
+- **6c** was scoped as "what cannot be computed away and must instead become
+  loud", and that framing turned out to be wrong about both halves. mpmath's
+  `dps` floor was a symmetric integration range and a float64 integrand, not a
+  limit of the method; the alternating-CGF cancellation is removed outright by
+  computing `E[θᵃe^{tθ}]` directly, whose integrand is positive. What shipped
+  is therefore two repairs and one new capability — sequential updating for
+  numeric backends — rather than three warnings.
 
 **PR 12a is in wave 1 rather than wave 5 because it is a reachability repair,
 not an interface decision.** The rest of PR 12 settles questions of taste —
@@ -529,10 +554,10 @@ PRs touching the same files for different reasons. Where it lands:
 | `sp.diff` recomputed ~96,000 times per quick pass; a cache removes it | **PR 10** — **done**; re-measured at 97,308 calls for 40 distinct keys, 155 s |
 | 2-D input silently accepted by 4 of 14 `ready*`, halving the derivative order; no test covers it | **PR 7**, as a commit *before* the de-duplication — **done** |
 | ~900 lines of byte-identical `_extract_1d` / `_is_1d_dataframe` across the 14 modules | **PR 7** — **done**, 758 lines removed |
-| 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8**, which now carries the diagnostics policy too |
-| 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** |
+| 1,293 lines of `__main__` demo blocks holding 282 of the library's 326 `print` calls | **PR 8** — **done**; re-measured at 1,236 lines and 287 of 329, leaving 17 runtime prints to convert |
+| 366 lines of never-referenced functions, including 13 stale `*_symbolic` wrappers | **PR 8** — **done**; 454 lines at the transitive fixed point, plus a 704-line superseded kernel |
 | `to_prior_object`'s numeric route and the two broad `except Exception` clauses that fabricate finite numbers | **PR 6** |
-| `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12**, public API surface |
+| `use_loop` rejected by the constructor though it is a real backend option; `return_log` must be reserved | **PR 12** — `use_loop` is moot: it selected a scalar loop inside the adaptive scipy kernel PR 8 deleted. `return_log` still stands |
 | Tests that pass against the defect they were written for | **PR 6** |
 | `pytest -n 4 --dist loadfile` (2.22×) as a documented opt-in | **PR 13**, with the other developer commands |
 | `CHANGELOG.md` has had no entry since PR 4a, leaving 4b, 4c, 4d and 12a unrecorded | **PR 13**, as a catch-up pass |
@@ -622,12 +647,26 @@ where noted as "no runtime repro".
   the deferred "replace `(log_abs, sign)` with a small result type" decision
   rather than a numerical repair. Recorded here so the two are not confused.
   *(deferred — see "Deferred decisions")*
-- **Two functions in `gammaMGF.py` misuse `logminus`** as "log minus" — a
-  difference of logs — rather than "log of a difference", making `gamma_cgf`
-  and `gamma_mgf` wrong at every argument (`gamma_cgf(-1.0) = -inf` against
-  `−0.5753641449035616`). Both are unreachable today, since `gamma_factory`
-  wires correct inline lambdas, so they go out with the dead-code sweep rather
-  than being repaired. `logminus` itself is fixed and tested. *(PR 8)*
+- **The Pareto prior's numeric incomplete MGF returns NaN at every argument,
+  and its JAX twin raises.** `pareto_imgf` and `pareto_logimgf` call SciPy's
+  `gammaincc(a, z)` with `a = −α < 0`, which is outside its domain, so both
+  return `nan` — measured at `α=3, ξ=1, t=−1, u=2`, where direct quadrature of
+  the density at 40 digits gives `0.24880390851855957`. `pareto_imgf_jax` calls
+  `jnp.gamma`, which does not exist in `jax.numpy`, so it raises
+  `AttributeError` before it can reach the same domain error.
+
+  **The symbolic route is exact**, matching that reference to 1e-16, so this is
+  a defect in the two numeric implementations rather than in the expression
+  they implement — which also means a repair should start from `imgf_sym`.
+  The consequence for a user is that `post_cdf` and `post_quantile`, which go
+  through the incomplete MGF, work for a Pareto prior only on the symbolic
+  path.
+
+  Found while clearing PR 8's lint baseline: `F841` flagged a `sign` computed
+  and discarded in `pareto_logimgf`, and the discarded sign turned out to be
+  the least of it. That one `F841` is the only reason the code remains in the
+  baseline. *(unscheduled — a numerical repair needing its own verification,
+  so it is recorded rather than folded into a module-layout PR)*
 - **The incomplete-MGF derivative is wrong, not merely small, below
   `u ≈ 1e-2`.** Measured against the exact Gamma(8, 6) posterior of the
   canonical test problem, its log comes out as `−65.17` at `u = 1e-6` where the

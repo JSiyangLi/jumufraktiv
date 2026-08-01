@@ -48,14 +48,17 @@ Functions:
 
 import math
 import warnings
-import sympy as sp
+
 import numpy as np
-from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
-from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
-from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+import sympy as sp
 
 from jumufraktiv.numeric_expectation import expectation_is_available
-from jumufraktiv.symbols import t as t_sym, u as u_sym   # <-- import canonical u
+from jumufraktiv.numeric_integerDeriv_Bell import integerDeriv_numeric_bell
+from jumufraktiv.numeric_integerDeriv_JAX import integerDeriv_numeric_jax
+from jumufraktiv.symbolic_integerDeriv import integerDeriv_symbolic
+from jumufraktiv.symbols import t as t_sym  # <-- import canonical u
+from jumufraktiv.symbols import u as u_sym
+
 
 def mgfDerivative_integer(
     order: int | sp.Expr,
@@ -417,7 +420,9 @@ def mgfDerivative_fractional(
     if method.lower() == "symbolic":
         warnings.warn(
             "Symbolic fractional derivatives can be very slow. "
-            "Consider 'scipy' or 'mpmath' instead."
+            "Consider 'scipy' or 'mpmath' instead.",
+            UserWarning,
+            stacklevel=2,
         )
         from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 
@@ -542,7 +547,9 @@ def mgfDerivative_fractional(
 
     # ---- mpmath ----
     if method.lower() == "mpmath":
-        from jumufraktiv.numeric_fractionalDeriv_mpmath import fractionalDeriv_numeric_mpmath
+        from jumufraktiv.numeric_fractionalDeriv_mpmath import (
+            fractionalDeriv_numeric_mpmath,
+        )
         return fractionalDeriv_numeric_mpmath(
             order=order,
             prior=prior,

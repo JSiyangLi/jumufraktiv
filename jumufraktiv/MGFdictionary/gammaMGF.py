@@ -38,16 +38,15 @@ difference", ``log(e^x − e^y)``. At α=2, β=3, t=−1 the pair returned
 perfectly well-formed MGF value. ``logminus`` itself was repaired in PR 6a.
 """
 
-import sympy as sp
 import jax.numpy as jnp
 import numpy as np
+import sympy as sp
 from jax.scipy.special import gammainc as jax_gammainc
+from scipy.special import gammainc
 from scipy.stats import gamma as scipy_gamma
 
-from jumufraktiv.logsum import logminus
-from jumufraktiv.registry import register_prior, make_prior_spec
-from jumufraktiv.symbols import t, theta, param, u
-
+from jumufraktiv.registry import make_prior_spec, register_prior
+from jumufraktiv.symbols import param, t, theta, u
 
 # ============================================================
 # Canonical symbolic parameters (shared system)
@@ -82,8 +81,6 @@ def gamma_imgf_symbolic(u_sym):
 
 
 # ---- Numeric (SciPy) ----
-
-from scipy.special import gammainc
 
 def gamma_imgf(t_val, alpha_val, beta_val, u_val):
     """

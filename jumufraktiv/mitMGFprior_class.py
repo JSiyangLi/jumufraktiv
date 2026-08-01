@@ -35,18 +35,15 @@ Examples
 >>> prior.as_mitMGFprior()
 """
 
-import math
-import numpy as np
-import jax
-import jax.numpy as jnp
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict, Any
-from jumufraktiv.registry import PRIOR_REGISTRY
+from typing import Any, Callable, Dict, Optional
+
+import jax.numpy as jnp
+import numpy as np
 import sympy as sp
 
-from jumufraktiv.registry import get_prior
+from jumufraktiv.registry import PRIOR_REGISTRY, get_prior
 from jumufraktiv.symbols import t, theta
-
 
 # ============================================================
 # Core container
@@ -483,7 +480,4 @@ class mitMGFprior:
             "imgf_jax", "logimgf_jax",
             "imgf_sym", "logimgf_sym"
         ]
-        for attr in required_attrs:
-            if getattr(self, attr, None) is None:
-                return False
-        return True
+        return all(getattr(self, attr, None) is not None for attr in required_attrs)

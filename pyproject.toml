@@ -168,31 +168,28 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # below is owned by a scheduled PR, and that PR deletes its entries. New code
 # is held to the full rule set, and `tests/` carries no exemptions at all.
 #
-# Deliberately NOT exempted, so they stay blocking everywhere: F821
-# (undefined-name) and F811 (redefined-while-unused). Those found real defects
-# rather than style issues. The stray `from unittest import result` they flagged
-# is gone (PR 3b); what remains under the two exemptions below is post_cdf's
-# undefined `t_sym`/`u_sym` and two method parameters shadowing canonical
-# symbols, both fixed in PR 5.
+# PR 8 removed thirteen codes -- E402, E713, E731, F401, F541, I001, B028,
+# B904 and the five SIM codes -- along with RUF059 and W292, which its
+# deletions happened to clear. All three per-file exemptions went too, one of
+# them for a module that no longer exists.
+#
+# F821 (undefined-name) and F811 (redefined-while-unused) were never exempted
+# package-wide, because they find defects rather than style. As of PR 8 they
+# have no per-file exemptions either, so both block everywhere.
 # ---------------------------------------------------------------------------
 "jumufraktiv/**" = [
-    "E402",   # module-import-not-at-top-of-file       -> PR 8  (module layout)
     "E501",   # line-too-long                          -> PR 14 (docstring sweep)
-    "E713",   # not-in-test                            -> PR 8
-    "E731",   # lambda-assignment                      -> PR 8
-    "F401",   # unused-import                          -> PR 8
-    "F541",   # f-string-missing-placeholders          -> PR 8  (diagnostics)
-    "F841",   # unused-variable                        -> PR 5  (correctness)
-    "I001",   # unsorted-imports                       -> PR 8
+    # The one remaining F841 is `pareto_logimgf`'s discarded `sign`, inside a
+    # function that returns NaN at every argument. Recorded under
+    # "Known-broken" in CLAUDE.md; unscheduled, because it is a numerical
+    # repair rather than a lint fix.
+    "F841",   # unused-variable                        -> unscheduled
     "B007",   # unused-loop-control-variable           -> PR 9  (vectorisation)
-    "B028",   # no-explicit-stacklevel                 -> PR 8
-    "B904",   # raise-without-from-inside-except       -> PR 8  (error handling)
     "B905",   # zip-without-explicit-strict            -> PR 9
-    "SIM102", # collapsible-if                         -> PR 8
-    "SIM108", # if-else-block-instead-of-if-exp        -> PR 8
-    "SIM110", # reimplemented-builtin                  -> PR 8
-    "SIM114", # if-with-same-arms                      -> PR 8
-    "SIM300", # yoda-conditions                        -> PR 8
+    # Both RUF046 instances are an `int(...)` around an already-integral
+    # expression, in the vectorised paths PR 9 rewrites. Moved from PR 4,
+    # which merged without reaching them.
+    "RUF046", # unnecessary-cast-to-int                -> PR 9
     "UP006",  # non-pep585-annotation                  -> PR 12 (API surface)
     "UP007",  # non-pep604-annotation-union            -> PR 12
     "UP035",  # deprecated-import                      -> PR 12
@@ -200,18 +197,6 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
     "RUF001", # ambiguous-unicode-character-string     -> PR 14
     "RUF002", # ambiguous-unicode-character-docstring  -> PR 14
     "RUF003", # ambiguous-unicode-character-comment    -> PR 14
-    "RUF046", # unnecessary-cast-to-int                -> PR 4  (fractional path)
-    "RUF059", # unused-unpacked-variable               -> PR 5
     "W291",   # trailing-whitespace                    -> PR 14
-    "W292",   # missing-newline-at-end-of-file         -> PR 14
     "W293",   # whitespace-on-blank-line               -> PR 14
 ]
-# These two files carry the F821/F811 defects described above. The exemption is
-# removed by PR 5 together with the underlying bugs.
-"jumufraktiv/MGFDerivative_class.py" = ["F811", "F821"]
-"jumufraktiv/numeric_fractionalDeriv_interpolation.py" = ["F811", "F821"]
-# A redundant re-import of a name already bound at module level. Harmless today
-# (both bind the same object); removed by PR 8 with the rest of the import
-# cleanup. The matching entry for mitMGFprior_class.py was retired in PR 3,
-# which removed that module's duplicate import as part of the registry fix.
-"jumufraktiv/MGFdictionary/gammaMGF.py" = ["F811"]

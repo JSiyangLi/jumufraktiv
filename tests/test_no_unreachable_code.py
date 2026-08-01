@@ -13,8 +13,8 @@ tell, because no test could reach the wrapper.
 
 **A duplicate that had.** ``gamma_cgf`` and ``gamma_mgf`` used ``logminus`` as
 though it meant "log minus" rather than "log of a difference", and returned
-``-inf`` and ``0.0`` at α=2, β=3, t=−1 where the true values are −0.575 and
-0.5625. ``gamma_factory`` wires correct inline lambdas, so the package never
+``-inf`` and ``0.0`` at alpha=2, beta=3, t=-1 where the true values are
+-0.575 and 0.5625. ``gamma_factory`` wires correct inline lambdas, so the package never
 called them -- but ``from ...gammaMGF import gamma_mgf`` was an import away,
 and the module's own docstring advertised exactly that import, in an example
 whose printed value was also wrong and whose call signature would have raised.

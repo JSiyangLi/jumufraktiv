@@ -16,7 +16,6 @@ Functions:
     - make_prior_spec : helper to create a standard prior specification dict.
 """
 
-import warnings
 
 PRIOR_REGISTRY = {}
 _LOADED = False
@@ -90,7 +89,7 @@ def initialize():
     # Deliberately not wrapped in try/except. A failure here means the
     # subpackage itself is broken or absent, which no caller can work around
     # and which must not be mistaken for "this prior does not exist".
-    import jumufraktiv.MGFdictionary
+    import jumufraktiv.MGFdictionary  # noqa: F401  (imported for its side effect)
 
     _LOADED = True
 

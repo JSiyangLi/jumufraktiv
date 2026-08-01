@@ -16,13 +16,16 @@ All arithmetic is performed with the precision specified by mp.dps.
 """
 import math
 import warnings
+
 import numpy as np
-from mpmath import mp, pi, exp, log, tan, gamma, quad, mpf
 import sympy as sp
+from mpmath import exp, gamma, log, mp, mpf, pi, quad, tan
+
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_cache import cached_diff
-from jumufraktiv.symbols import t as _t_sym, u as _u_sym
+from jumufraktiv.symbols import t as _t_sym
+from jumufraktiv.symbols import u as _u_sym
 
 
 def fractionalDeriv_numeric_mpmath_tan(

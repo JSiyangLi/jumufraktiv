@@ -9,21 +9,25 @@ or exceeds a user‑specified timeout.
 
 import logging
 import math
-import time
-import numpy as np
 import sys
-import sympy as sp
-import scipy.special as sc
+import time
+
 import jax
-jax.config.update("jax_enable_x64", True)
+import jax.numpy as jnp
+import numpy as np
+import sympy as sp
 from jax import grad
 from jax.experimental import jet
-import jax.numpy as jnp
 
-from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.logsum import logminus
-from jumufraktiv.symbolic_cache import cached_diff
+from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
+from jumufraktiv.symbolic_cache import cached_diff
+
+# Must run before any JAX array is created, not before JAX is imported, so it
+# belongs below the imports rather than wedged among them -- where it was, and
+# where it broke the import block into two halves that no formatter could sort.
+jax.config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +296,8 @@ def integerDeriv_numeric_bell(
         if prior.logimgf_jax is not None:
             cgf_func = prior.logimgf_jax
         elif prior.imgf_jax is not None:
-            cgf_func = lambda t_val, u_val: jnp.log(prior.imgf_jax(t_val, u_val))
+            def cgf_func(t_val, u_val):
+                return jnp.log(prior.imgf_jax(t_val, u_val))
         else:
             raise ValueError("Prior does not provide imgf_jax or logimgf_jax for iMGF.")
 
@@ -435,7 +440,8 @@ def integerDeriv_numeric_bell(
             u_vals = jnp.asarray(u_flat)
             # Scalar cumulants for incomplete MGF (bind u)
             def scalar_cumulants(t_val, u_val):
-                unary = lambda x: cgf_func(x, u_val)
+                def unary(x):
+                    return cgf_func(x, u_val)
                 log_abs, sign = _cgf_derivatives_jax_scalar(
                     unary, t_val, order, cgf_mode
                 )

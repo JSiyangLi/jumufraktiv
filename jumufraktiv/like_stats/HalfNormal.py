@@ -18,11 +18,12 @@ For a sample of size n:
     log_c = n/2 * (log(2) - log(π))
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d
 

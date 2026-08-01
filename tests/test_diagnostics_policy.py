@@ -68,7 +68,9 @@ def test_no_library_module_has_a_main_block():
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
         for node in ast.parse(path.read_text()).body:
             if isinstance(node, ast.If) and "__main__" in ast.dump(node.test):
-                offenders.append(f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno}")
+                offenders.append(
+                    f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno}"
+                )
 
     assert not offenders, (
         "`if __name__ == '__main__':` blocks are not library code and no test "
@@ -92,7 +94,8 @@ def test_the_scan_sees_a_print_that_is_really_there():
 
 def test_a_docstring_example_is_not_counted_as_a_print():
     """The other direction: `>>> print(x)` must not trip the guard."""
-    docstring_only = ast.parse('def f():\n    """Example.\n\n    >>> print(1)\n    """\n')
+    source = 'def f():\n    """Example.\n\n    >>> print(1)\n    """\n'
+    docstring_only = ast.parse(source)
     found = [
         node
         for node in ast.walk(docstring_only)

@@ -12,14 +12,13 @@ This prior is improper (integral diverges), but the MGF exists for t < 0.
 """
 
 import math
-import sympy as sp
+
 import jax.numpy as jnp
-import scipy.stats as stats
 import numpy as np
+import sympy as sp
 
-from jumufraktiv.registry import register_prior, make_prior_spec
-from jumufraktiv.symbols import t, theta, param
-
+from jumufraktiv.registry import make_prior_spec, register_prior
+from jumufraktiv.symbols import param, t, theta
 
 # ============================================================
 # Canonical symbolic parameters

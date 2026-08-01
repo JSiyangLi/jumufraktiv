@@ -90,7 +90,9 @@ def test_both_public_entry_points_use_this_kernel(order, t, previous_error):
     exact = gamma_mgf_derivative_log(order, t)
 
     log_a, sign_a = mgfDerivative(order, prior, method="scipy", t=t, log=True)
-    log_b, sign_b = mgfDerivative_fractional(order, prior, method="scipy", t=t, log=True)
+    log_b, sign_b = mgfDerivative_fractional(
+        order, prior, method="scipy", t=t, log=True
+    )
 
     a = float(np.ravel(log_a)[0])
     b = float(np.ravel(log_b)[0])

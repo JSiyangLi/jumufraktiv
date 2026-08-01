@@ -132,6 +132,75 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 
 
 # ==========================================================================
+# Unscheduled — the Pareto prior's numeric incomplete MGF
+# ==========================================================================
+# Found while clearing PR 8's lint baseline. `F841` flagged a `sign` computed
+# and discarded in `pareto_logimgf`; the discarded sign turned out to be the
+# least of it. Both numeric routes are unusable and the two fail differently,
+# while the symbolic route is exact -- so this is a defect in the numeric
+# implementations, not in the mathematics.
+#
+# It is recorded rather than repaired because it is a numerical fix needing its
+# own verification, and PR 8 is a module-layout and dead-code pass. No PR owns
+# it yet; see "Known-broken" in CLAUDE.md.
+def _pareto_prior():
+    from jumufraktiv import registry
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    registry.initialize()
+    return mitMGFprior.from_registry("pareto", params={"alpha": 3.0, "xi": 1.0})
+
+
+#: E[e^{tX} 1{X <= u}] for Pareto(alpha=3, xi=1) at t=-1, u=2, by direct
+#: quadrature of the density at 40 digits -- independent of the package.
+PARETO_IMGF_AT_MINUS_ONE = 0.24880390851855957
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="unscheduled: pareto_imgf calls scipy's gammaincc(a, z) with "
+    "a = -alpha < 0, which is outside its domain, so it returns NaN at every "
+    "argument",
+)
+def test_pareto_numeric_incomplete_mgf_is_finite():
+    value = _pareto_prior().imgf(-1.0, 2.0)
+
+    assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AttributeError,
+    reason="unscheduled: pareto_imgf_jax calls jnp.gamma, which does not "
+    "exist in jax.numpy, so it raises before reaching the gammaincc domain "
+    "error its scipy twin hits",
+)
+def test_pareto_jax_incomplete_mgf_is_finite():
+    value = float(_pareto_prior().imgf_jax(-1.0, 2.0))
+
+    assert value == pytest.approx(PARETO_IMGF_AT_MINUS_ONE, rel=1e-10)
+
+
+def test_pareto_symbolic_incomplete_mgf_is_correct():
+    """Not broken -- asserted here to bound the defect above.
+
+    The symbolic incomplete MGF is exact, so the two failures are in the
+    numeric implementations rather than in the expression they implement.
+    Without this, "the Pareto incomplete MGF is broken" would be too broad a
+    claim, and a repair might start from the wrong end.
+    """
+    from jumufraktiv.symbols import t as t_sym
+    from jumufraktiv.symbols import u as u_sym
+
+    expr = _pareto_prior().imgf_sym.subs({t_sym: -1.0, u_sym: 2.0})
+
+    assert float(sp.re(sp.N(expr))) == pytest.approx(
+        PARETO_IMGF_AT_MINUS_ONE, rel=1e-10
+    )
+
+
+# ==========================================================================
 # PR 12 — public API surface
 # ==========================================================================
 @pytest.mark.xfail(

@@ -21,11 +21,11 @@ For a sample of size n:
 If α is a scalar, it is recycled. If α is a vector, it must have length n.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 from scipy.special import gammaln
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
@@ -79,12 +79,9 @@ def readyInverseGamma(
     elif isinstance(shape, (int, float)):
         shape_vals = _extract_1d(np.full(n, float(shape)), "shape")
     else:
-        try:
-            shape_vals = _extract_1d(shape, "shape")
-            if len(shape_vals) != n:
-                raise ValueError("shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        shape_vals = _extract_1d(shape, "shape")
+        if len(shape_vals) != n:
+            raise ValueError("shape must have same length as data or be scalar")
 
     # ---- Positivity checks ----
     if np.any(shape_vals <= 0):
@@ -141,12 +138,9 @@ def bereitInverseGamma(
     elif isinstance(shape, (int, float)):
         shape_vals = _extract_1d(np.full(n, float(shape)), "shape")
     else:
-        try:
-            shape_vals = _extract_1d(shape, "shape")
-            if len(shape_vals) != n:
-                raise ValueError("shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        shape_vals = _extract_1d(shape, "shape")
+        if len(shape_vals) != n:
+            raise ValueError("shape must have same length as data or be scalar")
 
     # ---- Positivity checks ----
     if np.any(shape_vals <= 0):

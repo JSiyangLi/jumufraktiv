@@ -21,11 +21,12 @@ For a sample of size n:
 If μ is a scalar, it is recycled. If μ is a vector, it must have length n.
 """
 
-import pandas as pd
-import numpy as np
 import math
+from typing import Dict, Union
+
+import numpy as np
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -79,12 +80,9 @@ def readyLevy(
     elif isinstance(location, (int, float)):
         loc_vals = _extract_1d(np.full(n, float(location)), "location")
     else:
-        try:
-            loc_vals = _extract_1d(location, "location")
-            if len(loc_vals) != n:
-                raise ValueError("location must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("location must be a numeric scalar or 1‑dimensional array/DataFrame")
+        loc_vals = _extract_1d(location, "location")
+        if len(loc_vals) != n:
+            raise ValueError("location must have same length as data or be scalar")
 
     # ---- 3. Check support ----
     diff = data_vals - loc_vals
@@ -142,12 +140,9 @@ def bereitLevy(
     elif isinstance(location, (int, float)):
         loc_vals = _extract_1d(np.full(n, float(location)), "location")
     else:
-        try:
-            loc_vals = _extract_1d(location, "location")
-            if len(loc_vals) != n:
-                raise ValueError("location must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("location must be a numeric scalar or 1‑dimensional array/DataFrame")
+        loc_vals = _extract_1d(location, "location")
+        if len(loc_vals) != n:
+            raise ValueError("location must have same length as data or be scalar")
 
     # ---- Check support ----
     diff = data_vals - loc_vals

@@ -17,9 +17,9 @@ Dispatcher:
 
 import logging
 
-import numpy as np
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 logger = logging.getLogger(__name__)
 jax.config.update("jax_enable_x64", True)
@@ -447,13 +447,13 @@ def solve_root(
     ]
     # Filter out methods requiring df if df is None
     if df is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
     # Filter out methods requiring brackets if brackets are missing
     if lower is None or upper is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "bisection-jax", "bisectioned-newton-np", "bisection-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "bisection-jax", "bisectioned-newton-np", "bisection-np")]
     # Filter out methods requiring x0 if x0 is None (Newton methods)
     if x0 is None:
-        methods = [m for m in methods if not m in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
+        methods = [m for m in methods if m not in ("bisectioned-newton-jax", "newton-jax", "bisectioned-newton-np", "newton-np")]
 
     # Try each method in order
     for method_name in methods:

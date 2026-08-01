@@ -37,10 +37,10 @@ Examples
 3.0
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
-from typing import Union, Dict
+import pandas as pd
 import sympy as sp
 from scipy.special import gammaln
 
@@ -94,12 +94,9 @@ def readyPoisson(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Check validity ----
     if np.any(scale_vals <= 0):
@@ -157,12 +154,9 @@ def bereitPoisson(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Check validity ----
     if np.any(scale_vals <= 0):

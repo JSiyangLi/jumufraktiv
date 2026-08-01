@@ -21,11 +21,11 @@ For a sample of size n:
 If β is a scalar, it is recycled. If β is a vector, it must have length n.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -79,12 +79,9 @@ def readyGompertz(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- 3. Check positivity ----
     if np.any(scale_vals <= 0):
@@ -144,12 +141,9 @@ def bereitGompertz(
     elif isinstance(scale, (int, float)):
         scale_vals = _extract_1d(np.full(n, float(scale)), "scale")
     else:
-        try:
-            scale_vals = _extract_1d(scale, "scale")
-            if len(scale_vals) != n:
-                raise ValueError("scale must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("scale must be a numeric scalar or 1‑dimensional array/DataFrame")
+        scale_vals = _extract_1d(scale, "scale")
+        if len(scale_vals) != n:
+            raise ValueError("scale must have same length as data or be scalar")
 
     # ---- Positivity checks ----
     if np.any(scale_vals <= 0):

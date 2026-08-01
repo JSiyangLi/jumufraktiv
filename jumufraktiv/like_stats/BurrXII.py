@@ -25,11 +25,11 @@ If c is a scalar, it is recycled. If c is a vector, it must have length n.
 The user-facing argument is `known_shape`, which corresponds to the known shape parameter c.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -85,12 +85,9 @@ def readyBurrXII(
     elif isinstance(known_shape, (int, float)):
         c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
-        try:
-            c_vals = _extract_1d(known_shape, "known_shape")
-            if len(c_vals) != n:
-                raise ValueError("known_shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("known_shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        c_vals = _extract_1d(known_shape, "known_shape")
+        if len(c_vals) != n:
+            raise ValueError("known_shape must have same length as data or be scalar")
 
     # ---- 3. Check positivity ----
     if np.any(c_vals <= 0):
@@ -153,12 +150,9 @@ def bereitBurrXII(
     elif isinstance(known_shape, (int, float)):
         c_vals = _extract_1d(np.full(n, float(known_shape)), "known_shape")
     else:
-        try:
-            c_vals = _extract_1d(known_shape, "known_shape")
-            if len(c_vals) != n:
-                raise ValueError("known_shape must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("known_shape must be a numeric scalar or 1‑dimensional array/DataFrame")
+        c_vals = _extract_1d(known_shape, "known_shape")
+        if len(c_vals) != n:
+            raise ValueError("known_shape must have same length as data or be scalar")
 
     # ---- Check positivity ----
     if np.any(c_vals <= 0):

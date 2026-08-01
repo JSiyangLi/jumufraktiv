@@ -22,17 +22,18 @@ Symbolic, numeric (SciPy), JAX, and optional Torch backends are supported.
 """
 
 import math
-import sympy as sp
+
+import jax.numpy as jnp
 import numpy as np
 import scipy.special as sc
 import scipy.stats as stats
+import sympy as sp
+from jax.scipy.special import gammaincc as jax_gammaincc
+from jax.scipy.special import gammaln as jax_gammaln
 from sympy.functions.special.error_functions import expint
-import jax.numpy as jnp
-from jax.scipy.special import gammaln as jax_gammaln, gammaincc as jax_gammaincc
 
-from jumufraktiv.registry import register_prior, make_prior_spec
-from jumufraktiv.symbols import t, theta, param, u
-
+from jumufraktiv.registry import make_prior_spec, register_prior
+from jumufraktiv.symbols import param, t, theta, u
 
 # ============================================================
 # Canonical symbolic parameters

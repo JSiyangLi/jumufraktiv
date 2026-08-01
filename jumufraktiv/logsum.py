@@ -1,4 +1,5 @@
 import math
+
 import numpy as np
 
 #: The crossover for `log1mexp`. Below it `log(-expm1(-d))` is the accurate

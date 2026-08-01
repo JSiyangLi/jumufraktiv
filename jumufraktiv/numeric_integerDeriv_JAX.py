@@ -19,12 +19,12 @@ Functions:
     - _integerDeriv_numeric_jax_scalar : scalar core (internal).
 """
 
+import logging
+
 import jax
 import jax.numpy as jnp
-from jax.experimental import jet
-import logging
-import math
 import numpy as np
+from jax.experimental import jet
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,8 @@ def _integerDeriv_numeric_jax_scalar(
         if prior.imgf_jax is None:
             raise ValueError("Prior does not provide a JAX-compatible incomplete MGF.")
 
-        expr = lambda t_val: prior.imgf_jax(t_val, u)
+        def expr(t_val):
+            return prior.imgf_jax(t_val, u)
 
     # ---------------------------------------------------------
     # Zeroth derivative

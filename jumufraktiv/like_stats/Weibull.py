@@ -27,11 +27,11 @@ For a sample of size n:
 If ρ is a scalar, it is recycled. If ρ is a vector, it must have length n.
 """
 
-import pandas as pd
+from typing import Dict, Union
+
 import numpy as np
-import math
+import pandas as pd
 import sympy as sp
-from typing import Union, Dict
 
 from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 
@@ -85,12 +85,9 @@ def readyWeibull(
     elif isinstance(rho, (int, float)):
         rho_vals = _extract_1d(np.full(n, float(rho)), "rho")
     else:
-        try:
-            rho_vals = _extract_1d(rho, "rho")
-            if len(rho_vals) != n:
-                raise ValueError("rho must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("rho must be a numeric scalar or 1‑dimensional array/DataFrame")
+        rho_vals = _extract_1d(rho, "rho")
+        if len(rho_vals) != n:
+            raise ValueError("rho must have same length as data or be scalar")
 
     # ---- 3. Check positivity ----
     if np.any(rho_vals <= 0):
@@ -149,12 +146,9 @@ def bereitWeibull(
     elif isinstance(rho, (int, float)):
         rho_vals = _extract_1d(np.full(n, float(rho)), "rho")
     else:
-        try:
-            rho_vals = _extract_1d(rho, "rho")
-            if len(rho_vals) != n:
-                raise ValueError("rho must have same length as data or be scalar")
-        except Exception:
-            raise ValueError("rho must be a numeric scalar or 1‑dimensional array/DataFrame")
+        rho_vals = _extract_1d(rho, "rho")
+        if len(rho_vals) != n:
+            raise ValueError("rho must have same length as data or be scalar")
 
     # ---- Check positivity ----
     if np.any(rho_vals <= 0):

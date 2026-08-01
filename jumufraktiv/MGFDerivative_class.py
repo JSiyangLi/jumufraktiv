@@ -32,44 +32,56 @@ predictive evaluation).
 import difflib
 import inspect
 import math
-import traceback
-import sympy as sp
+import warnings
+
 import numpy as np
+import sympy as sp
 
 from jumufraktiv.derivativeDispatch import (
     _check_moment_exists_at_origin,
     mgfDerivative,
     resolve_backend,
 )
-from jumufraktiv.mitMGFprior_class import mitMGFprior
-from jumufraktiv.numeric_expectation import expectation_is_available
-# `q` is deliberately absent. The moment methods take a parameter named `q`
-# that may itself be the canonical symbol -- the caller imports it and passes
-# it in -- so every `q` in this file is that parameter. Importing the symbol
-# here as well bound a module-level name nothing read, and left every moment
-# method's signature shadowing it.
-from jumufraktiv.symbols import t, theta, r, u
-from jumufraktiv.root_finding import solve_root
+from jumufraktiv.like_stats.BurrXII import bereitBurrXII, cBurrXII, readyBurrXII
+from jumufraktiv.like_stats.Dagum import bereitDagum, cDagum, readyDagum
+from jumufraktiv.like_stats.Gamma import bereitGamma, cGamma, readyGamma
+from jumufraktiv.like_stats.Gompertz import bereitGompertz, cGompertz, readyGompertz
+from jumufraktiv.like_stats.HalfNormal import (
+    bereitHalfNormal,
+    cHalfNormal,
+    readyHalfNormal,
+)
+from jumufraktiv.like_stats.InverseGamma import (
+    bereitInverseGamma,
+    cInverseGamma,
+    readyInverseGamma,
+)
+from jumufraktiv.like_stats.Laplace import bereitLaplace, cLaplace, readyLaplace
+from jumufraktiv.like_stats.Levy import bereitLevy, cLevy, readyLevy
+from jumufraktiv.like_stats.MaxwellBoltzmann import (
+    bereitMaxwellBoltzmann,
+    cMaxwellBoltzmann,
+    readyMaxwellBoltzmann,
+)
+from jumufraktiv.like_stats.Normal import bereitNormal, cNormal, readyNormal
+from jumufraktiv.like_stats.Pareto import bereitPareto, cPareto, readyPareto
 
 # ============================================================
 # Likelihood registry
 # ============================================================
 # ---- Likelihood imports ----
-from jumufraktiv.like_stats.Poisson import readyPoisson, cPoisson, bereitPoisson
-from jumufraktiv.like_stats.Gamma import readyGamma, cGamma, bereitGamma
-from jumufraktiv.like_stats.Laplace import readyLaplace, cLaplace, bereitLaplace
-from jumufraktiv.like_stats.Normal import readyNormal, cNormal, bereitNormal
-from jumufraktiv.like_stats.Rayleigh import readyRayleigh, cRayleigh, bereitRayleigh
-from jumufraktiv.like_stats.MaxwellBoltzmann import readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann
-from jumufraktiv.like_stats.InverseGamma import readyInverseGamma, cInverseGamma, bereitInverseGamma
-from jumufraktiv.like_stats.Levy import readyLevy, cLevy, bereitLevy
-from jumufraktiv.like_stats.Weibull import readyWeibull, cWeibull, bereitWeibull
-from jumufraktiv.like_stats.BurrXII import readyBurrXII, cBurrXII, bereitBurrXII
-from jumufraktiv.like_stats.Pareto import readyPareto, cPareto, bereitPareto
-from jumufraktiv.like_stats.Dagum import readyDagum, cDagum, bereitDagum
-from jumufraktiv.like_stats.Gompertz import readyGompertz, cGompertz, bereitGompertz
-from jumufraktiv.like_stats.HalfNormal import readyHalfNormal, cHalfNormal, bereitHalfNormal
+from jumufraktiv.like_stats.Poisson import bereitPoisson, cPoisson, readyPoisson
+from jumufraktiv.like_stats.Rayleigh import bereitRayleigh, cRayleigh, readyRayleigh
+from jumufraktiv.like_stats.Weibull import bereitWeibull, cWeibull, readyWeibull
+from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.root_finding import solve_root
 
+# `q` is deliberately absent. The moment methods take a parameter named `q`
+# that may itself be the canonical symbol -- the caller imports it and passes
+# it in -- so every `q` in this file is that parameter. Importing the symbol
+# here as well bound a module-level name nothing read, and left every moment
+# method's signature shadowing it.
+from jumufraktiv.symbols import r, t, theta, u
 
 # ============================================================
 # Likelihood registry
@@ -1542,14 +1554,19 @@ class MGFDerivative:
             is_array = False
 
         # ---- Warn if any high-order (not in {1,2,3,4}) ----
-        if is_array:
-            if any(qi not in (1, 2, 3, 4) for qi in q_arr):
-                import warnings
-                warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
-        else:
-            if q not in (1, 2, 3, 4):
-                import warnings
-                warnings.warn("computing high-order posterior moments can be very slow", RuntimeWarning)
+        high_order = (
+            any(qi not in (1, 2, 3, 4) for qi in q_arr)
+            if is_array
+            else q not in (1, 2, 3, 4)
+        )
+        if high_order:
+            # stacklevel=2 so the warning names the caller's line rather than
+            # this one, which is the only location a user can act on.
+            warnings.warn(
+                "computing high-order posterior moments can be very slow",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         # ---- Symbolic path ----
         if self._is_symbolic:
@@ -1617,10 +1634,7 @@ class MGFDerivative:
                 raise RuntimeError(f"Symbolic computation failed: {e}. Falling back to numeric.") from e
 
         # ---- Numeric path (vectorized) ----
-        if is_array:
-            orders = self.a + q_arr
-        else:
-            orders = self.a + q
+        orders = self.a + q_arr if is_array else self.a + q
 
         log_abs_num, sign_num = mgfDerivative(
             order=orders,
@@ -2266,10 +2280,15 @@ class MGFDerivative:
         # The direct-expectation route removes the obstacle rather than working
         # around it. It computes `E[theta^a e^{t theta}]` from the prior's
         # DENSITY and never touches its MGF, so the numeric prior above is
-        # exactly what it needs. What remains is a real requirement -- some
-        # route has to be able to consume the constructed prior -- so the guard
-        # now tests that, instead of testing for a symbolic representation that
-        # was only ever a proxy for it.
+        # exactly what it needs.
+        #
+        # What the guard below tests is `self._deriv_is_symbolic` -- a property
+        # of *this* posterior, not of the prior about to be built -- because
+        # that is precisely what decides which kind of prior comes out:
+        # symbolic in, symbolic prior out, which every backend can consume;
+        # numeric in, density-only prior out, which only the expectation route
+        # can. Testing it here avoids constructing the prior twice.
+        #
         # Every DIFFERENTIATING backend needs the prior's symbolic MGF or CGF,
         # and the prior built from a numeric posterior has only a density. So
         # an explicit `method=` naming one of them still cannot update -- that

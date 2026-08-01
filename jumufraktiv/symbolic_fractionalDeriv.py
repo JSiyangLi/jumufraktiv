@@ -17,13 +17,12 @@ Mellin. If both fail, it returns None.
 Supports both complete and incomplete MGFs via the `complete` flag.
 """
 
+import concurrent.futures
+
 import sympy as sp
-from sympy.integrals.transforms import laplace_transform, mellin_transform
+
 from jumufraktiv.mitMGFprior_class import mitMGFprior
 from jumufraktiv.symbolic_cache import cached_diff
-from jumufraktiv.symbols import t  # only t is needed
-
-import concurrent.futures
 
 
 class FunctionTimedOut(TimeoutError):
