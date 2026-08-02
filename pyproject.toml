@@ -82,6 +82,10 @@ dev = [
     "ruff>=0.6",
     # tests/test_documentation_runs.py renders README.rst the way PyPI does.
     "docutils>=0.20",
+    # tests/test_packaging.py builds both distributions and validates the
+    # citation file against the CFF schema.
+    "build>=1.0",
+    "cffconvert>=2.0",
 ]
 
 [project.urls]

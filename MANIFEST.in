@@ -1,0 +1,54 @@
+# What the source distribution carries beyond the importable package.
+#
+# `[tool.setuptools.packages.find]` decides what goes in the WHEEL, and it is
+# right to exclude `tests` and `docs` there: nobody wants them installed into
+# site-packages. The sdist is a different artefact with a different job. It is
+# what conda-forge, Debian and anyone building from source download, and the
+# first thing they do with it is run the test suite.
+#
+# Without this file setuptools guessed, and guessed badly: it picked up
+# `tests/test_*.py` and left out `tests/conftest.py` and `tests/canonical.py`,
+# which is the worst of both outcomes. The sdist appeared to ship a test suite
+# and that suite could not collect a single test -- 14 collection errors, one
+# per file that imports a fixture.
+
+# The suite, including the two files without which none of the rest run.
+recursive-include tests *.py
+include conftest.py
+
+# The doctest namespace lives in the repository-root conftest.py, which is why
+# it is named separately above: `--doctest-modules jumufraktiv/...` collects
+# from the package directory and never loads `tests/conftest.py`.
+
+# Documentation sources, so the docs can be built from the sdist.
+recursive-include docs *.rst *.py *.bat
+include docs/Makefile
+recursive-include docs/_static *
+
+# Project metadata a packager reads or a user cites.
+include CHANGELOG.md
+include CITATION.cff
+include CONTRIBUTING.md
+include CLAUDE.md
+include LICENSE
+include README.rst
+include pyproject.toml
+
+# The example notebooks, which the suite checks statically.
+recursive-include notebooks *.ipynb
+
+# The benchmark, which is not collected by pytest but is referenced by
+# CLAUDE.md as the way to measure cost per evaluation point.
+recursive-include tests/benchmarks *.py
+
+# Never ship build or cache droppings.
+global-exclude *.py[cod]
+global-exclude __pycache__
+prune .github
+
+# `prune` takes a directory, not a recursive glob: MANIFEST.in has no `**`.
+# Both tools put their cache at the repository root by default.
+prune .pytest_cache
+prune .ruff_cache
+prune build
+prune dist
