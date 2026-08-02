@@ -482,9 +482,15 @@ pytest --doctest-modules jumufraktiv/MGFDerivative_class.py \
 **The notebooks are run by hand, not by the suite.** `pytest` checks them
 statically — every code cell parses, none carries stored output, none uses a
 retired spelling — because executing `ParetoPumpFailureExample.ipynb` takes
-tens of minutes: the Pareto MGF is written with `expint`, which no compiled
-backend provides, so it stays on the exact symbolic path over grids of several
-hundred points. Execute both before changing anything they exercise:
+many minutes over grids of several hundred points.
+
+*The reason has changed and the figure has not been re-measured.* It used to be
+that the Pareto MGF's `expint` had no compiled form, so the notebook ran
+entirely on the exact symbolic path; PR 14b supplied one, and the underlying
+route is now 4.6–6.9× faster. Whether that brings the notebook inside a
+tolerable suite budget is unknown, because nobody has re-run it — so it stays
+out of the suite until somebody does. Execute both before changing anything
+they exercise:
 
 ```bash
 python -c "
@@ -582,6 +588,7 @@ agree by inspection.
 | `test_packaging.py` | what the built sdist and wheel contain, and whether the sdist's suite collects |
 | `test_documentation_runs.py` | the README executes and renders, the notebooks parse and carry no stored output, the docstring examples run as CI invokes them, and no class docstring lists a member autodoc already documents |
 | `test_packaging.py` | what the wheel and the sdist contain, and the citation file against the CFF schema |
+| `test_special_functions.py` | the `expint` SciPy lacks, and that the Pareto MGF compiles rather than falling back |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
 Each test asserts the *correct* behaviour and is marked `xfail(strict=True)`,
@@ -656,7 +663,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13d | Packaging: what the sdist and wheel actually contain | **merged** |
 | 6 | 13e | The API reference read against the code; `-W` in CI | **in review** |
 | 6 | 13f | Routes that refuse rather than return a wrong number | **in review** |
-| 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
+| 6 | 14b | The Pareto `expint` path | **in review** |
+| 6 | 14c | Array-valued orders, and `ruff format` over the library | planned |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
 the earlier waves.** They were split by blast radius — does this change numbers
@@ -890,9 +898,10 @@ The full test suite went from 623 s to 67 s.
 
 **What is left.** The array-valued-order path still dispatches each element
 separately, and it is the hard one: different orders may resolve to different
-backends, so they cannot share a call. The Pareto prior stays on the exact
-symbolic path because its MGF uses `expint`; that is correct but ~1590 ms per
-point. And `uniform` and `heaviside` route their far-tail nodes to the exact
+backends, so they cannot share a call. Re-measured on the current tree at
+24.8 to 39.8 ms per order, against 2.29 ms per point for a scalar order over a
+batch, so roughly ten-fold remains on it. And `uniform` and `heaviside` route
+their far-tail nodes to the exact
 path because those underflow to zero in float64 — skipping them is very
 probably safe, since a node that underflows contributes nothing to a log-space
 accumulation, but "very probably" is not a verification and the check was not
@@ -1436,9 +1445,20 @@ is paid once rather than per evaluation.
 Two other things the compiled path must not do. It works in float64, so it
 cannot represent `M^(301)`; elements that overflow, underflow or return NaN
 fall through to the exact symbolic path, which is why the fast path may only
-*skip* work and never change an answer. And Pareto consequently stays on the
-exact path entirely — correct, and still about 1590 ms per point, which is
-where the remaining headroom is.
+*skip* work and never change an answer.
+
+**The probe is still what catches the next such name, but `expint` is no longer
+one of them.** `jumufraktiv.special` supplies it to `lambdify`, backed by
+mpmath at ~39 µs a point, so Pareto compiles rather than falling back. The
+fallback was expensive in a way worth quantifying: **2840 `subs` calls for a
+single evaluation point**, at ~306 µs each. Measured against an mpmath oracle
+at 50 digits with the density written out separately, the compiled route agrees
+to 3.3e-16–2.1e-15, and 1004.6 ms per point becomes 218.7 at a batch of eight.
+
+That module exists because the alternative placements are both wrong: `expint`
+is a mathematical function rather than a fact about Pareto, so it does not
+belong in the prior layer, and putting it in the dispatcher would teach that
+layer which distribution it is serving.
 
 **Invert the CDF in log space.** Solve `log F(x) = log p`, switching to the
 complement above the median. `F(x) − p` is identically zero wherever `F`

@@ -12,6 +12,21 @@ without a deprecation period.
 
 ### Changed
 
+- **The Pareto prior's fractional derivative is 4.6x to 6.9x faster**, and no
+  number moved. Its MGF is written with `expint`, the generalised exponential
+  integral, which neither SciPy nor NumPy defines — SymPy compiles the name
+  into a bare global anyway, so the compiled function raised `NameError` on its
+  first call and every quadrature node fell back to symbolic substitution:
+  **2840 `subs` calls for a single evaluation point**, at roughly 306 us each.
+
+  `jumufraktiv.special` now supplies `expint` to `lambdify`, backed by mpmath
+  at about 39 us a point. Measured against an mpmath oracle at 50 digits with
+  the Pareto density written out separately, the relative error is 3.3e-16 to
+  2.1e-15 across four (order, t) pairs — the fast path skips work rather than
+  changing an answer, which is the property it has to have. 1004.6 ms per
+  evaluation point becomes 218.7 at a batch of eight, and 870 becomes 126.5 at
+  a single point. (PR 14b)
+
 - **The internal names are English.** `mitMGFprior` is now `MGFPrior`, its
   module `jumufraktiv/mitMGFprior_class.py` is `jumufraktiv/MGFPrior_class.py`,
   and its two constructors follow: `as_mitMGFprior` and `is_mitMGFprior` are
