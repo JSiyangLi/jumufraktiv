@@ -323,11 +323,11 @@ def fractionalDeriv_numeric_mpmath(
         Evaluation point(s) for t.
     method : str, optional
         'symbolic', 'jax', or 'bell' -- method for computing the integer derivative.
-    simplify : bool, optional
-        Ignored for numeric; kept for interface consistency.
     complete : bool, optional
         If True (default), differentiate the complete MGF.
         If False, differentiate the incomplete MGF.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
     tol : float

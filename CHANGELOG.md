@@ -59,6 +59,11 @@ without a deprecation period.
   prior module supplies and no code path consumed, so it was `None` on all
   four registry priors and on every hand-built one. (PR 13e)
 
+- Three docstrings listed their parameters in an order the signature does not
+  declare them in, `integerDeriv_numeric_jax` most visibly, whose signature
+  begins `(t, prior, order)` while its documentation began with `order`. The
+  suite now asserts the ordering across all 94 documented callables. (PR 13e)
+
 - **`post_mgf` returned the value of a formula outside the domain where that
   formula is the MGF.** The Gamma(8, 6) posterior's is `(6/(6-r))**8`, finite
   only for `r < 6`; the even power kept it positive and plausible past the

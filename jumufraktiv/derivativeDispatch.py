@@ -277,12 +277,12 @@ def mgfDerivative_integer(
         points `(t, u)`.
     simplify : bool, optional
         If True, simplify the symbolic derivative expression.
-    complete : bool, optional
-        If True (default), differentiate the complete MGF (`prior.mgf_sym`).
-        If False, differentiate the incomplete MGF (`prior.imgf_sym`).
     log : bool, optional
         If True, numeric methods return `(log_abs, sign)`.
         If False, return the ordinary derivative as float.
+    complete : bool, optional
+        If True (default), differentiate the complete MGF (`prior.mgf_sym`).
+        If False, differentiate the incomplete MGF (`prior.imgf_sym`).
     symbolic_timeout : float, optional
         Maximum time (seconds) for symbolic computation in the Bell backend.
     cgf_method : str, optional

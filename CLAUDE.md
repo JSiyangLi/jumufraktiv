@@ -744,6 +744,17 @@ because correcting it only resets the clock.
 `Attributes` or `Methods` section may list a name in `dir(cls)` — and it was
 confirmed to fail against the unfixed tree, naming all sixteen methods.
 
+**Three docstrings listed their parameters in an order the signature does not
+declare them in**, of 94 documented callables — `integerDeriv_numeric_jax`
+most visibly, whose signature begins `(t, prior, order)` while its
+documentation began with `order`. That is worth a test rather than a fix
+because of what the ordering is *for*: reading a docstring against its
+signature is the cheapest check available, and it only works side by side.
+When the orders agree an added or removed parameter shows up as one
+misalignment; when they do not, every line has to be matched by name and an
+omission looks like nothing at all. `tests/test_documentation_runs.py` now
+asserts it over the names common to both, so documenting a subset stays legal.
+
 **Three parameters were documented as controls and are not read.** Found by
 comparing every `Parameters` section against the real signature: of 131
 callables, three had drifted, and chasing those turned up the inert ones.
