@@ -79,7 +79,7 @@ def readyHalfNormal(
         'log_c': log_c
     }
 
-def bereitHalfNormal(
+def eachHalfNormal(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:

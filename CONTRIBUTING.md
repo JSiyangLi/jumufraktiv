@@ -24,7 +24,7 @@ ruff format --check tests/       # formatting (tests/ only, for now)
 # `deriv` and `prior` lives in the root conftest.py precisely because this
 # command collects from jumufraktiv/ and never loads tests/conftest.py.
 pytest --doctest-modules jumufraktiv/MGFDerivative_class.py \
-                         jumufraktiv/mitMGFprior_class.py
+                         jumufraktiv/MGFPrior_class.py
 
 # The documentation.
 pip install -e ".[docs]"
@@ -82,7 +82,7 @@ assertion.
 Each `like_stats/X.py` exports exactly three functions:
 
 - `readyX(data, **kwargs) -> {'a', 'b', 'log_c'}` — aggregated over the sample
-- `bereitX(data, **kwargs) -> {'a', 'b', 'log_c'}` — per-element arrays
+- `eachX(data, **kwargs) -> {'a', 'b', 'log_c'}` — per-element arrays
 - `cX() -> sympy.Expr` — the symbolic normalising constant
 
 Take data and every known parameter through `like_stats/_common.py::_extract_1d`

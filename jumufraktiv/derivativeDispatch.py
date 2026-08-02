@@ -261,7 +261,7 @@ def mgfDerivative_integer(
     order : int or sympy.Expr
         Non-negative derivative order. If symbolic, returns an unevaluated
         `Derivative` object.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {"symbolic", "bell", "jax"}, optional
         Derivative backend:
@@ -607,7 +607,7 @@ def mgfDerivative_fractional(
     ----------
     order : float
         Fractional order (positive).
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : {'scipy', 'mpmath', 'symbolic'}, default 'scipy'
         Computation backend:
@@ -866,7 +866,7 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
     ----------
     order : float or sympy.Basic
         Derivative order. Symbolic orders are not checked.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior, consulted for its ``max_finite_moment``.
     t : float, array-like or None
         Evaluation point(s). Only ``t = 0`` is checked.
@@ -952,7 +952,7 @@ def _check_cancellation(expr, t_values, order, prior, method) -> None:
         The evaluation points, already flattened.
     order : int
         Derivative order, quoted in the message.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior, quoted in the message.
     method : str
         The route being served, quoted in the message.
@@ -1078,7 +1078,7 @@ def _kernel_derivative_at_origin(order, prior):
     ----------
     order : float
         Derivative order; ``n = floor(order)``.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior, read for its MGF expression.
 
     Returns
@@ -1130,7 +1130,7 @@ def _check_fractional_kernel_at_origin(order, prior, t, method) -> None:
     ----------
     order : float or sympy.Basic
         Derivative order. Symbolic orders are not checked.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior whose MGF the kernel differentiates.
     t : float, array-like or None
         Evaluation point(s). Only ``t = 0`` is checked.
@@ -1415,7 +1415,7 @@ def mgfDerivative(
     order : float, array-like, or sympy.Basic
         Derivative order(s). If array-like, each element is processed separately.
         If a SymPy expression, the derivative is treated symbolically.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing symbolic and/or backend MGF/PDF representations.
     method : str, optional
         Derivative backend. For integer orders: `'symbolic'`, `'bell'`, `'jax'`.

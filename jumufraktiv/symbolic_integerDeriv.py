@@ -23,7 +23,7 @@ The module uses the canonical symbol `t` from `jumufraktiv.symbols`.
 import numpy as np
 import sympy as sp
 
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.symbols import t  # only t is needed for differentiation
 
@@ -99,7 +99,7 @@ def _as_integer_order(order):
 
 def integerDeriv_symbolic(
     order: int,
-    prior: mitMGFprior,
+    prior: MGFPrior,
     simplify: bool = False,
     complete: bool = True,
 ):
@@ -113,7 +113,7 @@ def integerDeriv_symbolic(
         Order of differentiation: non-negative and integer-valued. A NumPy
         integer, or a SymPy expression that evaluates to an integer and carries
         no free symbols, is accepted as well.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing the symbolic MGF expression (mgf_sym) and optionally
         the incomplete MGF expression (imgf_sym).
     simplify : bool, optional

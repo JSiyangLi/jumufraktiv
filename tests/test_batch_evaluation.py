@@ -27,7 +27,7 @@ import pytest
 
 from conftest import gamma_mgf_derivative_log
 from jumufraktiv.derivativeDispatch import mgfDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 REGISTRY_PARAMS = {
     "gamma": {"alpha": 2.0, "beta": 3.0},
@@ -42,7 +42,7 @@ ORDERS = [0.5, 1.5, 1.9, 2.5]
 
 
 def _prior(name):
-    return mitMGFprior.from_registry(name, params=REGISTRY_PARAMS[name])
+    return MGFPrior.from_registry(name, params=REGISTRY_PARAMS[name])
 
 
 # ==========================================================================
@@ -304,7 +304,7 @@ def test_every_prior_density_accepts_an_array(prior_name=None):
     registry.initialize()
     thetas = np.array([0.5, 1.0, 2.0, 5.0])
     for name, params in REGISTRY_PARAMS.items():
-        prior = mitMGFprior.from_registry(name, params=params)
+        prior = MGFPrior.from_registry(name, params=params)
         for func_name in ("pdf_func", "logpdf_func"):
             values = np.asarray(getattr(prior, func_name)(thetas), dtype=float)
             assert values.shape == thetas.shape, (
@@ -336,7 +336,7 @@ def _custom_prior(logpdf):
 
     from jumufraktiv.symbols import theta
 
-    return mitMGFprior(
+    return MGFPrior(
         name="custom",
         pdf_sym=sp.exp(-theta),
         logpdf_func=logpdf,
@@ -410,7 +410,7 @@ def test_a_density_returning_two_values_for_one_theta_is_refused():
             raise TypeError("this density is scalar-only")
         return np.array([-1.0, -2.0])
 
-    prior = mitMGFprior(
+    prior = MGFPrior(
         name="two-valued",
         pdf_sym=sp.exp(-theta),
         logpdf_func=two_values,

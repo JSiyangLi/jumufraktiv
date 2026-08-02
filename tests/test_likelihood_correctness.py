@@ -182,12 +182,12 @@ def test_pointwise_statistics_reconstruct_each_observation(name):
     `post_predictive` relies on this, and summing to the right total would not
     catch per-element statistics that are individually wrong.
     """
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
+    _, _, each = LIKELIHOOD_REGISTRY[name]
     ref = REFERENCES[name]
     data = _datasets(name)[-1]
     theta = 1.7
 
-    per_element = bereit(data, **ref["known"])
+    per_element = each(data, **ref["known"])
 
     for i, y in enumerate(data):
         single = {k: np.asarray(v)[i] for k, v in per_element.items()}

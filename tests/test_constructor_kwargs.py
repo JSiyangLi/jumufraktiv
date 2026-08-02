@@ -453,7 +453,7 @@ def test_the_symbolic_fractional_timeout_still_works():
 
 def _GAMMA_PRIOR():
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    return mitMGFprior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
+    return MGFPrior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})

@@ -96,7 +96,7 @@ def readyNormal(
         'log_c': log_c
     }
 
-def bereitNormal(
+def eachNormal(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

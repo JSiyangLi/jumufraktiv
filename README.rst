@@ -77,12 +77,12 @@ Quick start
 .. code-block:: python
 
    from jumufraktiv import registry
-   from jumufraktiv.mitMGFprior_class import mitMGFprior
+   from jumufraktiv.MGFPrior_class import MGFPrior
    from jumufraktiv.MGFDerivative_class import MGFDerivative
 
    registry.initialize()
 
-   prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+   prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
    post = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
 
    log_evidence = post.evidence()

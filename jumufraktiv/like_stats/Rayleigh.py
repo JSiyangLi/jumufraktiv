@@ -85,7 +85,7 @@ def readyRayleigh(
         'log_c': log_c
     }
 
-def bereitRayleigh(
+def eachRayleigh(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:

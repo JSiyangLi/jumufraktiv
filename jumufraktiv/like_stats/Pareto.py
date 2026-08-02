@@ -101,7 +101,7 @@ def readyPareto(
         'log_c': log_c
     }
 
-def bereitPareto(
+def eachPareto(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

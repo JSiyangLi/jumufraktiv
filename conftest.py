@@ -1,6 +1,6 @@
 """Fixtures for the docstring examples.
 
-The examples in `MGFDerivative` and `mitMGFprior` are written against a `deriv`
+The examples in `MGFDerivative` and `MGFPrior` are written against a `deriv`
 and a `prior` the reader is expected to have built already, which is the
 NumPyDoc convention and keeps each example to the one call it illustrates.
 Injecting those objects into the doctest namespace is what makes the examples
@@ -22,7 +22,7 @@ import pytest
 from canonical import ALPHA, BETA, POISSON_DATA, POISSON_SCALE
 
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -35,14 +35,14 @@ def _doctest_namespace(doctest_namespace):
     import numpy as _np
     import sympy as _sp
 
-    prior = mitMGFprior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
+    prior = MGFPrior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
     deriv = MGFDerivative(
         prior, data=POISSON_DATA, likelihood="poisson", scale=POISSON_SCALE
     )
 
     doctest_namespace["np"] = _np
     doctest_namespace["sp"] = _sp
-    doctest_namespace["mitMGFprior"] = mitMGFprior
+    doctest_namespace["MGFPrior"] = MGFPrior
     doctest_namespace["MGFDerivative"] = MGFDerivative
     doctest_namespace["prior"] = prior
     doctest_namespace["gamma_prior"] = prior

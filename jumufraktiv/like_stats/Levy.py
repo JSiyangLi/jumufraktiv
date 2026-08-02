@@ -102,7 +102,7 @@ def readyLevy(
         'log_c': log_c
     }
 
-def bereitLevy(
+def eachLevy(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

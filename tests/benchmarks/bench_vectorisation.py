@@ -25,7 +25,7 @@ import time
 import numpy as np
 
 from jumufraktiv import mgfDerivative, registry
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 PRIORS = {
     "gamma": {"alpha": 2.0, "beta": 3.0},
@@ -37,7 +37,7 @@ PRIORS = {
 
 def _prior(name):
     registry.initialize()
-    return mitMGFprior.from_registry(name, params=PRIORS[name])
+    return MGFPrior.from_registry(name, params=PRIORS[name])
 
 
 def density_call_cost(repeats=1000):

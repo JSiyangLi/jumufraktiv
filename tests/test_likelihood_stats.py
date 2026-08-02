@@ -50,7 +50,7 @@ def test_kwargs_table_covers_the_registry():
 
 
 @pytest.mark.parametrize("name", ALL_LIKELIHOODS)
-def test_registry_entry_is_a_ready_c_bereit_triple(name):
+def test_registry_entry_is_a_ready_c_each_triple(name):
     entry = LIKELIHOOD_REGISTRY[name]
 
     assert len(entry) == 3
@@ -69,9 +69,9 @@ def test_ready_returns_scalar_statistics(name):
 
 
 @pytest.mark.parametrize("name", ALL_LIKELIHOODS)
-def test_bereit_returns_per_element_statistics(name):
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
-    stats = _call(name, bereit)
+def test_each_returns_per_element_statistics(name):
+    _, _, each = LIKELIHOOD_REGISTRY[name]
+    stats = _call(name, each)
     n = len(COUNTS if name == "poisson" else DATA)
 
     assert set(stats) == {"a", "b", "log_c"}
@@ -81,15 +81,15 @@ def test_bereit_returns_per_element_statistics(name):
 
 
 @pytest.mark.parametrize("name", ALL_LIKELIHOODS)
-def test_bereit_aggregates_to_ready(name):
+def test_each_aggregates_to_ready(name):
     """The sufficient statistics are additive over independent observations.
 
     This is the invariant that lets ``post_predictive`` use the per-element
     form and ``evidence`` use the aggregated form and still agree.
     """
-    ready, _, bereit = LIKELIHOOD_REGISTRY[name]
+    ready, _, each = LIKELIHOOD_REGISTRY[name]
     aggregated = _call(name, ready)
-    per_element = _call(name, bereit)
+    per_element = _call(name, each)
 
     for key in ("a", "b", "log_c"):
         assert np.sum(per_element[key]) == pytest.approx(

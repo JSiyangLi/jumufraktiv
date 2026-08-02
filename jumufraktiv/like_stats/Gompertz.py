@@ -101,7 +101,7 @@ def readyGompertz(
         'log_c': log_c
     }
 
-def bereitGompertz(
+def eachGompertz(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

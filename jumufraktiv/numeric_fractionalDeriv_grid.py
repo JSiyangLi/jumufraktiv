@@ -172,7 +172,7 @@ def fractionalDeriv_grid(
     ----------
     order : float
         Fractional derivative order. Must be positive and non-integer.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior supplying the MGF (or incomplete MGF when ``complete=False``).
     t_points : array-like
         Evaluation point(s). Broadcast against ``u_points``.

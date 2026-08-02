@@ -13,7 +13,7 @@ Main Classes
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: mitMGFprior
+.. autoclass:: MGFPrior
    :members:
    :undoc-members:
    :show-inheritance:
@@ -82,7 +82,7 @@ Likelihood Statistics (``like_stats``)
 
 Each distribution module provides:
 - `ready<Distribution>`: aggregated sufficient statistics.
-- `bereit<Distribution>`: per‑element statistics for vectorised predictive evaluation.
+- `each<Distribution>`: per‑element statistics for vectorised predictive evaluation.
 - `c<Distribution>`: symbolic normalising constant.
 
 .. automodule:: jumufraktiv.like_stats.Poisson

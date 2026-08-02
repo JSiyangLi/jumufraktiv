@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 
 from conftest import gamma_mgf_derivative_log
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 from jumufraktiv.symbols import t as canonical_t
 
@@ -107,7 +107,7 @@ def test_priors_without_a_closed_form_raise_rather_than_return_none(prior_name, 
     `TypeError: 'NoneType' object is not callable` with no indication that a
     symbolic integration had declined.
     """
-    prior = mitMGFprior.from_registry(prior_name, params=NO_CLOSED_FORM[prior_name])
+    prior = MGFPrior.from_registry(prior_name, params=NO_CLOSED_FORM[prior_name])
 
     with pytest.raises(NotImplementedError, match=prior_name):
         _symbolic(order, prior)
@@ -115,7 +115,7 @@ def test_priors_without_a_closed_form_raise_rather_than_return_none(prior_name, 
 
 @pytest.mark.parametrize("prior_name", sorted(NO_CLOSED_FORM))
 def test_the_error_says_what_to_use_instead(prior_name):
-    prior = mitMGFprior.from_registry(prior_name, params=NO_CLOSED_FORM[prior_name])
+    prior = MGFPrior.from_registry(prior_name, params=NO_CLOSED_FORM[prior_name])
 
     with pytest.raises(NotImplementedError, match="scipy"):
         _symbolic(0.5, prior)
@@ -130,7 +130,7 @@ def test_declining_is_prompt(gamma_prior):
     killed at 120 s), while `sp.integrate` on the same input takes 0.29 s.
     Simplifying first would turn every decline into a timeout.
     """
-    prior = mitMGFprior.from_registry("uniform", params=NO_CLOSED_FORM["uniform"])
+    prior = MGFPrior.from_registry("uniform", params=NO_CLOSED_FORM["uniform"])
 
     with pytest.raises(NotImplementedError):
         # A timeout far longer than the decline should take. If the ordering

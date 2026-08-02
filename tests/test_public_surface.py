@@ -5,6 +5,8 @@ ignored the known parameters its posterior was built with, and an installation
 extra advertised a capability that no code path provided.
 """
 
+import pathlib
+
 import numpy as np
 import pytest
 
@@ -57,7 +59,7 @@ def test_posterior_predictive_works_for_every_likelihood(gamma_prior, name):
     likelihood's statistics functions, which take the known parameters as
     *required* arguments. So ten of the fourteen raised
 
-        TypeError: bereitNormal() missing 1 required positional argument: 'mean'
+        TypeError: eachNormal() missing 1 required positional argument: 'mean'
 
     for a parameter already stored on the object. The four that worked --
     halfnormal, maxwell-boltzmann, poisson, rayleigh -- are exactly the four
@@ -78,7 +80,7 @@ def test_the_joint_predictive_works_for_every_likelihood(gamma_prior, name):
     """The `individual=False` route goes through a different function.
 
     `individual=True`, the default, aggregates per observation and calls
-    `bereit_func`; `individual=False` treats the new observations as one block
+    `each_func`; `individual=False` treats the new observations as one block
     and calls `ready_func`. Both take the known parameters as required
     arguments, and both were reached with only the caller's keywords, so both
     had to be fixed -- and the two are separate functions whose signatures
@@ -194,7 +196,7 @@ def test_no_module_imports_torch():
     and nothing else.
 
     The differentiable surface is JAX throughout -- fourteen modules import
-    it, `mitMGFprior` has dedicated `mgf_jax` / `cgf_jax` / `imgf_jax` /
+    it, `MGFPrior` has dedicated `mgf_jax` / `cgf_jax` / `imgf_jax` /
     `logimgf_jax` slots, and Pareto already fills all four. So the capability
     the extra advertised was present already, in the framework the rest of the
     package uses.
@@ -252,7 +254,7 @@ def test_the_documented_workflows_reach_the_top_level():
 
     expected = {
         "MGFDerivative",  # build a posterior
-        "mitMGFprior",  # build a prior
+        "MGFPrior",  # build a prior
         "mgfDerivative",  # one derivative, no posterior
         "mgfDerivative_integer",
         "mgfDerivative_fractional",
@@ -297,3 +299,142 @@ def test_the_former_package_name_no_longer_hijacks_sys_modules():
 
     with pytest.raises(ImportError):
         import mgf2post  # noqa: F401
+
+
+#: Directories a filesystem walk must not descend into: caches, build output
+#: and the git database itself. None hold source, and the git database holds
+#: every past revision, so scanning it would report the old names forever.
+_NOT_SOURCE = {
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "_build",
+    "build",
+    "dist",
+}
+
+
+def _source_files(repo):
+    """Every source file under `repo`, as posix paths relative to it.
+
+    Uses ``git ls-files`` where it works, because it honours ``.gitignore`` and
+    so never reports a scratch file a developer happens to have lying about.
+    Falls back to walking the tree, because the suite is expected to run
+    somewhere that is not a checkout: the sdist ships ``tests/`` precisely so a
+    packager can run it, and an unpacked sdist has no ``.git``. Shelling out
+    with ``check=True`` there raises ``CalledProcessError`` and fails the test
+    for a reason that has nothing to do with what it asserts.
+    """
+    import subprocess
+
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=repo,
+        ).stdout.split()
+        if listed:
+            return listed
+    except (OSError, subprocess.SubprocessError):
+        pass  # no git binary, or not a checkout; walk instead
+
+    found = []
+    for path in repo.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(repo)
+        if _NOT_SOURCE.intersection(relative.parts):
+            continue
+        if relative.suffix == ".egg-info" or relative.parts[0].endswith(".egg-info"):
+            continue
+        found.append(relative.as_posix())
+    return found
+
+
+#: Files that name the pre-rename identifiers on purpose, and why. Recording
+#: the rename requires writing the old name down; a reference to it does not.
+#: That is the distinction this exemption draws, so an entry added here must be
+#: a document *about* the change rather than one that uses the names.
+_MAY_NAME_THE_OLD_IDENTIFIERS = {
+    "CHANGELOG.md": "records the rename",
+    "CLAUDE.md": "states the naming convention and the decision behind it",
+    "tests/test_documentation_runs.py": "lists them as retired APIs",
+    "tests/test_public_surface.py": "is this test",
+}
+
+
+def test_no_german_identifier_survives_the_rename():
+    """The old names have no aliases, so no live reference may keep using them.
+
+    A mechanical rename is easy to leave half-done, and the leftovers are
+    exactly the places nothing executes: a name inside an error message, a
+    docstring cross-reference, a notebook cell. None of those fail on import,
+    so this reads every tracked text file instead.
+
+    Files that document the rename are exempt by name rather than by pattern,
+    because the difference that matters is *mentioning* the old name versus
+    *using* it, and no regular expression can tell those apart.
+
+    `jumufraktiv` itself is not in scope and stays: a distribution name is an
+    identity, expensive to change once published, which an identifier a caller
+    types is not.
+    """
+    import re
+
+    repo = pathlib.Path(__file__).resolve().parent.parent
+    stale = re.compile(r"mitMGF|bereit", re.IGNORECASE)
+    offenders = []
+    for name in _source_files(repo):
+        if name in _MAY_NAME_THE_OLD_IDENTIFIERS:
+            continue
+        path = repo / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue  # a binary asset has no identifiers to check
+        for number, line in enumerate(text.splitlines(), start=1):
+            if stale.search(line):
+                offenders.append(f"{name}:{number}: {line.strip()[:90]}")
+
+    assert not offenders, (
+        "the pre-rename names survive in "
+        f"{len(offenders)} place(s); they have no aliases, so each is either "
+        "dead prose or a broken reference:\n" + "\n".join(offenders[:20])
+    )
+
+
+def test_a_module_docstring_names_its_own_file():
+    """A header naming a file that does not exist sends a reader to nothing.
+
+    Twenty-six of the package's twenty-seven module docstrings open with their
+    own filename, so the convention is real and worth holding. The twenty-
+    seventh named `mitMGFprior.py` while living in `mitMGFprior_class.py`, and
+    a tree-wide rename carried that error forward intact rather than exposing
+    it -- substituting the identifier left the header just as wrong and no
+    less plausible.
+
+    Only modules that open with something ending in `.py` are checked, so a
+    docstring that begins with prose instead is free to.
+    """
+    import ast
+
+    package = pathlib.Path(__file__).resolve().parent.parent / "jumufraktiv"
+
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        docstring = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+        if not docstring:
+            continue
+        first = next((ln.strip() for ln in docstring.splitlines() if ln.strip()), "")
+        if first.endswith(".py") and first != path.name:
+            offenders.append(f"{path.name}: docstring header says '{first}'")
+
+    assert not offenders, (
+        "a module docstring opens by naming a file that is not its own:\n"
+        + "\n".join(offenders)
+    )

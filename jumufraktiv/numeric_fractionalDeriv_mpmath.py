@@ -24,7 +24,7 @@ import sympy as sp
 from mpmath import exp, gamma, log, mp, mpf, pi, quad, tan
 
 from jumufraktiv.derivativeDispatch import mgfDerivative_integer
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbolic_cache import cached_diff
 from jumufraktiv.symbols import t as _t_sym
 from jumufraktiv.symbols import u as _u_sym
@@ -32,7 +32,7 @@ from jumufraktiv.symbols import u as _u_sym
 
 def fractionalDeriv_numeric_mpmath_tan(
     order: float,
-    prior: mitMGFprior,
+    prior: MGFPrior,
     t: float | np.ndarray | list,
     method: str = "symbolic",
     simplify: bool = False,
@@ -51,7 +51,7 @@ def fractionalDeriv_numeric_mpmath_tan(
     ----------
     order : float
         Fractional order (positive).
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing the MGF.
     t : float or array-like
         Evaluation point(s) for t.
@@ -298,7 +298,7 @@ def _right_endpoint(integrand, gamma_val, tol, start=8.0, cap=709.0):
 
 def fractionalDeriv_numeric_mpmath(
     order: float,
-    prior: mitMGFprior,
+    prior: MGFPrior,
     t: float | np.ndarray | list,
     method: str = "symbolic",
     complete: bool = True,
@@ -317,7 +317,7 @@ def fractionalDeriv_numeric_mpmath(
     ----------
     order : float
         Fractional order (positive). If integer, returns ordinary derivative.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing the MGF.
     t : float or array-like
         Evaluation point(s) for t.
