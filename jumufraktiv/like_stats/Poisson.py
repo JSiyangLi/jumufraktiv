@@ -38,7 +38,6 @@ Examples
 3.0
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -50,7 +49,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyPoisson(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray = 1.0,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Poisson likelihood.
@@ -109,16 +108,13 @@ def readyPoisson(
     b = np.sum(scale_vals)
     log_c = np.sum(data_vals * np.log(scale_vals) - gammaln(data_vals + 1.0))
 
-    return {
-        'a': float(a),
-        'b': float(b),
-        'log_c': float(log_c)
-    }
+    return {"a": float(a), "b": float(b), "log_c": float(log_c)}
+
 
 def eachPoisson(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray = 1.0,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Poisson likelihood.
@@ -170,11 +166,7 @@ def eachPoisson(
     # log(y!) = log Γ(y+1)
     log_c_vals = data_vals * np.log(scale_vals) - gammaln(data_vals + 1.0)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cPoisson() -> sp.Expr:
@@ -192,11 +184,11 @@ def cPoisson() -> sp.Expr:
         A product over i of (s_i^{y_i} / y_i!).
     """
     # Define symbolic variables
-    n = sp.Symbol('n', integer=True, positive=True)
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
-    s = sp.IndexedBase('s')
+    n = sp.Symbol("n", integer=True, positive=True)
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
+    s = sp.IndexedBase("s")
 
     # Expression: ∏_{i=1}^{n} s_i^{y_i} / y_i!
-    expr = sp.Product(s[i]**y[i] / sp.factorial(y[i]), (i, 1, n))
+    expr = sp.Product(s[i] ** y[i] / sp.factorial(y[i]), (i, 1, n))
     return expr

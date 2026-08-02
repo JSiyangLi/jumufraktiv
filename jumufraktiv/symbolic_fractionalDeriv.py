@@ -85,6 +85,7 @@ def func_timeout(timeout_seconds, func, args=()):
 def _is_unevaluated_transform(expr):
     """Check if expression contains an unevaluated Laplace or Mellin transform."""
     from sympy.integrals.transforms import LaplaceTransform, MellinTransform
+
     return expr.has(LaplaceTransform) or expr.has(MellinTransform)
 
 
@@ -93,7 +94,7 @@ def fractionalDeriv_symbolic(
     prior: MGFPrior,
     simplify: bool = False,
     complete: bool = True,
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 30.0,
 ):
     """
     Compute the Liouville-Caputo fractional derivative in closed form.
@@ -151,7 +152,7 @@ def fractionalDeriv_symbolic(
         raise TypeError("mgf_sym must be a SymPy expression.")
 
     # Extract the 't' symbol (should be present)
-    t_sym = next((s for s in expr.free_symbols if s.name == 't'), None)
+    t_sym = next((s for s in expr.free_symbols if s.name == "t"), None)
     if t_sym is None:
         raise RuntimeError("No symbol 't' found in the MGF expression.")
 

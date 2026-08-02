@@ -55,6 +55,7 @@ q = sp.Symbol("q", real=True)
 # Parameter symbol factory (important for extensibility)
 # ============================================================
 
+
 def param(name: str):
     """
     Create a symbolic parameter with real and positive assumptions.

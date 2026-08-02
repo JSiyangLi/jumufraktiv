@@ -22,6 +22,7 @@ from jumufraktiv.symbolic_cache import cached_diff
 
 logger = logging.getLogger(__name__)
 
+
 def suggest_method_integerDeriv(
     expr,
     symbol,
@@ -46,13 +47,13 @@ def suggest_method_integerDeriv(
         else: logs the recommendation at INFO and returns None
     """
     if test_order is None:
-        test_order = min(order, 2)   # test low order
+        test_order = min(order, 2)  # test low order
     if test_order <= 0:
         test_order = 1
 
     logger.debug(
-        "Timing a symbolic derivative of order %s (target order %s).",
-        test_order, order)
+        "Timing a symbolic derivative of order %s (target order %s).", test_order, order
+    )
     start = time.time()
     try:
         deriv = cached_diff(expr, symbol, test_order)
@@ -81,8 +82,13 @@ def suggest_method_integerDeriv(
         complexity = -1
 
     if return_decision:
-        return {'recommend_symbolic': recommend, 'elapsed': elapsed,
-                'complexity': complexity, 'message': msg, 'test_order': test_order}
+        return {
+            "recommend_symbolic": recommend,
+            "elapsed": elapsed,
+            "complexity": complexity,
+            "message": msg,
+            "test_order": test_order,
+        }
     else:
         logger.info("%s", msg)
         return None

@@ -6,6 +6,7 @@ import numpy as np
 #: branch, above it `log1p(-exp(-d))` is. See `logminus`.
 _LOG2 = math.log(2.0)
 
+
 def logminus(x, y):
     """Compute ``log(exp(x) - exp(y))`` without forming either exponential.
 

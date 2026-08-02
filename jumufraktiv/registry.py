@@ -16,7 +16,6 @@ Functions:
     - make_prior_spec : helper to create a standard prior specification dict.
 """
 
-
 PRIOR_REGISTRY = {}
 _LOADED = False
 
@@ -47,9 +46,11 @@ def register_prior(name: str):
     ... def gamma_factory(params):
     ...     return make_prior_spec(...)
     """
+
     def decorator(fn):
         PRIOR_REGISTRY[name] = fn
         return fn
+
     return decorator
 
 
@@ -147,9 +148,7 @@ def get_prior(name: str):
     initialize()
 
     if name not in PRIOR_REGISTRY:
-        message = (
-            f"Prior '{name}' not found. Available: {sorted(PRIOR_REGISTRY)}"
-        )
+        message = f"Prior '{name}' not found. Available: {sorted(PRIOR_REGISTRY)}"
 
         # A prior can be absent because its module failed to import rather than
         # because it does not exist. Saying so turns an unactionable "not found"

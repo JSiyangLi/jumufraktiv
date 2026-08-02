@@ -16,6 +16,7 @@ where n = floor(α), γ = n+1-α.
 
 All arithmetic is performed with the precision specified by mp.dps.
 """
+
 import math
 import warnings
 
@@ -41,7 +42,7 @@ def fractionalDeriv_numeric_mpmath_tan(
     margin: float = 1e-12,
     max_u: float = 20.0,
     dps: int = 50,
-    u: float | np.ndarray | list | None = None
+    u: float | np.ndarray | list | None = None,
 ):
     """
     Compute fractional derivative using scaled tan-transform with mpmath.
@@ -136,7 +137,7 @@ def fractionalDeriv_numeric_mpmath_tan(
             if return_log:
                 return log_abs, sign
             else:
-                if log_abs == -float('inf'):
+                if log_abs == -float("inf"):
                     return 0.0
                 return sign * float(exp(mpf(log_abs)))
 
@@ -180,7 +181,7 @@ def fractionalDeriv_numeric_mpmath_tan(
         b = pi / 2 - margin
 
         try:
-            integral = quad(integrand_theta, (a, b), method='tanh-sinh')
+            integral = quad(integrand_theta, (a, b), method="tanh-sinh")
         except Exception as e:
             # Raise rather than return NaN. A NaN is not an error: it compares
             # False against everything, so downstream branches take their
@@ -193,7 +194,7 @@ def fractionalDeriv_numeric_mpmath_tan(
 
         if return_log:
             if integral == 0:
-                return -float('inf'), 1
+                return -float("inf"), 1
             log_abs = float(log(abs(integral)) - log(gamma(gamma_val)))
             sign = 1 if integral > 0 else -1
             return log_abs, sign
@@ -226,8 +227,6 @@ def fractionalDeriv_numeric_mpmath_tan(
             return float(val_vals.item())
         else:
             return val_vals
-
-
 
 
 def _mp_integer_derivative(prior, n_plus_1, complete):
@@ -307,7 +306,7 @@ def fractionalDeriv_numeric_mpmath(
     tol: float = 1e-8,
     use_tan: bool = False,
     dps: int = 50,
-    u: float | np.ndarray | list | None = None
+    u: float | np.ndarray | list | None = None,
 ):
     """
     Compute the Liouville-Caputo fractional derivative using mpmath.
@@ -365,9 +364,15 @@ def fractionalDeriv_numeric_mpmath(
     if use_tan:
         # The tan version already handles broadcasting and tuple-vectorisation.
         return fractionalDeriv_numeric_mpmath_tan(
-            order=order, prior=prior, t=t, method=method,
-            simplify=simplify, complete=complete,
-            return_log=return_log, dps=dps, u=u
+            order=order,
+            prior=prior,
+            t=t,
+            method=method,
+            simplify=simplify,
+            complete=complete,
+            return_log=return_log,
+            dps=dps,
+            u=u,
         )
 
     # ---- Broadcast t and u to a common batch shape ----
@@ -421,7 +426,7 @@ def fractionalDeriv_numeric_mpmath(
             if return_log:
                 return log_abs, sign
             else:
-                if log_abs == -float('inf'):
+                if log_abs == -float("inf"):
                     return 0.0
                 return sign * float(exp(mpf(log_abs)))
 
@@ -519,7 +524,7 @@ def fractionalDeriv_numeric_mpmath(
         # Compute result using log-scale for stability
         if return_log:
             if abs(integral_valid) < mpf(10) ** (-300):
-                return -float('inf'), 1
+                return -float("inf"), 1
             log_abs = float(log(mpf(abs(integral_valid))) - log(gamma(gamma_val)))
             sign = 1 if integral_valid > 0 else -1
             return log_abs, sign

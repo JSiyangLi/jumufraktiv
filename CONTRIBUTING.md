@@ -18,7 +18,7 @@ pip install -e ".[dev]"
 pytest                           # the full suite
 pytest -m "not slow" -x -q       # the quick pass, for the iteration loop
 ruff check --no-cache .          # lint
-ruff format --check tests/       # formatting (tests/ only, for now)
+ruff format --check .           # formatting, whole tree
 
 # The docstring examples. Run from the repository root: the fixture supplying
 # `deriv` and `prior` lives in the root conftest.py precisely because this

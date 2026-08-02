@@ -33,7 +33,6 @@ This module provides two statistics functions:
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -45,7 +44,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Gamma likelihood (vectorized).
@@ -102,16 +101,13 @@ def readyGamma(
     b = np.sum(data_vals)
     log_c = np.sum((shape_vals - 1.0) * np.log(data_vals) - gammaln(shape_vals))
 
-    return {
-        'a': float(a),
-        'b': float(b),
-        'log_c': float(log_c)
-    }
+    return {"a": float(a), "b": float(b), "log_c": float(log_c)}
+
 
 def eachGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Gamma likelihood.
@@ -165,7 +161,7 @@ def eachGamma(
     # log_c_i = (α_i - 1) * log(y_i) - log Γ(α_i)
     log_c_vals = (shape_vals - 1.0) * np.log(data_vals) - gammaln(shape_vals)
 
-    return {'a': a_vals, 'b': b_vals, 'log_c': log_c_vals}
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cGamma() -> sp.Expr:
@@ -183,11 +179,11 @@ def cGamma() -> sp.Expr:
         A product over i of ( y_i^{α_i-1} / Γ(α_i) ).
     """
     # Define symbolic variables
-    n = sp.Symbol('n', integer=True, positive=True)
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
-    alpha = sp.IndexedBase('alpha')
+    n = sp.Symbol("n", integer=True, positive=True)
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
+    alpha = sp.IndexedBase("alpha")
 
     # Expression: ∏_{i=1}^{n} y_i^{α_i-1} / Γ(α_i)
-    expr = sp.Product(y[i]**(alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
+    expr = sp.Product(y[i] ** (alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
     return expr

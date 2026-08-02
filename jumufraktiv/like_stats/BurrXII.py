@@ -26,7 +26,6 @@ The user-facing argument is `known_shape`, which corresponds to the known
 shape parameter c.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -37,7 +36,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyBurrXII(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     known_shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Burr Type XII likelihood with known shape.
@@ -98,7 +97,7 @@ def readyBurrXII(
     # ---- 4. Compute sufficient statistics ----
     a = float(n)
     # b = Σ log(1 + y_i^c)
-    log_term = np.log(1 + data_vals ** c_vals)
+    log_term = np.log(1 + data_vals**c_vals)
     b = np.sum(log_term)
     # log_C = Σ log(c_i) + Σ (c_i-1) log(y_i) - Σ log(1 + y_i^c)
     log_c = (
@@ -107,16 +106,13 @@ def readyBurrXII(
         - np.sum(log_term)
     )
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachBurrXII(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     known_shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Burr Type XII likelihood.
@@ -165,16 +161,12 @@ def eachBurrXII(
         raise ValueError("data values must be positive for Burr Type XII likelihood.")
 
     # ---- Compute per-element statistics ----
-    log_term = np.log(1 + data_vals ** c_vals)
+    log_term = np.log(1 + data_vals**c_vals)
     a_vals = np.ones(n, dtype=float)
     b_vals = log_term
     log_c_vals = np.log(c_vals) + (c_vals - 1.0) * np.log(data_vals) - log_term
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cBurrXII() -> sp.Expr:
@@ -191,12 +183,12 @@ def cBurrXII() -> sp.Expr:
     sympy.Expr
         ∏ ( known_shape_i * y_i^{known_shape_i-1} / (1 + y_i^{known_shape_i}) )
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    known_shape = sp.IndexedBase('known_shape')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    known_shape = sp.IndexedBase("known_shape")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     expr = sp.Product(
-        known_shape[i] * y[i]**(known_shape[i] - 1) / (1 + y[i]**known_shape[i]),
+        known_shape[i] * y[i] ** (known_shape[i] - 1) / (1 + y[i] ** known_shape[i]),
         (i, 1, n),
     )
     return expr

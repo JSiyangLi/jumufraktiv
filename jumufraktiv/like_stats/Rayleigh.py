@@ -25,7 +25,6 @@ Thus:
     log_c = Σ log(y_i)
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -34,8 +33,7 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyRayleigh(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Rayleigh likelihood.
@@ -76,18 +74,14 @@ def readyRayleigh(
 
     # ---- 3. Compute sufficient statistics ----
     a = float(n)
-    b = np.sum(data_vals ** 2) / 2.0
+    b = np.sum(data_vals**2) / 2.0
     log_c = np.sum(np.log(data_vals))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachRayleigh(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Rayleigh likelihood.
@@ -117,14 +111,10 @@ def eachRayleigh(
         raise ValueError("data values must be positive for Rayleigh likelihood.")
 
     a_vals = np.ones(n, dtype=float)
-    b_vals = data_vals ** 2 / 2.0
+    b_vals = data_vals**2 / 2.0
     log_c_vals = np.log(data_vals)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cRayleigh() -> sp.Expr:
@@ -140,8 +130,8 @@ def cRayleigh() -> sp.Expr:
     sympy.Expr
         ∏ y_i
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     expr = sp.Product(y[i], (i, 1, n))
     return expr

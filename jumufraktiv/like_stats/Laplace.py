@@ -31,7 +31,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyLaplace(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Laplace likelihood with known mean.
@@ -84,20 +84,17 @@ def readyLaplace(
             raise ValueError("mean must have same length as data or be scalar")
 
     # ---- 3. Compute sufficient statistics ----
-    a = float(n)                     # n
-    b = np.sum(np.abs(data_vals - mean_vals))   # Σ |y_i - μ|
-    log_c = n * math.log(0.5)        # n * log(1/2)
+    a = float(n)  # n
+    b = np.sum(np.abs(data_vals - mean_vals))  # Σ |y_i - μ|
+    log_c = n * math.log(0.5)  # n * log(1/2)
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachLaplace(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Laplace likelihood.
@@ -139,13 +136,9 @@ def eachLaplace(
     # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
     b_vals = np.abs(data_vals - mean_vals)
-    log_c_vals = np.full(n, -np.log(2.0))   # log(1/2)
+    log_c_vals = np.full(n, -np.log(2.0))  # log(1/2)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cLaplace() -> sp.Expr:
@@ -161,5 +154,5 @@ def cLaplace() -> sp.Expr:
     sympy.Expr
         (1/2)^n
     """
-    n = sp.Symbol('n', integer=True, positive=True)
+    n = sp.Symbol("n", integer=True, positive=True)
     return (sp.Rational(1, 2)) ** n

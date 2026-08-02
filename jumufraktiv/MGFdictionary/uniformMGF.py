@@ -50,6 +50,7 @@ b = param("b")
 # Numeric CGF / MGF
 # ============================================================
 
+
 def uniform_cgf(t_val: float, a_val: float, b_val: float) -> float:
     """
     Numeric CGF for the uniform prior.
@@ -119,6 +120,7 @@ def uniform_mgf(t_val: float, a_val: float, b_val: float) -> float:
 # ============================================================
 # JAX versions
 # ============================================================
+
 
 def uniform_cgf_jax(t_val, a_val, b_val):
     """
@@ -297,6 +299,7 @@ def uniform_imgf_jax(t_val, a_val, b_val, u_val):
 # Registry factory
 # ============================================================
 
+
 @register_prior("uniform")
 def uniform_factory(params):
     a_val = float(params["a"])
@@ -329,21 +332,16 @@ def uniform_factory(params):
         mgf_sym=mgf_sym,
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
-
         # Bounded support, so every moment is finite and no order is
         # inadmissible at t = 0.
         max_finite_moment=float("inf"),
-
         # Bounded support, so M(t) = E[e^{t theta}] <= e^{t b} is finite for
         # every real t: the MGF is entire.
         mgf_finite_below=float("inf"),
-
         mgf=lambda t_val: uniform_mgf(t_val, a_val, b_val),
         cgf=lambda t_val: uniform_cgf(t_val, a_val, b_val),
-
         mgf_jax=lambda t_val: uniform_mgf_jax(t_val, a_val, b_val),
         cgf_jax=lambda t_val: uniform_cgf_jax(t_val, a_val, b_val),
-
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: uniform_imgf(t_val, a_val, b_val, u_val),
@@ -352,9 +350,7 @@ def uniform_factory(params):
         logimgf_jax=lambda t_val, u_val: uniform_logimgf_jax(
             t_val, a_val, b_val, u_val
         ),
-
         pdf_func=frozen.pdf,
         logpdf_func=frozen.logpdf,
-
         params=params,
     )

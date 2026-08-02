@@ -12,6 +12,14 @@ without a deprecation period.
 
 ### Changed
 
+- **`ruff format` now covers the whole tree**, not `tests/` alone, and CI
+  checks it. The library reformat is 32 of 40 files, about 466 added and 581
+  removed lines, and it changes nothing else: every reformatted file's parse
+  tree is byte-identical to what it replaced, which is asserted rather than
+  assumed. It was held back until last because a reformat lands in the same
+  files as the change under review, and running it earlier would have buried
+  the diffs the audit existed to make legible. (PR 14d)
+
 - **An array of derivative orders is now one quadrature rather than one per
   order**, 1.8x to 2.6x faster and growing with the batch. The expectation
   route takes the order as a broadcast dimension alongside `t` and `u`, so the

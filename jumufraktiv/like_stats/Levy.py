@@ -33,7 +33,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyLevy(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Lévy likelihood with known location.
@@ -96,16 +96,13 @@ def readyLevy(
     # log_c = -(n/2) * log(2π) - (3/2) * Σ log(diff)
     log_c = -n / 2.0 * math.log(2.0 * math.pi) - 1.5 * np.sum(np.log(diff))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachLevy(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     location: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Lévy likelihood.
@@ -158,11 +155,7 @@ def eachLevy(
     b_vals = 1.0 / (2.0 * diff)
     log_c_vals = -0.5 * np.log(2.0 * np.pi) - 1.5 * np.log(diff)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cLevy() -> sp.Expr:
@@ -179,10 +172,10 @@ def cLevy() -> sp.Expr:
     sympy.Expr
         (2π)^(-n/2) * ∏ (y_i - μ_i)^(-3/2)
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    mu = sp.IndexedBase('mu')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    mu = sp.IndexedBase("mu")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     const = (2 * sp.pi) ** (-n / 2)
     prod = sp.Product((y[i] - mu[i]) ** (-sp.Rational(3, 2)), (i, 1, n))
     return const * prod

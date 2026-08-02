@@ -106,22 +106,24 @@ _DELIBERATE_REFUSALS = (NotImplementedError,)
 # Likelihood registry
 # ============================================================
 LIKELIHOOD_REGISTRY = {
-    'poisson': (readyPoisson, cPoisson, eachPoisson),
-    'gamma': (readyGamma, cGamma, eachGamma),
-    'laplace': (readyLaplace, cLaplace, eachLaplace),
-    'normal': (readyNormal, cNormal, eachNormal),
-    'rayleigh': (readyRayleigh, cRayleigh, eachRayleigh),
-    'maxwell-boltzmann': (
-        readyMaxwellBoltzmann, cMaxwellBoltzmann, eachMaxwellBoltzmann
+    "poisson": (readyPoisson, cPoisson, eachPoisson),
+    "gamma": (readyGamma, cGamma, eachGamma),
+    "laplace": (readyLaplace, cLaplace, eachLaplace),
+    "normal": (readyNormal, cNormal, eachNormal),
+    "rayleigh": (readyRayleigh, cRayleigh, eachRayleigh),
+    "maxwell-boltzmann": (
+        readyMaxwellBoltzmann,
+        cMaxwellBoltzmann,
+        eachMaxwellBoltzmann,
     ),
-    'inverse gamma': (readyInverseGamma, cInverseGamma, eachInverseGamma),
-    'levy': (readyLevy, cLevy, eachLevy),
-    'weibull': (readyWeibull, cWeibull, eachWeibull),
-    'burrxii': (readyBurrXII, cBurrXII, eachBurrXII),
-    'pareto': (readyPareto, cPareto, eachPareto),
-    'dagum': (readyDagum, cDagum, eachDagum),
-    'gompertz': (readyGompertz, cGompertz, eachGompertz),
-    'halfnormal': (readyHalfNormal, cHalfNormal, eachHalfNormal),
+    "inverse gamma": (readyInverseGamma, cInverseGamma, eachInverseGamma),
+    "levy": (readyLevy, cLevy, eachLevy),
+    "weibull": (readyWeibull, cWeibull, eachWeibull),
+    "burrxii": (readyBurrXII, cBurrXII, eachBurrXII),
+    "pareto": (readyPareto, cPareto, eachPareto),
+    "dagum": (readyDagum, cDagum, eachDagum),
+    "gompertz": (readyGompertz, cGompertz, eachGompertz),
+    "halfnormal": (readyHalfNormal, cHalfNormal, eachHalfNormal),
 }
 
 
@@ -143,9 +145,18 @@ DERIVATIVE_KWARGS = DERIVATIVE_OPTIONS
 #: and ``False`` for the incomplete-MGF path behind ``post_cdf``, so accepting it
 #: from the caller would either be ignored or raise "multiple values for
 #: keyword argument". Enforced by a test.
-_RESERVED_DERIVATIVE_KWARGS = frozenset({
-    "order", "prior", "method", "t", "u", "simplify", "complete", "log",
-})
+_RESERVED_DERIVATIVE_KWARGS = frozenset(
+    {
+        "order",
+        "prior",
+        "method",
+        "t",
+        "u",
+        "simplify",
+        "complete",
+        "log",
+    }
+)
 
 
 @functools.cache
@@ -262,9 +273,7 @@ def _unknown_kwargs_message(
         f"The '{likelihood}' likelihood accepts: {accepted_text}."
     )
     if derivative_options:
-        message += (
-            f" Derivative options are: {', '.join(sorted(derivative_options))}."
-        )
+        message += f" Derivative options are: {', '.join(sorted(derivative_options))}."
     return message
 
 
@@ -333,15 +342,16 @@ class MGFDerivative:
     >>> print(f"{deriv.post_cdf(1.0, log=False):.6f}")
     0.256020
     """
+
     def __init__(
         self,
-        prior,                  # MGFPrior object ONLY
+        prior,  # MGFPrior object ONLY
         data,
-        likelihood='poisson',
-        method='auto',
+        likelihood="poisson",
+        method="auto",
         simplify=False,
         log=True,
-        **kwargs
+        **kwargs,
     ):
         """
         prior must be a MGFPrior instance.
@@ -367,9 +377,9 @@ class MGFDerivative:
         if self.likelihood not in LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unknown likelihood: {likelihood}")
 
-        self.ready_func, self.c_func, self.each_func = (
-            LIKELIHOOD_REGISTRY[self.likelihood]
-        )
+        self.ready_func, self.c_func, self.each_func = LIKELIHOOD_REGISTRY[
+            self.likelihood
+        ]
 
         # ----------------------------------------------------
         # Separate kwargs for ready vs derivative
@@ -382,9 +392,9 @@ class MGFDerivative:
         # Sufficient statistics
         # ----------------------------------------------------
         stats = self.ready_func(data, **self._ready_kwargs)
-        self.a = stats['a']
-        self.b = stats['b']
-        self.log_c = stats['log_c']
+        self.a = stats["a"]
+        self.b = stats["b"]
+        self.log_c = stats["log_c"]
 
         # The posterior is evaluated at t = -b. When b == 0 that is the origin,
         # where D^a M(0) = E[Theta^a] and the moment must exist. Checked here
@@ -488,7 +498,7 @@ class MGFDerivative:
                 simplify=self.simplify,
                 complete=True,
                 log=False,
-                **self._deriv_kwargs
+                **self._deriv_kwargs,
             )
         else:
             self._deriv = self._deriv_numeric
@@ -500,9 +510,9 @@ class MGFDerivative:
         # Whether substituting a number for `t` leaves a number. False when the
         # prior's hyperparameters are unbound, in which case the answer stays
         # symbolic and no numeric backend could produce it.
-        self._deriv_is_bound = (
-            self._deriv_is_symbolic and self._deriv.free_symbols <= {t}
-        )
+        self._deriv_is_bound = self._deriv_is_symbolic and self._deriv.free_symbols <= {
+            t
+        }
 
     def _deferred_derivative(self):
         """Return a thunk evaluating ``D^a M`` at a `t` supplied later.
@@ -527,7 +537,7 @@ class MGFDerivative:
                 simplify=self.simplify,
                 complete=complete,
                 log=self.log if log is None else log,
-                **options
+                **options,
             )
 
         return deferred
@@ -560,7 +570,7 @@ class MGFDerivative:
                 if self.log:
                     # Return (log_abs, sign)
                     if abs(numeric_val) < 1e-300:
-                        return (-float('inf'), 1)
+                        return (-float("inf"), 1)
                     return (np.log(abs(numeric_val)), 1 if numeric_val > 0 else -1)
                 else:
                     # Return scalar
@@ -625,9 +635,7 @@ class MGFDerivative:
         """Whether any numeric evaluation point puts `t = r - b` at zero."""
         if r_values is None or isinstance(r_values, sp.Basic):
             return False
-        return bool(
-            np.any(np.asarray(r_values, dtype=float) - float(self.b) == 0.0)
-        )
+        return bool(np.any(np.asarray(r_values, dtype=float) - float(self.b) == 0.0))
 
     def _check_mgf_moment_at_origin(self, points) -> None:
         """Refuse `r = b`, the origin, when the raw moment there diverges.
@@ -675,7 +683,6 @@ class MGFDerivative:
             return False
         return not (isinstance(t_value, sp.Basic) and t_value.free_symbols)
 
-
     def _compute(self):
         """
         Delegates ALL math to mgfDerivative,
@@ -715,9 +722,7 @@ class MGFDerivative:
         if self.log:
             # Expect (log_abs, sign)
             if not isinstance(result, tuple):
-                raise TypeError(
-                    "Expected (log_abs, sign) tuple when log=True."
-                )
+                raise TypeError("Expected (log_abs, sign) tuple when log=True.")
             log_abs, sign = result
             # Sign must be positive for the normalising constant
             if sign == -1:
@@ -970,9 +975,11 @@ class MGFDerivative:
                 # carries the same hyperparameters, so one substitution here
                 # reaches both halves of the ratio. `post_cdf` does the same.
                 if self.params is not None:
-                    subs_dict = {sym: self.params[sym.name]
-                                 for sym in log_post.free_symbols
-                                 if sym.name in self.params}
+                    subs_dict = {
+                        sym: self.params[sym.name]
+                        for sym in log_post.free_symbols
+                        if sym.name in self.params
+                    }
                     if subs_dict:
                         log_post = log_post.subs(subs_dict)
 
@@ -1173,7 +1180,7 @@ class MGFDerivative:
                 simplify=self.simplify,
                 complete=False,
                 log=False,
-                **self._deriv_kwargs
+                **self._deriv_kwargs,
             )
             # Evaluate at t = -b (fixed)
             num_expr = num_expr.subs(t, -self.b)
@@ -1182,9 +1189,11 @@ class MGFDerivative:
 
             # Substitute known hyperparameters
             if self.params is not None:
-                subs_dict = {sym: self.params[sym.name]
-                            for sym in log_cdf_expr.free_symbols
-                            if sym.name in self.params}
+                subs_dict = {
+                    sym: self.params[sym.name]
+                    for sym in log_cdf_expr.free_symbols
+                    if sym.name in self.params
+                }
                 if subs_dict:
                     log_cdf_expr = log_cdf_expr.subs(subs_dict)
 
@@ -1256,7 +1265,7 @@ class MGFDerivative:
             complete=False,
             log=True,
             u=u_eval,
-            **self._deriv_kwargs
+            **self._deriv_kwargs,
         )
 
         # Denominator (already stored)
@@ -1287,7 +1296,7 @@ class MGFDerivative:
             if log:
                 return float(log_ratio.item())
             else:
-                if log_ratio.item() == -float('inf'):
+                if log_ratio.item() == -float("inf"):
                     return 0.0
                 return float(sign_ratio.item() * np.exp(log_ratio.item()))
         else:
@@ -1295,7 +1304,7 @@ class MGFDerivative:
                 return log_ratio
             else:
                 result = sign_ratio * np.exp(log_ratio)
-                result[log_ratio == -float('inf')] = 0.0
+                result[log_ratio == -float("inf")] = 0.0
                 return result
 
     # ========================================================
@@ -1333,9 +1342,9 @@ class MGFDerivative:
             stats_new = self.ready_func(
                 observations, **self._likelihood_arguments(**kwargs)
             )
-            a_new = stats_new['a']
-            b_new = stats_new['b']
-            log_c_new = stats_new['log_c']
+            a_new = stats_new["a"]
+            b_new = stats_new["b"]
+            log_c_new = stats_new["log_c"]
 
             combined_order = self.a + a_new
             combined_b = self.b + b_new
@@ -1347,7 +1356,7 @@ class MGFDerivative:
                 t=-combined_b,
                 simplify=self.simplify,
                 complete=True,
-                log=True
+                log=True,
             )
 
             if isinstance(num, tuple):
@@ -1361,9 +1370,11 @@ class MGFDerivative:
 
             if self.params is not None:
                 log_pred = log_pred.subs(
-                    {sym: self.params[sym.name]
-                     for sym in log_pred.free_symbols
-                     if sym.name in self.params}
+                    {
+                        sym: self.params[sym.name]
+                        for sym in log_pred.free_symbols
+                        if sym.name in self.params
+                    }
                 )
 
             if log_pred.free_symbols:
@@ -1374,7 +1385,6 @@ class MGFDerivative:
             raise
         except Exception as e:
             raise RuntimeError(f"Symbolic predictive computation failed: {e}") from e
-
 
     def post_predictive(self, new_data, log=True, individual=True, **kwargs):
         """
@@ -1522,19 +1532,17 @@ class MGFDerivative:
         scalar_input = len(new_data_arr) == 1
 
         if individual:
-            stats = self.each_func(
-                new_data_arr, **self._likelihood_arguments(**kwargs)
-            )
-            a_vals = np.asarray(stats['a']).ravel()
-            b_vals = np.asarray(stats['b']).ravel()
-            log_c_vals = np.asarray(stats['log_c']).ravel()
+            stats = self.each_func(new_data_arr, **self._likelihood_arguments(**kwargs))
+            a_vals = np.asarray(stats["a"]).ravel()
+            b_vals = np.asarray(stats["b"]).ravel()
+            log_c_vals = np.asarray(stats["log_c"]).ravel()
         else:
             stats = self.ready_func(
                 new_data_arr, **self._likelihood_arguments(**kwargs)
             )
-            a_vals = np.array([stats['a']])
-            b_vals = np.array([stats['b']])
-            log_c_vals = np.array([stats['log_c']])
+            a_vals = np.array([stats["a"]])
+            b_vals = np.array([stats["b"]])
+            log_c_vals = np.array([stats["log_c"]])
 
         a_comb = self.a + a_vals
         b_comb = self.b + b_vals
@@ -1546,7 +1554,7 @@ class MGFDerivative:
             simplify=self.simplify,
             complete=True,
             log=True,
-            **self._deriv_kwargs
+            **self._deriv_kwargs,
         )
         log_pred_vals = log_c_vals + log_abs_num - self.log_abs
 
@@ -1559,7 +1567,8 @@ class MGFDerivative:
                         self._sign if self._sign is not None else 1
                     )
                     return (
-                        0.0 if log_pred_vals[0] == -np.inf
+                        0.0
+                        if log_pred_vals[0] == -np.inf
                         else sign_pred * np.exp(log_pred_vals[0])
                     )
             else:
@@ -1576,9 +1585,10 @@ class MGFDerivative:
                 return log_pred_joint
             else:
                 sign_prod = np.prod(sign_num) if not scalar_input else sign_num[0]
-                sign_prod *= (self._sign if self._sign is not None else 1)
+                sign_prod *= self._sign if self._sign is not None else 1
                 return (
-                    0.0 if log_pred_joint == -np.inf
+                    0.0
+                    if log_pred_joint == -np.inf
                     else sign_prod * np.exp(log_pred_joint)
                 )
 
@@ -1674,9 +1684,11 @@ class MGFDerivative:
                 # Substitute known numeric parameters
                 if self.params is not None:
                     log_ratio = log_ratio.subs(
-                        {sym: self.params[sym.name]
-                        for sym in log_ratio.free_symbols
-                        if sym.name in self.params}
+                        {
+                            sym: self.params[sym.name]
+                            for sym in log_ratio.free_symbols
+                            if sym.name in self.params
+                        }
                     )
 
                 # ---- Handle different input types for r_val ----
@@ -1689,7 +1701,7 @@ class MGFDerivative:
                     return val if log else np.exp(val)
 
                 # Case 2: r_val is array-like (numeric)
-                if hasattr(r_val, '__len__') and not isinstance(r_val, (str, bytes)):
+                if hasattr(r_val, "__len__") and not isinstance(r_val, (str, bytes)):
                     free_after_params = log_ratio.free_symbols - {r}
                     if free_after_params:
                         raise RuntimeError(
@@ -1720,8 +1732,7 @@ class MGFDerivative:
                         val = np.array(results, dtype=float).reshape(orig_shape)
                         if scalar_input:
                             return (
-                                float(val.item()) if log
-                                else np.exp(float(val.item()))
+                                float(val.item()) if log else np.exp(float(val.item()))
                             )
                         else:
                             return val if log else np.exp(val)
@@ -1733,13 +1744,14 @@ class MGFDerivative:
                         else:
                             # If log=False, exponentiate symbolic expressions
                             if log:
-                                out = np.array(
-                                    results, dtype=object
-                                ).reshape(orig_shape)
+                                out = np.array(results, dtype=object).reshape(
+                                    orig_shape
+                                )
                                 return out
                             else:
                                 out = [
-                                    sp.exp(res) if isinstance(res, sp.Expr)
+                                    sp.exp(res)
+                                    if isinstance(res, sp.Expr)
                                     else np.exp(res)
                                     for res in results
                                 ]
@@ -1782,7 +1794,7 @@ class MGFDerivative:
             simplify=self.simplify,
             complete=True,
             log=True,
-            **self._deriv_kwargs
+            **self._deriv_kwargs,
         )
 
         log_ratio = log_abs_num - self.log_abs
@@ -1806,7 +1818,7 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR RAW MOMENT
     # ========================================================
-    def post_raw_moment(self, q, numerator_method='auto', log=True):
+    def post_raw_moment(self, q, numerator_method="auto", log=True):
         """
         Compute the posterior raw moment of order q.
 
@@ -1867,7 +1879,7 @@ class MGFDerivative:
         0.693147
         """
         # ---- Determine if q is array-like ----
-        if hasattr(q, '__len__') and not isinstance(q, (str, bytes, sp.Basic)):
+        if hasattr(q, "__len__") and not isinstance(q, (str, bytes, sp.Basic)):
             q_arr = np.asarray(q)
             is_array = True
         else:
@@ -1900,7 +1912,7 @@ class MGFDerivative:
                         t=None,
                         simplify=self.simplify,
                         log=False,
-                        complete=True
+                        complete=True,
                     )
                     # deriv_exprs is a list of sympy.Expr (one per order)
                     log_ratios = []
@@ -1910,9 +1922,11 @@ class MGFDerivative:
                         log_ratio = sp.log(num_expr) - sp.log(denom_expr)
                         if self.params is not None:
                             log_ratio = log_ratio.subs(
-                                {sym: self.params[sym.name]
-                                for sym in log_ratio.free_symbols
-                                if sym.name in self.params}
+                                {
+                                    sym: self.params[sym.name]
+                                    for sym in log_ratio.free_symbols
+                                    if sym.name in self.params
+                                }
                             )
                         log_ratios.append(log_ratio)
 
@@ -1934,16 +1948,18 @@ class MGFDerivative:
                         t=None,
                         simplify=self.simplify,
                         log=False,
-                        complete=True
+                        complete=True,
                     )
                     num_expr = deriv_expr.subs(t, -self.b)
                     denom_expr = self._evaluate_derivative(-self.b)
                     log_ratio = sp.log(num_expr) - sp.log(denom_expr)
                     if self.params is not None:
                         log_ratio = log_ratio.subs(
-                            {sym: self.params[sym.name]
-                            for sym in log_ratio.free_symbols
-                            if sym.name in self.params}
+                            {
+                                sym: self.params[sym.name]
+                                for sym in log_ratio.free_symbols
+                                if sym.name in self.params
+                            }
                         )
                     if log_ratio.free_symbols:
                         return log_ratio if log else sp.exp(log_ratio)
@@ -1970,7 +1986,7 @@ class MGFDerivative:
             simplify=self.simplify,
             log=True,
             complete=True,
-            **self._deriv_kwargs
+            **self._deriv_kwargs,
         )
 
         log_ratio = log_abs_num - self.log_abs
@@ -1994,7 +2010,7 @@ class MGFDerivative:
     # ========================================================
     # POSTERIOR CENTRAL MOMENT
     # ========================================================
-    def post_central_moment(self, order=None, log=True, numerator_method='auto'):
+    def post_central_moment(self, order=None, log=True, numerator_method="auto"):
         """
         Compute central moments of the posterior distribution.
 
@@ -2082,7 +2098,7 @@ class MGFDerivative:
         # ---- Fetch all needed raw moments in one vectorized call ----
         max_order = max(orders)
         # We need raw moments up to max_order (including 0)
-        q_all = list(range(0, max_order + 1))   # e.g., [0,1,2,3,4]
+        q_all = list(range(0, max_order + 1))  # e.g., [0,1,2,3,4]
         raw_all = self.post_raw_moment(
             q_all, log=False, numerator_method=numerator_method
         )
@@ -2111,14 +2127,14 @@ class MGFDerivative:
             if log:
                 if isinstance(central, (int, float)):
                     if central == 0:
-                        result = (-float('inf'), 1)
+                        result = (-float("inf"), 1)
                     else:
                         result = (np.log(abs(central)), 1 if central > 0 else -1)
                 elif isinstance(central, sp.Expr):
                     if not central.free_symbols:
                         val = float(central.evalf())
                         if val == 0:
-                            result = (-float('inf'), 1)
+                            result = (-float("inf"), 1)
                         else:
                             result = (np.log(abs(val)), 1 if val > 0 else -1)
                     else:
@@ -2138,7 +2154,6 @@ class MGFDerivative:
         else:
             return results
 
-
     # ========================================================
     # POSTERIOR QUANTILE
     # ========================================================
@@ -2153,7 +2168,7 @@ class MGFDerivative:
         maxiter: int = 50,
         tol: float = 1e-8,
         rel_tol: float = 1e-8,
-        **kwargs
+        **kwargs,
     ) -> np.ndarray | float:
         """
         Compute quantiles (inverse CDF) for given probabilities.
@@ -2280,7 +2295,7 @@ class MGFDerivative:
             maxiter=maxiter,
             tol=tol,
             rel_tol=rel_tol,
-            **kwargs
+            **kwargs,
         )
 
         # ---- Verify the root, and fall back to bisection if it is not one --
@@ -2307,7 +2322,7 @@ class MGFDerivative:
                     maxiter=maxiter,
                     tol=tol,
                     rel_tol=rel_tol,
-                    **kwargs
+                    **kwargs,
                 ),
                 dtype=float,
             )
@@ -2345,7 +2360,7 @@ class MGFDerivative:
         u: np.ndarray | None = None,
         root_method: str = "auto",
         rng=None,
-        **kwargs
+        **kwargs,
     ) -> np.ndarray:
         """
         Generate posterior samples using inverse transform sampling.
@@ -2434,10 +2449,7 @@ class MGFDerivative:
     # CENTRAL POSTERIOR CREDIBLE INTERVAL
     # ========================================================
     def post_interval(
-        self,
-        level: float | np.ndarray = 0.95,
-        root_method: str = "auto",
-        **kwargs
+        self, level: float | np.ndarray = 0.95, root_method: str = "auto", **kwargs
     ) -> tuple | np.ndarray:
         """
         Compute central (equal-tailed) credible intervals for the posterior.
@@ -2597,7 +2609,7 @@ class MGFDerivative:
                     name="posterior_prior_symbolic",
                     mgf_sym=mgf_sym_expr,
                     pdf_sym=pdf_sym_expr,
-                    params=self.params
+                    params=self.params,
                 ).as_MGFPrior()
 
         # ---- Backend (numeric) route ----
@@ -2617,7 +2629,7 @@ class MGFDerivative:
             name="posterior_prior",
             mgf_backend=mgf_backend,
             pdf_backend=pdf_backend,
-            params=self.params
+            params=self.params,
         ).as_MGFPrior()
 
     def update(self, new_data, **kwargs):
@@ -2733,6 +2745,6 @@ class MGFDerivative:
             likelihood=likelihood,
             method=method,
             simplify=simplify,
-            log=log, # new object's requested state
-            **kwargs
+            log=log,  # new object's requested state
+            **kwargs,
         )
