@@ -419,6 +419,16 @@ def mgfDerivative_integer(
         # it. The fast path may only skip work, never change an answer.
         pending = list(range(n_points))
         symbols_left = expr.free_symbols - ({t_sym} if complete else {t_sym, u_sym})
+
+        # Before evaluating, ask whether the evaluation can mean anything. Only
+        # for the complete MGF: the incomplete one carries `u` as well, so its
+        # terms are not a function of `t` alone and the diagnostic does not
+        # apply. `_intermediate` calls come from the fractional kernels, which
+        # ask for many nodes of a derivative whose individual values are not
+        # the caller's answer.
+        if complete and not symbols_left and n_points and not _intermediate:
+            _check_cancellation(expr, t_flat, order, prior, method)
+
         if not symbols_left and n_points:
             arg_symbols = (t_sym,) if complete else (t_sym, u_sym)
             # Probe with the caller's own first point, which is in domain by
@@ -805,6 +815,10 @@ def mgfDerivative_fractional(
         # which of them the caller happened to reach for.
         from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
 
+        # Only this route truncates the t = 0 tail; `mpmath` below is exact
+        # there, so the check sits inside the branch rather than above it.
+        _check_fractional_kernel_at_origin(order, prior, t, "scipy")
+
         grid_keys = {"tol"}
         return fractionalDeriv_grid(
             order=order,
@@ -822,6 +836,12 @@ def mgfDerivative_fractional(
         from jumufraktiv.numeric_fractionalDeriv_mpmath import (
             fractionalDeriv_numeric_mpmath,
         )
+
+        # Only the removable-singularity case: this route's precision absorbs
+        # a divergent E[Theta^(n+1)], and stays exact to ~1e-16 where the
+        # fixed grid loses the tail.
+        _check_fractional_kernel_at_origin(order, prior, t, "mpmath")
+
         return fractionalDeriv_numeric_mpmath(
             order=order,
             prior=prior,
@@ -900,6 +920,309 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
             f"likelihood subtracts (for example y == mean, y == 0, or "
             f"y == scale). Away from t = 0 no moment condition applies."
         )
+
+
+#: How many significant digits a differentiated-MGF evaluation must retain to
+#: be reported rather than refused. float64 carries about 16, and the
+#: cancellation ratio says how many were lost, so this is a floor on
+#: ``16 − log10(ratio)``.
+#:
+#: Set to match the 1e-8 line the package's own 240-case backend comparison
+#: used to define an unacceptable result. Measured against Uniform(0.5, 2) at
+#: ``t = −1`` with the exact value from mpmath at 80 digits, the predicted
+#: surviving digits track the observed error closely enough to place the
+#: threshold between two orders rather than inside the uncertainty of one:
+#: order 12 retains 9.0 digits and errs by 2.2e-10; order 16 retains 5.4 and
+#: errs by 2.0e-06; order 20 retains 1.5 and errs by 1.8e-02.
+_MIN_SIGNIFICANT_DIGITS = 8.0
+
+#: What float64 starts with.
+_FLOAT64_DIGITS = 16.0
+
+
+def _check_cancellation(expr, t_values, order, prior, method) -> None:
+    """
+    Refuse a differentiated-MGF value that has cancelled away its own digits.
+
+    Parameters
+    ----------
+    expr : sympy.Expr
+        The differentiated MGF about to be evaluated.
+    t_values : numpy.ndarray
+        The evaluation points, already flattened.
+    order : int
+        Derivative order, quoted in the message.
+    prior : mitMGFprior
+        Prior, quoted in the message.
+    method : str
+        The route being served, quoted in the message.
+
+    Raises
+    ------
+    ValueError
+        If fewer than :data:`_MIN_SIGNIFICANT_DIGITS` are predicted to survive
+        at any evaluation point.
+
+    Notes
+    -----
+    Differentiating an MGF whose CGF has terms of alternating sign produces a
+    sum whose leading digits cancel, and the loss is in the stored float
+    coefficients rather than in the arithmetic — so no evaluator at any
+    precision recovers it. Against Uniform(0.5, 2) at ``t = −1`` and order 30
+    this route returns ``3.60e+16`` where the value is ``6.67e+06``.
+
+    The diagnostic is ``Σ|term| / |Σ term|``, and it is predictive rather than
+    indicative: across orders 6 to 30 the digits it says will survive match the
+    error actually observed to within about half a digit.
+
+    It is also narrow. A prior whose CGF has one-signed derivatives cannot
+    cancel at all, and gamma's ratio is exactly 1.0 at every order tested — so
+    this never fires for the priors where the fast symbolic route is the right
+    choice.
+
+    Refusing rather than warning follows the same reasoning as the negative
+    evidence check in ``MGFDerivative._store_result``: a number this wrong is
+    not an answer, and a warning would be filtered while the value flowed on
+    into a posterior. An explicit ``method=`` is never silently replaced, so
+    the message names the route that works instead.
+    """
+    from jumufraktiv.symbolic_cache import cached_term_values
+
+    if t_values.size == 0:
+        return
+
+    # Probe with the caller's own first point, which is in domain by
+    # construction, for the same reason the evaluation path below does.
+    compiled = cached_term_values(expr, t_sym, probe=t_values[:1])
+    if compiled is None:
+        # Multiple free symbols, or an expression that will not compile. Both
+        # are outside what this diagnostic can measure; saying nothing is
+        # right, because a false refusal is worse than a missed one.
+        return
+
+    with np.errstate(all="ignore"):
+        raw = compiled(t_values)
+        # A term free of `t` comes back as a scalar however many points were
+        # asked for, so each is broadcast to the batch before stacking.
+        values = np.stack(
+            [
+                np.broadcast_to(np.asarray(term, dtype=float), t_values.shape)
+                for term in raw
+            ]
+        )
+    if not np.all(np.isfinite(values)):
+        return  # overflow or underflow; the exact path handles those elements
+
+    totals = values.sum(axis=0)
+    magnitudes = np.abs(values).sum(axis=0)
+
+    # A total of exactly zero against terms that are not all zero is *complete*
+    # cancellation -- every significant digit gone -- and it is the worst case
+    # this guard exists for rather than one to wave through. The true value
+    # cannot be zero: `D^a M(t) = E[theta^a e^{t theta}]` is strictly positive
+    # because `theta > 0`, so a computed zero here is arithmetic, not an answer.
+    #
+    # Both halves matter. Skipping when *every* point cancels would disable the
+    # check exactly where it is most needed, and scoring only the surviving
+    # points would mark the cancelled ones as perfectly conditioned -- worse,
+    # because a mixed batch would then pass on the strength of its good points.
+    all_terms_zero = magnitudes == 0.0
+    cancelled = (totals == 0.0) & ~all_terms_zero
+    live = (totals != 0.0) & ~all_terms_zero
+
+    ratios = np.ones_like(totals, dtype=float)
+    ratios[live] = magnitudes[live] / np.abs(totals[live])
+    ratios[cancelled] = np.inf
+
+    with np.errstate(divide="ignore"):
+        digits_left = _FLOAT64_DIGITS - np.log10(np.maximum(ratios, 1.0))
+
+    worst = int(np.argmin(digits_left))
+    if digits_left[worst] >= _MIN_SIGNIFICANT_DIGITS:
+        return
+
+    name = getattr(prior, "name", "this prior")
+    if np.isinf(ratios[worst]):
+        extent = (
+            "its MGF gives a sum that cancels to exactly zero, so no "
+            "significant digit survives at all -- and the true value cannot be "
+            "zero, since D^a M(t) = E[theta^a e^(t theta)] is strictly positive"
+        )
+    else:
+        extent = (
+            f"its MGF gives a sum whose terms cancel by a factor of "
+            f"{ratios[worst]:.3g}, leaving about {digits_left[worst]:.1f} of "
+            f"float64's {_FLOAT64_DIGITS:.0f} significant digits, below the "
+            f"{_MIN_SIGNIFICANT_DIGITS:.0f} this route will report"
+        )
+
+    raise ValueError(
+        f"method='{method}' cannot compute the order-{order} derivative for "
+        f"prior '{name}' at t = {float(t_values[worst]):.6g}: differentiating "
+        f"{extent}. The loss is in "
+        f"the stored coefficients, not the arithmetic, so higher precision "
+        f"does not recover it -- against Uniform(0.5, 2) at t = -1 and order "
+        f"30 this route returns 3.60e+16 where the value is 6.67e+06. Use "
+        f"method='auto', which computes E[Theta^a e^(t Theta)] directly from "
+        f"the density; its integrand is positive and cannot cancel, and it is "
+        f"exact to ~7e-15 at the same orders. A prior whose CGF has one-signed "
+        f"derivatives, such as gamma, never reaches this check."
+    )
+
+
+def _kernel_derivative_at_origin(order, prior):
+    """
+    Evaluate ``M^{(n+1)}(0)``, the quantity both fractional kernels need.
+
+    Parameters
+    ----------
+    order : float
+        Derivative order; ``n = floor(order)``.
+    prior : mitMGFprior
+        Prior, read for its MGF expression.
+
+    Returns
+    -------
+    float or None
+        ``M^{(n+1)}(0)``; ``nan`` if the expression exists but cannot be
+        evaluated there; ``None`` if the prior has no symbolic MGF at all,
+        which is a different situation and must not be reported as one.
+
+    Notes
+    -----
+    Three outcomes rather than two, because they mean different things and the
+    routes survive them differently.
+
+    ``inf`` is a genuine divergence — at the origin ``M^{(k)}(0) = E[Θ^k]``, so
+    a heavy-tailed prior has none past its bound. ``nan`` is a removable
+    singularity in the *expression*: the uniform MGF carries ``t`` in a
+    denominator, so ``(e^{bt} − e^{at})/(t(b−a))`` differentiates to something
+    that reads 0/0 at zero even though the function is perfectly finite.
+
+    ``None`` is neither. A prior built from ``mgf_backend``/``pdf_backend``
+    carries no expression to differentiate, and so does the one
+    ``to_prior_object`` produces for sequential updating. Those cannot use a
+    differentiating route at all, at any ``t``, and saying so is that route's
+    job — blaming a singularity in an expression the prior does not have would
+    send the caller looking for the wrong thing.
+    """
+    n_plus_1 = math.floor(float(order)) + 1
+    expr = getattr(prior, "mgf_sym_out", None) or getattr(prior, "mgf_sym", None)
+    if expr is None:
+        return None
+
+    from jumufraktiv.symbolic_cache import cached_diff
+
+    try:
+        value = complex(cached_diff(expr, t_sym, n_plus_1).subs({t_sym: 0.0}).evalf())
+    except (TypeError, ValueError, ZeroDivisionError):
+        return float("nan")
+    if abs(value.imag) > 1e-12 * max(1.0, abs(value.real)):
+        return float("nan")
+    return value.real
+
+
+def _check_fractional_kernel_at_origin(order, prior, t, method) -> None:
+    """
+    Reject a fractional route at ``t = 0`` when the kernel it needs diverges.
+
+    Parameters
+    ----------
+    order : float or sympy.Basic
+        Derivative order. Symbolic orders are not checked.
+    prior : mitMGFprior
+        Prior whose MGF the kernel differentiates.
+    t : float, array-like or None
+        Evaluation point(s). Only ``t = 0`` is checked.
+    method : {'scipy', 'mpmath'}
+        Which route is being served. They survive the two failure modes
+        differently, so the check is not the same for both.
+
+    Raises
+    ------
+    ValueError
+        If ``t`` includes 0 and ``M^{(n+1)}(0)`` is not finite in a way this
+        route cannot absorb.
+
+    Notes
+    -----
+    This is narrower than :func:`_check_moment_exists_at_origin` and does not
+    replace it. That one rejects an order whose moment does not exist, so no
+    route can serve it. This one rejects an order whose moment exists and
+    which *this* route cannot compute.
+
+    Both fractional kernels integrate ``M^{(n+1)}`` against the
+    fractional-integral weight, so both need that derivative at the evaluation
+    point. Two things go wrong at the origin, and they are separable:
+
+    - ``M^{(n+1)}(0) = E[Θ^{n+1}]`` is **infinite** for a heavy-tailed prior
+      once ``n+1`` reaches its bound. The fixed grid then truncates a
+      polynomial tail it cannot estimate and returns a plausible number:
+      against Pareto(α=3) it is right to 1.6e-14 at order 1.95, where
+      ``n+1 = 2``, and wrong by 1.8e-06 at order 2.011, where ``n+1 = 3``.
+      That step — not a smooth degradation — is why the condition is exact
+      rather than a tolerance. ``mpmath`` carries enough precision to absorb
+      this one and stays exact to ~1e-16, so it is not refused for it.
+
+    - ``M^{(n+1)}(0)`` is **nan** when the MGF has a removable singularity at
+      the origin, as the uniform and heaviside priors do. Both routes then
+      return nonsense without raising: against Uniform(0.5, 2) the relative
+      error is 6.0e+05 for ``scipy`` and 5.2e+149 for ``mpmath`` at order 1.5.
+
+    ``method='auto'`` is unaffected by either, because the expectation route
+    integrates ``θ^a p(θ)`` and never touches the MGF. It is exact to ~1e-16
+    in every case above, which is what the error message points at.
+    """
+    if t is None or isinstance(order, sp.Basic):
+        return
+    if not np.any(np.asarray(t, dtype=float) == 0.0):
+        return
+
+    value = _kernel_derivative_at_origin(order, prior)
+    if value is None:
+        # No symbolic MGF to differentiate -- a backend-built prior, or the one
+        # `to_prior_object` produces. It cannot use this route at any `t`, so
+        # the route's own failure is the accurate report and this guard has
+        # nothing to add.
+        return
+    if np.isfinite(value):
+        return
+
+    name = getattr(prior, "name", "this prior")
+    n_plus_1 = math.floor(float(order)) + 1
+
+    if np.isnan(value):
+        raise ValueError(
+            f"method='{method}' cannot be evaluated at t = 0 for prior "
+            f"'{name}': the fractional kernel needs the derivative "
+            f"M^({n_plus_1})(0), and this prior's MGF has a removable "
+            f"singularity at the origin, so that expression reads 0/0 there "
+            f"even though the value is finite. Both fractional routes return "
+            f"a wrong number rather than fail -- for Uniform(0.5, 2) at order "
+            f"1.5 the relative error is 6.0e+05 for 'scipy' and 5.2e+149 for "
+            f"'mpmath'. Use method='auto', which computes E[Theta^a] directly "
+            f"and never touches the MGF. Away from t = 0 this route is "
+            f"unaffected."
+        )
+
+    # Infinite rather than nan: a genuine divergence of E[Theta^(n+1)].
+    # `mpmath` absorbs this -- measured exact to 1.4e-16 against Pareto(alpha=3)
+    # at order 2.97, where the grid is wrong by 76% -- so it is not refused.
+    if method == "mpmath":
+        return
+
+    limit = float(getattr(prior, "max_finite_moment", np.inf))
+    raise ValueError(
+        f"method='{method}' cannot be trusted at t = 0 for prior '{name}' at "
+        f"order {float(order)}: the fractional kernel needs M^({n_plus_1})(0) "
+        f"= E[Theta^{n_plus_1}], which diverges because this prior's moments "
+        f"are finite only below {limit}. The order itself is admissible -- "
+        f"E[Theta^{float(order)}] exists -- but this route cannot reach it, "
+        f"and it truncates the tail silently rather than failing. Use "
+        f"method='auto', which supplies the tail analytically, or "
+        f"method='mpmath', which carries the precision to integrate it; both "
+        f"are exact to ~1e-16 here. Away from t = 0 this route is unaffected."
+    )
 
 
 # No `prior` argument, deliberately: which backend serves an order is a
@@ -1377,6 +1700,11 @@ def mgfDerivative(
         # takes its sign from an endpoint.
         if method == "scipy":
             from jumufraktiv.numeric_fractionalDeriv_grid import fractionalDeriv_grid
+
+            # Only this route truncates the t = 0 tail; the `mpmath` branch
+            # below is exact there, and `auto` never arrives here because the
+            # expectation route was preferred above.
+            _check_fractional_kernel_at_origin(order, prior, t, "scipy")
 
             return fractionalDeriv_grid(
                 order=order,

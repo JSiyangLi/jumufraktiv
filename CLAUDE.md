@@ -647,6 +647,7 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | **merged** |
 | 6 | 13d | Packaging: what the sdist and wheel actually contain | **merged** |
 | 6 | 13e | The API reference read against the code; `-W` in CI | **in review** |
+| 6 | 13f | Routes that refuse rather than return a wrong number | **in review** |
 | 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
@@ -939,71 +940,24 @@ each reproduction:
 
 | entry | recorded | measured | outcome |
 |---|---|---|---|
-| alternating CGF, `symbolic` | wrong sign at order 30 | 5.4e+09, sign flipped | live; xfail added |
+| alternating CGF, `symbolic` | wrong sign at order 30 | 5.4e+09 relative, sign `+1` | closed: the route now refuses |
 | mpmath `dps` above ~20 | a return-convention limit | unchanged | not a defect; moved to "Deferred decisions" |
-| tail at `t = 0`, `scipy` | 6.1e-01 at order 1.99 | — | live; already carried three xfails |
+| tail at `t = 0`, `scipy` | 6.1e-01 at order 1.99 | 9.6e-01 at order 1.99 | closed: the route now refuses |
 | incomplete MGF below `u ≈ 1e-2` | 45 nats off at `u = 1e-6` | **0.000 nats** | fixed by PR 6b; entry deleted |
+
+One recorded number did not reproduce and is corrected above rather than
+repeated: the order-30 symbolic value is `+3.60e+16` against a true
+`+6.67e+06`, so the magnitude was right and **the sign flip was not** — the
+returned sign is `+1`. The list said "sign flipped" for three PRs. It changes
+nothing about the defect, which is why it is worth noticing: a number nobody
+re-derives is a number that can be wrong in a document whose whole purpose is
+to be re-derivable.
 
 The general lesson is the one the mechanism exists to prevent: a list of known
 defects that is not executable becomes a list of *claims* about defects, and
 ages in both directions at once — it kept an entry that had been fixed and lost
 one that had not.
 
-- **Integer derivatives of an alternating-CGF prior lose all accuracy above
-  order ~16, and change sign.** `mgfDerivative(30, uniform(0.5, 2.0),
-  method="symbolic", t=-1.0)` returns `−2.97e+15` where the true value of
-  `E[θ³⁰e^{−θ}]` is `+6665897.83` (mpmath, 80 digits) — the wrong sign and a
-  factor of 4.5e8. Accuracy has already gone by order 16 (1.7e-6) and order 20
-  (1.8e-2). The mechanism is 25–26 digits of cancellation against the float
-  coefficients in the stored MGF, so **no evaluator at any precision recovers
-  it**: confirmed with exact rationals (`+3.09e16`) and with `evalf(80)`
-  (`−2.97e15`). `a = Σy` for several likelihoods, so a Poisson sample summing
-  to 30 under a uniform prior reaches this in ordinary use.
-
-  Invisible to the suite for a reason worth fixing alongside it: **`bell` and
-  `jax` are never run against a non-gamma prior anywhere**, and the Gamma
-  MGF's derivatives have one-signed terms, so they cannot cancel. The
-  cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy" is the
-  diagnostic.
-
-  **But the conclusion drawn from this — that the case cannot be computed and
-  must merely be flagged — is wrong, and that is newly measured.** "No evaluator
-  at any precision recovers it" is true of the *differentiated-MGF route* only.
-  The defining identity `Dᵃ M(t) = E[θᵃ e^{tθ}]` gives a completely different
-  computation whose integrand is **positive**, so it cannot cancel at all.
-  Evaluating that expectation by ordinary `scipy.integrate.quad` in plain
-  float64, against the same Uniform(0.5, 2) prior at `t = −1`, measured against
-  an mpmath oracle at 80 digits:
-
-  | order | differentiated MGF | direct quadrature |
-  |-------|--------------------|-------------------|
-  | 12    | 2.0e-10            | 2.2e-16           |
-  | 20    | 1.8e-02            | 2.3e-16           |
-  | 30    | 4.5e+08 (wrong sign) | 8.7e-18         |
-  | 100   | —                  | 1.3e-15           |
-
-  So the fix is a route, not a warning: for a prior with a usable density,
-  compute the expectation directly instead of differentiating the MGF. That is
-  an architectural addition rather than a repair, it needs a decision about when
-  to prefer it, and it does not obviously extend to priors given only as an MGF
-  — so it is recorded here for the owner rather than assumed.
-
-  **Re-measured, and it is now reachable only by asking for the backend by
-  name.** Against Uniform(0.5, 2) at `t = −1`, with the exact value from mpmath
-  at 80 digits:
-
-  | order | `method="symbolic"` | `method="auto"` (the default) |
-  |---|---|---|
-  | 12 | 2.2e-10 | 2.6e-15 |
-  | 16 | 2.0e-06 | 3.1e-15 |
-  | 20 | 1.8e-02 | 5.1e-15 |
-  | 30 | 5.4e+09, sign flipped | 7.3e-15 |
-
-  So the route PR 6c made the default already computes it correctly, and what
-  is left open is an interface question rather than a numerical one: should an
-  explicitly requested backend be silently replaced by a better one, or should
-  it fail as asked? That is why this stays recorded rather than being closed.
-  *(unscheduled — interface decision)*
 - **`dps` above about 20 cannot improve the mpmath backend's *return value*,
   because it returns `(log_abs, sign)` as Python floats.** The internals are now
   arbitrary-precision throughout — the integrand is the prior's symbolic
@@ -1017,15 +971,6 @@ one that had not.
   the deferred "replace `(log_abs, sign)` with a small result type" decision
   rather than a numerical repair. Recorded here so the two are not confused.
   *(deferred — see "Deferred decisions")*
-- **The differentiating route loses the tail at `t = 0` near a prior's moment
-  bound.** `method="scipy"` gives 2.0e-04 relative error at order 1.5 against
-  Pareto(α=2), 8.2e-02 at 1.9 and 6.1e-01 at 1.99, where the exact answer is
-  `E[Θᵃ] = 2/(2−a)`. The default `auto` route is exact to 6e-16 across the same
-  range; the mechanism differs, so the repair does not carry across. The
-  expectation route integrates `θᵃ p(θ)` and can have its tail supplied from
-  `max_finite_moment`; the fixed grid integrates `M^{(n+1)}` over the
-  fractional-integral kernel, where that correction has no counterpart.
-  *(unscheduled)*
 
 ### Verified correct
 
@@ -1037,6 +982,59 @@ model to within `1e-8`. Integer derivatives of the Gamma MGF match the
 analytic formula for orders 0–5, and the `symbolic` and `bell` backends agree.
 The defects above are in dispatch, plumbing and edge handling — not in the
 core mathematics.
+
+- **A route that can prove its answer is untrustworthy now refuses, rather
+  than returning it.** Two separate defects had the same shape — an explicitly
+  named backend silently producing a badly wrong number — and both are closed
+  by detection rather than by repair, because in each case the answer is
+  already available from another route.
+
+  *Cancellation, on the differentiated-MGF route.* Differentiating an MGF
+  whose CGF alternates in sign gives a sum whose leading digits cancel, and
+  the loss is in the stored float coefficients rather than the arithmetic, so
+  no evaluator at any precision recovers it. The diagnostic is the
+  cancellation ratio `Σ|term| / |Σ term|` named under "Numerical policy", and
+  it is **predictive rather than indicative** — the digits it says will
+  survive match the error observed to within about half a digit across nine
+  orders of magnitude. Against Uniform(0.5, 2) at `t = −1`:
+
+  | order | ratio | digits predicted | `symbolic` error | now |
+  |---|---|---|---|---|
+  | 6 | 4.4e+02 | 13.4 | 3.9e-14 | computed |
+  | 12 | 9.6e+06 | 9.0 | 2.2e-10 | computed |
+  | 16 | 3.6e+10 | 5.4 | 2.0e-06 | refused |
+  | 20 | 3.3e+14 | 1.5 | 1.8e-02 | refused |
+  | 30 | 2.6e+16 | −0.4 | 3.60e+16 for 6.67e+06 | refused |
+
+  Gamma's ratio is **exactly 1.0 at every order**, so the check never fires
+  where the fast symbolic route is the right choice — which is what makes it a
+  guard rather than a restriction on high orders.
+
+  *The kernel's own derivative at the origin.* Both fractional kernels
+  integrate `M^{(n+1)}`, so at `t = 0` they need `E[Θ^{n+1}]`. Two things go
+  wrong and they are separable, which matters because the two routes survive
+  them differently:
+
+  - `E[Θ^{n+1}]` is **infinite** for a heavy-tailed prior once `⌊a⌋+1` reaches
+    its bound. The grid then truncates a polynomial tail it cannot estimate.
+    The condition is exact rather than a tolerance, and the sharpness is the
+    evidence: against Pareto(α=3) the grid is right to 1.6e-14 at order 1.95,
+    where `⌊a⌋+1 = 2`, and wrong by 1.8e-06 at order 2.011, where it becomes
+    3. `mpmath` absorbs this and stays exact to ~1e-17, so it is not refused.
+  - `M^{(n+1)}(0)` is **nan** when the MGF has a removable singularity at the
+    origin, as uniform and heaviside do. *Both* fractional routes then return
+    nonsense without raising — for Uniform(0.5, 2) at order 1.5 the relative
+    error is 6.0e+05 for `scipy` and 5.2e+149 for `mpmath`.
+
+  The second of those was **found while testing the guard for the first**, and
+  is the larger defect of the two. It had never been recorded, because the
+  known-broken entry it belongs beside was written about Pareto and nobody had
+  evaluated uniform at the origin on these routes.
+
+  `method="auto"` is unaffected by any of it: the expectation route integrates
+  `θᵃp(θ)` and never touches the MGF. It is exact to ~1e-16 in every case
+  above, which is what each error message points at. An explicit `method=` is
+  still never silently replaced — the caller is told, not overridden.
 
 **Array-valued derivative orders** now match the closed form to 1e-10 at
 orders 0.5, 1.5, 1.9 and 2.5, preserve the caller's shape, broadcast against an
@@ -1450,7 +1448,13 @@ uniform, where double precision degrades from order ~12.
 
 ### Deferred decisions
 
-- Make `jax` and `pandas` optional rather than import-time-required.
+- ~~Make `jax` and `pandas` optional rather than import-time-required.~~
+  **Settled: both stay mandatory** (owner's decision). The cost is real and
+  measured — `jaxlib` is 349 MB and `jax` a further 31 MB against 113 for
+  scipy and 76 for pandas, and jax is 470 ms of the 2035 ms import — and
+  nothing reaches jax unless a caller names it (`method='jax'`, or a
+  `root_method` containing `jax`). Weighed against that, the functionality
+  justifies the weight, so the lazy-import work is not scheduled.
 - Replace the `(log_abs, sign)` return convention with a small result type.
   Now needed in one place rather than several: only `post_central_moment`
   returns the pair, since it is the only quantity that can be negative.
