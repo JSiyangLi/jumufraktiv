@@ -156,43 +156,39 @@ def test_a_compiled_expression_agrees_with_the_exact_one(gamma_prior):
             )
 
 
-def test_an_expression_that_will_not_compile_falls_back(gamma_prior):
-    """`expint` is in neither SciPy's nor NumPy's namespace.
+def test_an_expression_that_will_not_compile_falls_back():
+    """SymPy compiles a name it has no numeric backend for, then fails on call.
 
-    `CLAUDE.md` said `modules=["scipy", "numpy"]` covers `lowergamma`,
-    `uppergamma`, `polygamma` and `Ei`. That list is incomplete: the Pareto
-    prior's MGF is written with `expint`, which neither module provides.
-    SymPy compiles it happily and the result raises `NameError` on the first
-    call -- so the compiled form has to be *probed*, not merely built.
+    This is why a compiled form must be *probed* rather than merely built:
+    `lambdify` turns an unknown function into a bare global, so the failure is
+    a `NameError` at first call and not a build error. Returning `None` rather
+    than raising is what keeps such a prior usable, since the symbolic path
+    computes the same quantity exactly.
 
-    Returning `None` rather than raising is what keeps the prior usable: the
-    symbolic path computes the same quantity exactly, just slower.
+    `sympy.Chi`, the hyperbolic cosine integral, stands in for that class of
+    name. It used to be `expint` from the Pareto MGF, which was the real case
+    that motivated the probe -- but `jumufraktiv.special` now supplies `expint`
+    precisely so it compiles, so it is no longer an example of anything. The
+    mechanism it demonstrated is unchanged and still needs a witness; see
+    `test_the_pareto_mgf_now_compiles` for the other side.
     """
     import numpy as np
+    import sympy as sp
 
-    from jumufraktiv import registry
-    from jumufraktiv.MGFPrior_class import MGFPrior
-    from jumufraktiv.symbolic_cache import cached_diff, cached_lambdify
+    from jumufraktiv.symbolic_cache import cached_lambdify
     from jumufraktiv.symbols import t as t_sym
 
-    registry.initialize()
-    pareto = MGFPrior.from_registry("pareto", params={"alpha": 2.5, "xi": 1.0})
+    uncompilable = sp.Chi(t_sym)
+    probe = (np.array([0.5]),)
 
-    second = cached_diff(pareto.mgf_sym, t_sym, 2)
-    assert "expint" in str(second), "this test is pointless if the MGF changed"
-
-    probe = (np.array([-1.0]),)
-    assert cached_lambdify(second, (t_sym,), probe=probe) is None
+    assert cached_lambdify(uncompilable, (t_sym,), probe=probe) is None
     # ... and the verdict is cached, so the failure is paid once.
-    assert cached_lambdify(second, (t_sym,), probe=probe) is None
+    assert cached_lambdify(uncompilable, (t_sym,), probe=probe) is None
 
-    # The prior still works, through the exact path.
-    from jumufraktiv.derivativeDispatch import mgfDerivative_integer
-
-    log_abs, sign = mgfDerivative_integer(
-        2, pareto, method="symbolic", t=-1.0, log=True
-    )
-    assert np.isfinite(log_abs) and sign == 1
+    # The premise, so this cannot pass because SymPy stopped emitting the name.
+    raw = sp.lambdify((t_sym,), uncompilable, modules=["scipy", "numpy"])
+    with pytest.raises(NameError):
+        raw(np.array([0.5]))
 
 
 def test_compiling_without_a_probe_does_not_pretend_to_have_checked(gamma_prior):

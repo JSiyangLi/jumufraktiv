@@ -138,10 +138,18 @@ def cached_lambdify(expr, args, probe=None):
     try:
         # `scipy` cannot be dropped from `modules`: NumPy alone has no
         # `lowergamma`, `uppergamma`, `polygamma` or `Ei`, all of which appear
-        # in this package's priors. Nor is it sufficient -- `expint` is in
-        # neither module, and SymPy compiles it anyway, which is what the probe
-        # call below catches.
-        compiled = sp.lambdify(args, expr, modules=["scipy", "numpy"])
+        # in this package's priors. Nor is it sufficient -- `expint`, which the
+        # Pareto MGF is written with, is in neither, and SymPy compiles it
+        # anyway, so the failure surfaces as a `NameError` on the first call.
+        # `jumufraktiv.special` supplies it, ahead of both so it wins.
+        #
+        # The probe below still runs and still matters: it is what catches the
+        # next such name rather than this one.
+        from jumufraktiv.special import LAMBDIFY_NAMESPACE
+
+        compiled = sp.lambdify(
+            args, expr, modules=[LAMBDIFY_NAMESPACE, "scipy", "numpy"]
+        )
         if probe is not None:
             compiled(*probe)
     except Exception:
