@@ -102,9 +102,7 @@ ROUTE_OPTIONS = {
     ("integer", "bell"): frozenset({"cgf_method", "symbolic_timeout"}),
     ("integer", "jax"): frozenset(),
     ("fractional", "scipy"): frozenset({"tol", "integer_method"}),
-    ("fractional", "mpmath"): frozenset(
-        {"tol", "dps", "use_tan", "integer_method"}
-    ),
+    ("fractional", "mpmath"): frozenset({"tol", "dps", "use_tan", "integer_method"}),
     ("fractional", "symbolic"): frozenset({"timeout_seconds"}),
 }
 
@@ -349,10 +347,7 @@ def mgfDerivative_integer(
     # ---------------------------------------------------------
     if method == "symbolic":
         expr = integerDeriv_symbolic(
-            order=order,
-            prior=prior,
-            simplify=simplify,
-            complete=complete
+            order=order, prior=prior, simplify=simplify, complete=complete
         )
 
         # If no t provided, return symbolic expression
@@ -585,7 +580,7 @@ def mgfDerivative_fractional(
     log: bool = True,
     integer_method: str = "symbolic",
     u: float | np.ndarray | list | None = None,
-    **kwargs
+    **kwargs,
 ):
     """
     Unified interface for fractional derivatives of the MGF.
@@ -710,11 +705,7 @@ def mgfDerivative_fractional(
         from jumufraktiv.symbolic_fractionalDeriv import fractionalDeriv_symbolic
 
         expr = fractionalDeriv_symbolic(
-            order=order,
-            prior=prior,
-            simplify=simplify,
-            complete=complete,
-            **kwargs
+            order=order, prior=prior, simplify=simplify, complete=complete, **kwargs
         )
         if expr is None:
             return None
@@ -851,12 +842,13 @@ def mgfDerivative_fractional(
             return_log=log,
             complete=complete,
             u=u,
-            **kwargs
+            **kwargs,
         )
 
     raise ValueError(
         f"Unknown method: '{method}'. Choose 'scipy', 'mpmath', or 'symbolic'."
     )
+
 
 def _check_moment_exists_at_origin(order, prior, t) -> None:
     """
@@ -1438,7 +1430,7 @@ def mgfDerivative(
     integer_method: str = "symbolic",
     int_tol: float = 1e-12,
     u: float | np.ndarray | list | None = None,
-    **kwargs
+    **kwargs,
 ):
     """
     Unified wrapper for integer or fractional derivatives of the MGF.
@@ -1578,7 +1570,7 @@ def mgfDerivative(
         requested_options.add("integer_method")
 
     # ---- Dispatch for array-like order ----
-    if hasattr(order, '__len__') and not isinstance(order, (str, bytes, sp.Basic)):
+    if hasattr(order, "__len__") and not isinstance(order, (str, bytes, sp.Basic)):
         # Each element is dispatched on its own, so this block's only job is to
         # broadcast the request, forward each element unchanged, and reassemble
         # the answers in the caller's shape. No coercion belongs here:
@@ -1691,8 +1683,8 @@ def mgfDerivative(
         return np.array(results).reshape(batch_shape)
 
     # ---- Continue with scalar order ----
-    cgf_method = kwargs.pop('cgf_method', 'auto')
-    symbolic_timeout = kwargs.pop('symbolic_timeout', 600.0)
+    cgf_method = kwargs.pop("cgf_method", "auto")
+    symbolic_timeout = kwargs.pop("symbolic_timeout", 600.0)
 
     _check_moment_exists_at_origin(order, prior, t)
 
@@ -1846,5 +1838,5 @@ def mgfDerivative(
             log=log,
             integer_method=integer_method,
             u=u,
-            **kwargs
+            **kwargs,
         )

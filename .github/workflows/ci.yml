@@ -29,8 +29,11 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      - name: Check formatting of tests
-        run: ruff format --check tests/
+      # The whole tree, as of PR 14d. `ruff format` was held back through the
+      # audit so a reformat could not bury the diffs of the changes being
+      # reviewed; there is nothing left to bury.
+      - name: Check formatting
+        run: ruff format --check .
 
   # Every test runs on every push, but the expensive ones run once rather than
   # four times. The `slow` marker covers tests dominated by quadrature: they

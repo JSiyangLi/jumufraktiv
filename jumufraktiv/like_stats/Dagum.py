@@ -24,7 +24,6 @@ If the known parameters are scalars, they are recycled. If they are vectors,
 they must have the same length as data.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -36,7 +35,7 @@ def readyDagum(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Dagum likelihood with known r and s.
@@ -95,8 +94,8 @@ def readyDagum(
                 raise ValueError(f"{name} must have same length as data or be scalar")
             return vals
 
-    r_vals = _handle_param(r, 'r')
-    s_vals = _handle_param(s, 's')
+    r_vals = _handle_param(r, "r")
+    s_vals = _handle_param(s, "s")
 
     # ---- Positivity checks ----
     if np.any(r_vals <= 0):
@@ -109,23 +108,24 @@ def readyDagum(
     # ---- Compute log-stable statistics ----
     # log(1 + (y/s)^r)  -- needed for log_c
     ratio = data_vals / s_vals
-    log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
+    log_term = np.log1p(ratio**r_vals)  # log(1 + (y/s)^r)
 
     # log(1 + (s/y)^r)  -- needed for b (stable version)
     inv_ratio = s_vals / data_vals
-    log_term_inv = np.log1p(inv_ratio ** r_vals)   # log(1 + (s/y)^r)
+    log_term_inv = np.log1p(inv_ratio**r_vals)  # log(1 + (s/y)^r)
 
     a_stat = float(n)
     b_stat = np.sum(log_term_inv)
     log_c = np.sum(np.log(r_vals) - np.log(data_vals) - log_term)
 
-    return {'a': a_stat, 'b': b_stat, 'log_c': log_c}
+    return {"a": a_stat, "b": b_stat, "log_c": log_c}
+
 
 def eachDagum(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Dagum likelihood.
@@ -170,8 +170,8 @@ def eachDagum(
                 raise ValueError(f"{name} must have same length as data or be scalar")
             return vals
 
-    r_vals = _handle_param(r, 'r')
-    s_vals = _handle_param(s, 's')
+    r_vals = _handle_param(r, "r")
+    s_vals = _handle_param(s, "s")
 
     # ---- Positivity checks ----
     if np.any(r_vals <= 0):
@@ -183,16 +183,16 @@ def eachDagum(
 
     # ---- Per-element computations ----
     ratio = data_vals / s_vals
-    log_term = np.log1p(ratio ** r_vals)          # log(1 + (y/s)^r)
+    log_term = np.log1p(ratio**r_vals)  # log(1 + (y/s)^r)
 
     inv_ratio = s_vals / data_vals
-    log_term_inv = np.log1p(inv_ratio ** r_vals)   # log(1 + (s/y)^r)
+    log_term_inv = np.log1p(inv_ratio**r_vals)  # log(1 + (s/y)^r)
 
     a_vals = np.ones(n, dtype=float)
     b_vals = log_term_inv
     log_c_vals = np.log(r_vals) - np.log(data_vals) - log_term
 
-    return {'a': a_vals, 'b': b_vals, 'log_c': log_c_vals}
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cDagum() -> sp.Expr:
@@ -208,13 +208,10 @@ def cDagum() -> sp.Expr:
     sympy.Expr
         ∏ ( r_i / y_i / (1 + (y_i/s_i)^{r_i}) )
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    r = sp.IndexedBase('r')
-    s = sp.IndexedBase('s')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
-    expr = sp.Product(
-        (r[i] / y[i]) / (1 + (y[i] / s[i])**r[i]),
-        (i, 1, n)
-    )
+    n = sp.Symbol("n", integer=True, positive=True)
+    r = sp.IndexedBase("r")
+    s = sp.IndexedBase("s")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
+    expr = sp.Product((r[i] / y[i]) / (1 + (y[i] / s[i]) ** r[i]), (i, 1, n))
     return expr

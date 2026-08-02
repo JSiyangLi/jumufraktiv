@@ -36,8 +36,7 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyMaxwellBoltzmann(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Maxwell-Boltzmann likelihood.
@@ -80,22 +79,17 @@ def readyMaxwellBoltzmann(
 
     # ---- 3. Compute sufficient statistics ----
     a = 1.5 * n
-    b = np.sum(data_vals ** 2)
+    b = np.sum(data_vals**2)
     # log_c = n * (log(4) - 0.5 * log(π)) + 2 * Σ log(y_i)
-    log_c = (
-        n * (math.log(4.0) - 0.5 * math.log(math.pi))
-        + 2.0 * np.sum(np.log(data_vals))
+    log_c = n * (math.log(4.0) - 0.5 * math.log(math.pi)) + 2.0 * np.sum(
+        np.log(data_vals)
     )
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachMaxwellBoltzmann(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Maxwell-Boltzmann likelihood.
@@ -127,14 +121,10 @@ def eachMaxwellBoltzmann(
         )
 
     a_vals = np.full(n, 1.5)
-    b_vals = data_vals ** 2
+    b_vals = data_vals**2
     log_c_vals = np.full(n, np.log(4.0) - 0.5 * np.log(np.pi)) + 2.0 * np.log(data_vals)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cMaxwellBoltzmann() -> sp.Expr:
@@ -150,9 +140,9 @@ def cMaxwellBoltzmann() -> sp.Expr:
     sympy.Expr
         (4 / √π)^n * ∏ y_i²
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     const = 4 / sp.sqrt(sp.pi)
-    expr = sp.Product(const * y[i]**2, (i, 1, n))
+    expr = sp.Product(const * y[i] ** 2, (i, 1, n))
     return expr

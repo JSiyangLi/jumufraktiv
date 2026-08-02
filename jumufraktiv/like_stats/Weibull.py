@@ -27,7 +27,6 @@ For a sample of size n:
 If ρ is a scalar, it is recycled. If ρ is a vector, it must have length n.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -38,7 +37,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyWeibull(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     rho: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Weibull likelihood with known shape ρ.
@@ -96,20 +95,17 @@ def readyWeibull(
 
     # ---- 4. Compute sufficient statistics ----
     a = float(n)
-    b = np.sum(data_vals ** rho_vals)
+    b = np.sum(data_vals**rho_vals)
     # log_c = Σ ( log(ρ_i) + (ρ_i-1) log(y_i) )
     log_c = np.sum(np.log(rho_vals) + (rho_vals - 1.0) * np.log(data_vals))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachWeibull(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     rho: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Weibull likelihood.
@@ -157,14 +153,10 @@ def eachWeibull(
 
     # ---- Per-element statistics ----
     a_vals = np.ones(n, dtype=float)
-    b_vals = data_vals ** rho_vals
+    b_vals = data_vals**rho_vals
     log_c_vals = np.log(rho_vals) + (rho_vals - 1.0) * np.log(data_vals)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cWeibull() -> sp.Expr:
@@ -180,9 +172,9 @@ def cWeibull() -> sp.Expr:
     sympy.Expr
         ∏ ρ_i y_i^{ρ_i-1}
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    rho = sp.IndexedBase('rho')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
-    expr = sp.Product(rho[i] * y[i]**(rho[i] - 1), (i, 1, n))
+    n = sp.Symbol("n", integer=True, positive=True)
+    rho = sp.IndexedBase("rho")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
+    expr = sp.Product(rho[i] * y[i] ** (rho[i] - 1), (i, 1, n))
     return expr

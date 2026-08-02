@@ -54,6 +54,7 @@ xi = param("xi")
 # Numeric CGF / MGF (using scipy)
 # ============================================================
 
+
 def pareto_cgf(t_val: float, alpha_val: float, xi_val: float) -> float:
     """
     Numeric CGF for the Pareto distribution (log-space stable).
@@ -125,6 +126,7 @@ def pareto_mgf(t_val: float, alpha_val: float, xi_val: float) -> float:
 # JAX versions
 # ============================================================
 
+
 def pareto_cgf_jax(t_val, alpha_val, xi_val):
     """
     JAX-compatible CGF for the Pareto distribution.
@@ -189,6 +191,7 @@ def pareto_mgf_jax(t_val, alpha_val, xi_val):
 # Incomplete MGF (upper-truncated at u)
 # ============================================================
 
+
 def pareto_imgf_symbolic(u_sym):
     """
     Symbolic expression for the upper-truncated Pareto MGF.
@@ -204,8 +207,10 @@ def pareto_imgf_symbolic(u_sym):
         ∫_xi^u e^{tθ} p(θ) dθ.
     """
     s = -t
-    return alpha * (s * xi)**alpha * (
-        sp.uppergamma(-alpha, s * xi) - sp.uppergamma(-alpha, s * u_sym)
+    return (
+        alpha
+        * (s * xi) ** alpha
+        * (sp.uppergamma(-alpha, s * xi) - sp.uppergamma(-alpha, s * u_sym))
     )
 
 
@@ -445,6 +450,7 @@ def pareto_logimgf_jax(t_val, alpha_val, xi_val, u_val):
 # Registry factory
 # ============================================================
 
+
 @register_prior("pareto")
 def pareto_factory(params):
     alpha_val = params["alpha"]
@@ -453,7 +459,7 @@ def pareto_factory(params):
     # Build symbolic expressions using global symbols
     mgf_sym = alpha * expint(alpha + 1, -xi * t)
     cgf_sym = sp.log(alpha) + sp.log(expint(alpha + 1, -xi * t))
-    pdf_sym = alpha * xi**alpha / theta**(alpha + 1)
+    pdf_sym = alpha * xi**alpha / theta ** (alpha + 1)
     imgf_sym = pareto_imgf_symbolic(u)
     logimgf_sym = sp.log(imgf_sym)
 
@@ -476,22 +482,17 @@ def pareto_factory(params):
         mgf_sym=mgf_sym,
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
-
         mgf=lambda t_val: pareto_mgf(t_val, alpha_val, xi_val),
         cgf=lambda t_val: pareto_cgf(t_val, alpha_val, xi_val),
-
         mgf_jax=lambda t_val: pareto_mgf_jax(t_val, alpha_val, xi_val),
         cgf_jax=lambda t_val: pareto_cgf_jax(t_val, alpha_val, xi_val),
-
         pdf_func=frozen.pdf,
         logpdf_func=frozen.logpdf,
-
         # Incomplete MGF (truncated at u)
         # A power-law tail beats no exponential growth: int e^{t x} x^{-alpha-1}
         # diverges for every t > 0. M(0) = 1 exists, so the endpoint is
         # attained; anything strictly above it is refused.
         mgf_finite_below=0.0,
-
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: pareto_imgf(t_val, alpha_val, xi_val, u_val),
@@ -499,11 +500,9 @@ def pareto_factory(params):
         # E[Theta^a] = alpha xi^a / (alpha - a) converges iff a < alpha, so the
         # bound is the tail index itself. Only consulted at t = 0.
         max_finite_moment=float(alpha_val),
-
         imgf_jax=lambda t_val, u_val: pareto_imgf_jax(t_val, alpha_val, xi_val, u_val),
         logimgf_jax=lambda t_val, u_val: pareto_logimgf_jax(
             t_val, alpha_val, xi_val, u_val
         ),
-
         params=params,
     )

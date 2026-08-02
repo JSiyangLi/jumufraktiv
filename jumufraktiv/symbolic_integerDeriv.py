@@ -59,9 +59,7 @@ def _as_integer_order(order):
     is no formula in ``n`` to return.
     """
     if isinstance(order, bool):
-        raise NotImplementedError(
-            "Derivative order must be an integer, not a boolean."
-        )
+        raise NotImplementedError("Derivative order must be an integer, not a boolean.")
     # The accepted types are wider than `isinstance(order, int)` on purpose:
     # the dispatcher passes on whatever the caller supplied, and SymPy
     # arithmetic produces `sympy.Integer` routinely, so narrowing the check

@@ -28,8 +28,7 @@ from jumufraktiv.like_stats._common import _extract_1d
 
 
 def readyHalfNormal(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Half-Normal likelihood.
@@ -70,18 +69,14 @@ def readyHalfNormal(
 
     # ---- 3. Compute sufficient statistics ----
     a = n / 2.0
-    b = np.sum(data_vals ** 2) / 2.0
+    b = np.sum(data_vals**2) / 2.0
     log_c = n / 2.0 * (math.log(2.0) - math.log(math.pi))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachHalfNormal(
-    data: pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    data: pd.DataFrame | pd.Series | list | np.ndarray, **kwargs
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Half-Normal likelihood.
@@ -111,14 +106,10 @@ def eachHalfNormal(
         raise ValueError("data values must be non-negative for Half-Normal likelihood.")
 
     a_vals = np.full(n, 0.5)
-    b_vals = data_vals ** 2 / 2.0
+    b_vals = data_vals**2 / 2.0
     log_c_vals = np.full(n, 0.5 * (np.log(2.0) - np.log(np.pi)))
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cHalfNormal() -> sp.Expr:
@@ -134,6 +125,6 @@ def cHalfNormal() -> sp.Expr:
     sympy.Expr
         (√(2/π))^n
     """
-    n = sp.Symbol('n', integer=True, positive=True)
+    n = sp.Symbol("n", integer=True, positive=True)
     const = sp.sqrt(2 / sp.pi)
-    return const ** n
+    return const**n

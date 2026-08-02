@@ -35,6 +35,7 @@ k = param("k")
 # Numeric CGF / MGF (log-space stable core)
 # ============================================================
 
+
 def heaviside_cgf(t_val: float, k_val: float) -> float:
     """
     Numeric CGF for the Heaviside prior.
@@ -79,6 +80,7 @@ def heaviside_mgf(t_val: float, k_val: float) -> float:
 # JAX versions
 # ============================================================
 
+
 def heaviside_cgf_jax(t_val, k_val):
     """
     JAX-compatible CGF for the Heaviside prior.
@@ -120,6 +122,7 @@ def heaviside_mgf_jax(t_val, k_val):
 # ============================================================
 # SciPy PDF / logPDF (not available for improper Heaviside)
 # ============================================================
+
 
 def heaviside_pdf(theta_val, k_val: float):
     """
@@ -265,6 +268,7 @@ def heaviside_imgf_jax(t_val, k_val, u_val):
 # Registry factory
 # ============================================================
 
+
 @register_prior("heaviside")
 def heaviside_factory(params):
     k_val = float(params["k"])
@@ -289,31 +293,24 @@ def heaviside_factory(params):
         mgf_sym=mgf_sym,
         cgf_sym=cgf_sym,
         pdf_sym=pdf_sym,
-
         # Improper prior: int_k^inf theta^a dtheta diverges for every a >= 0,
         # including a = 0. Its MGF exists only for t < 0, so no order is
         # admissible at t = 0.
         max_finite_moment=0.0,
-
         # Improper: int_k^inf e^{t x} dx converges only for t < 0, and the
         # endpoint is not attained.
         mgf_finite_below=0.0,
-
         mgf=lambda t_val: heaviside_mgf(t_val, k_val),
         cgf=lambda t_val: heaviside_cgf(t_val, k_val),
-
         mgf_jax=lambda t_val: heaviside_mgf_jax(t_val, k_val),
         cgf_jax=lambda t_val: heaviside_cgf_jax(t_val, k_val),
-
         imgf_sym=imgf_sym,
         logimgf_sym=logimgf_sym,
         imgf=lambda t_val, u_val: heaviside_imgf(t_val, k_val, u_val),
         logimgf=lambda t_val, u_val: heaviside_logimgf(t_val, k_val, u_val),
         imgf_jax=lambda t_val, u_val: heaviside_imgf_jax(t_val, k_val, u_val),
         logimgf_jax=lambda t_val, u_val: heaviside_logimgf_jax(t_val, k_val, u_val),
-
         pdf_func=lambda x: heaviside_pdf(x, k_val),
         logpdf_func=lambda x: heaviside_logpdf(x, k_val),
-
         params=params,
     )

@@ -30,6 +30,7 @@ jax.config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
+
 # ===== Helper: CGF derivatives =====
 def cgf_derivatives_jet(cgf_func, t, order):
     """Compute derivatives of the CGF using JAX's jet (Taylor mode)."""
@@ -46,17 +47,9 @@ def cgf_derivatives_jet(cgf_func, t, order):
         val = d
         is_zero = jnp.abs(val) < eps
 
-        log_abs_i = jnp.where(
-            is_zero,
-            -jnp.inf,
-            jnp.log(jnp.abs(val))
-        )
+        log_abs_i = jnp.where(is_zero, -jnp.inf, jnp.log(jnp.abs(val)))
 
-        sign_i = jnp.where(
-            is_zero,
-            1,
-            jnp.where(val >= 0, 1, -1)
-        )
+        sign_i = jnp.where(is_zero, 1, jnp.where(val >= 0, 1, -1))
 
         log_abs.append(log_abs_i)
         signs.append(sign_i)
@@ -75,16 +68,8 @@ def cgf_derivatives_grad(cgf_func, t, order):
         f = grad(f)
         val = f(t)
         is_zero = jnp.abs(val) < eps
-        log_abs_i = jnp.where(
-            is_zero,
-            -jnp.inf,
-            jnp.log(jnp.abs(val))
-        )
-        sign_i = jnp.where(
-            is_zero,
-            1,
-            jnp.where(val >= 0, 1, -1)
-        )
+        log_abs_i = jnp.where(is_zero, -jnp.inf, jnp.log(jnp.abs(val)))
+        sign_i = jnp.where(is_zero, 1, jnp.where(val >= 0, 1, -1))
         log_abs.append(log_abs_i)
         signs.append(sign_i)
     return log_abs, signs
@@ -105,12 +90,14 @@ def _cgf_derivatives_jax_scalar(cgf_func, t, order, cgf_mode):
         except Exception as e:
             msg = str(e).lower()
             if any(
-                key in msg
-                for key in ("jet", "primitive", "not implemented", "igamma")
+                key in msg for key in ("jet", "primitive", "not implemented", "igamma")
             ):
                 logger.debug(
                     "jet() failed (%s: %s); using nested grad() instead. "
-                    "Both compute the same derivatives.", type(e).__name__, e)
+                    "Both compute the same derivatives.",
+                    type(e).__name__,
+                    e,
+                )
                 return cgf_derivatives_grad(cgf_func, t, order)
             raise
     else:
@@ -157,8 +144,8 @@ def bell_polynomial_log_batched(logv, vsign):
         for k in range(1, i + 1):
             log_coeff = math.lgamma(i) - math.lgamma(k) - math.lgamma(i - k + 1)
             # term_log = log_coeff + logv[k-1] + logB[i-k]
-            term_log = log_coeff + logv[k-1, :] + logB[i-k, :]
-            term_sign = vsign[k-1, :] * signB[i-k, :]
+            term_log = log_coeff + logv[k - 1, :] + logB[i - k, :]
+            term_sign = vsign[k - 1, :] * signB[i - k, :]
 
             # Split by sign
             pos_mask = term_sign > 0
@@ -205,7 +192,7 @@ def integerDeriv_numeric_bell(
     prior: MGFPrior,
     order: int,
     symbolic_timeout: float = 600.0,
-    cgf_mode: str = 'auto',
+    cgf_mode: str = "auto",
     complete: bool = True,
     u: float | np.ndarray | None = None,
 ):
@@ -306,6 +293,7 @@ def integerDeriv_numeric_bell(
         if prior.logimgf_jax is not None:
             cgf_func = prior.logimgf_jax
         elif prior.imgf_jax is not None:
+
             def cgf_func(t_val, u_val):
                 return jnp.log(prior.imgf_jax(t_val, u_val))
         else:
@@ -332,9 +320,9 @@ def integerDeriv_numeric_bell(
     u_sym = None
     if cgf_expr is not None:
         for s in cgf_expr.free_symbols:
-            if s.name == 't':
+            if s.name == "t":
                 t_sym = s
-            elif s.name == 'u':
+            elif s.name == "u":
                 u_sym = s
         if t_sym is None:
             raise RuntimeError("No symbol 't' found in the CGF expression.")
@@ -346,21 +334,23 @@ def integerDeriv_numeric_bell(
     # ------------------------------------------------------------
     if cgf_mode.lower() == "symbolic":
         use_symbolic = True
-    elif cgf_mode.lower() in ('jet', 'grad'):
+    elif cgf_mode.lower() in ("jet", "grad"):
         use_symbolic = False
         logger.debug("cgf_mode=%r forces the numeric (JAX) path.", cgf_mode)
     else:
         if cgf_expr is not None:
             decision = suggest_method_integerDeriv(
-                cgf_expr, t_sym, order,
+                cgf_expr,
+                t_sym,
+                order,
                 test_order=min(order, 2),
                 timeout=1.0,
-                return_decision=True
+                return_decision=True,
             )
-            use_symbolic = decision['recommend_symbolic']
+            use_symbolic = decision["recommend_symbolic"]
             logger.debug(
-                "Chose the %s path.",
-                "symbolic" if use_symbolic else "numeric (JAX)")
+                "Chose the %s path.", "symbolic" if use_symbolic else "numeric (JAX)"
+            )
         else:
             use_symbolic = False
             logger.debug("No symbolic CGF available; taking the numeric (JAX) path.")
@@ -401,15 +391,14 @@ def integerDeriv_numeric_bell(
                 val_sub = deriv_expr.subs(subs_list[idx]).evalf()
                 if val_sub.free_symbols:
                     raise ValueError(
-                        f"Free symbols remain for point {idx}: "
-                        f"{val_sub.free_symbols}"
+                        f"Free symbols remain for point {idx}: {val_sub.free_symbols}"
                     )
                 vals_k[idx] = float(val_sub)
 
             abs_vals = np.abs(vals_k)
-            log_abs_k = np.where(abs_vals > sys.float_info.epsilon,
-                                 np.log(abs_vals),
-                                 -np.inf)
+            log_abs_k = np.where(
+                abs_vals > sys.float_info.epsilon, np.log(abs_vals), -np.inf
+            )
             sign_k = np.where(vals_k >= 0, 1, -1)
             logv_list.append(log_abs_k)
             vsign_list.append(sign_k)
@@ -450,13 +439,16 @@ def integerDeriv_numeric_bell(
                     cgf_func, t_val, order, cgf_mode
                 )
                 return jnp.array(log_abs), jnp.array(sign)
-            u_vals = jnp.zeros_like(t_vals)   # dummy, unused
+
+            u_vals = jnp.zeros_like(t_vals)  # dummy, unused
         else:
             u_vals = jnp.asarray(u_flat)
+
             # Scalar cumulants for incomplete MGF (bind u)
             def scalar_cumulants(t_val, u_val):
                 def unary(x):
                     return cgf_func(x, u_val)
+
                 log_abs, sign = _cgf_derivatives_jax_scalar(
                     unary, t_val, order, cgf_mode
                 )

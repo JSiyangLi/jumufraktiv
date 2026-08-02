@@ -218,9 +218,7 @@ def _add_polynomial_tail(
         # beyond the bound `limit - order` is negative and its log is nan,
         # which would poison entries that `applies` excludes anyway.
         gap = np.where(applies, limit - orders, 1.0)
-        log_tail = (
-            log_density(highs) + (orders + 1.0) * np.log(highs) - np.log(gap)
-        )
+        log_tail = log_density(highs) + (orders + 1.0) * np.log(highs) - np.log(gap)
 
     usable = applies & np.isfinite(log_tail)
     if not np.any(usable):
@@ -229,9 +227,7 @@ def _add_polynomial_tail(
     return np.where(usable, np.logaddexp(log_body, log_tail), log_body)
 
 
-def _bracket(
-    log_integrand, t_value, order_value, lower_hint=1e-12, upper_hint=1e12
-):
+def _bracket(log_integrand, t_value, order_value, lower_hint=1e-12, upper_hint=1e12):
     """Bracket where the *integrand* carries its mass, for one evaluation point.
 
     Two things make this necessary rather than incidental.
@@ -247,6 +243,7 @@ def _bracket(
     The bracket is taken where the log integrand has fallen 700 below its peak,
     which is where its contribution passes under double precision's floor.
     """
+
     def values_at(thetas):
         """Log integrand at every theta in one call, non-finite mapped to -inf.
 
@@ -397,9 +394,7 @@ def expectationDeriv(
     order_arr, t_arr, u_arr = np.broadcast_arrays(order_arr, t_arr, u_arr)
 
     scalar_input = (
-        np.ndim(order) == 0
-        and np.ndim(t) == 0
-        and (complete or np.ndim(u) == 0)
+        np.ndim(order) == 0 and np.ndim(t) == 0 and (complete or np.ndim(u) == 0)
     )
 
     def log_integrand(theta, t_value, order_value):
@@ -439,8 +434,8 @@ def expectationDeriv(
         # brings it back down -- at order 100 the integrand spans hundreds of
         # orders of magnitude.
         peak = optimize.minimize_scalar(
-            lambda th, tv=t_value, ov=order_value: -float(
-                log_integrand(np.array([th]), tv, ov)[0]
+            lambda th, tv=t_value, ov=order_value: (
+                -float(log_integrand(np.array([th]), tv, ov)[0])
             ),
             bracket=None,
             bounds=(low, high),
@@ -503,9 +498,7 @@ def expectationDeriv(
                 # it is the term that does not vary with the order -- which is
                 # what makes batching over orders worth doing at all.
                 exponent = (
-                    order_live * np.log(theta)
-                    + t_live * theta
-                    + log_density(theta)
+                    order_live * np.log(theta) + t_live * theta + log_density(theta)
                 )
                 return np.exp(exponent - offsets) * widths
 

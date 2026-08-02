@@ -21,7 +21,6 @@ For a sample of size n:
 If σ is a scalar, it is recycled. If σ is a vector, it must have length n.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -32,7 +31,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyPareto(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Pareto likelihood with known scale.
@@ -95,16 +94,13 @@ def readyPareto(
     # log_c = -Σ log(y_i)
     log_c = -np.sum(np.log(data_vals))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachPareto(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Pareto likelihood.
@@ -155,11 +151,8 @@ def eachPareto(
     b_vals = np.log(data_vals / scale_vals)
     log_c_vals = -np.log(data_vals)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
+
 
 def cPareto() -> sp.Expr:
     """
@@ -174,8 +167,8 @@ def cPareto() -> sp.Expr:
     sympy.Expr
         ∏ 1/y_i
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     expr = sp.Product(1 / y[i], (i, 1, n))
     return expr

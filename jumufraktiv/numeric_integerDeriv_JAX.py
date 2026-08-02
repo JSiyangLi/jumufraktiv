@@ -30,13 +30,9 @@ logger = logging.getLogger(__name__)
 
 jax.config.update("jax_enable_x64", True)
 
+
 def _integerDeriv_numeric_jax_scalar(
-    t,
-    prior,
-    order,
-    complete: bool = True,
-    u=None,
-    jax_mode: str = "auto"
+    t, prior, order, complete: bool = True, u=None, jax_mode: str = "auto"
 ):
     """
     Scalar evaluation of an integer-order derivative using JAX.
@@ -114,7 +110,6 @@ def _integerDeriv_numeric_jax_scalar(
     # Select JAX differentiation strategy
     # ---------------------------------------------------------
     if jax_mode in ("auto", "jet"):
-
         try:
             series_in = ((1.0,) + (0.0,) * (order - 1),)
 
@@ -127,7 +122,6 @@ def _integerDeriv_numeric_jax_scalar(
             coef = series_out[order - 1]
 
         except Exception as e:
-
             if jax_mode == "jet":
                 raise
 
@@ -147,7 +141,10 @@ def _integerDeriv_numeric_jax_scalar(
 
             logger.debug(
                 "jet() failed (%s: %s); using nested grad() instead. "
-                "Both compute the same derivatives.", type(e).__name__, e)
+                "Both compute the same derivatives.",
+                type(e).__name__,
+                e,
+            )
 
             deriv = expr
             for _ in range(order):
@@ -155,20 +152,16 @@ def _integerDeriv_numeric_jax_scalar(
 
             coef = deriv(t)
 
-
     elif jax_mode == "grad":
-
         deriv = expr
         for _ in range(order):
             deriv = jax.grad(deriv)
 
         coef = deriv(t)
 
-
     else:
         raise ValueError(
-            f"Unknown jax_mode='{jax_mode}'. "
-            "Expected 'auto', 'jet', or 'grad'."
+            f"Unknown jax_mode='{jax_mode}'. Expected 'auto', 'jet', or 'grad'."
         )
 
     # ---------------------------------------------------------
@@ -178,17 +171,9 @@ def _integerDeriv_numeric_jax_scalar(
 
     is_zero = jnp.abs(coef) < eps
 
-    log_abs = jnp.where(
-        is_zero,
-        -jnp.inf,
-        jnp.log(jnp.abs(coef))
-    )
+    log_abs = jnp.where(is_zero, -jnp.inf, jnp.log(jnp.abs(coef)))
 
-    sign = jnp.where(
-        is_zero,
-        1,
-        jnp.where(coef >= 0, 1, -1)
-    )
+    sign = jnp.where(is_zero, 1, jnp.where(coef >= 0, 1, -1))
 
     return log_abs, sign
 

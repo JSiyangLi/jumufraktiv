@@ -34,7 +34,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyNormal(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Normal likelihood with known mean.
@@ -90,16 +90,13 @@ def readyNormal(
     # log_c = -n/2 * log(2π) = -n/2 * (log(2) + log(π))
     log_c = -n / 2.0 * (math.log(2.0) + math.log(math.pi))
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachNormal(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Normal likelihood.
@@ -143,11 +140,7 @@ def eachNormal(
     b_vals = (data_vals - mean_vals) ** 2 / 2.0
     log_c_vals = np.full(n, -0.5 * (np.log(2.0) + np.log(np.pi)))
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cNormal() -> sp.Expr:
@@ -163,5 +156,5 @@ def cNormal() -> sp.Expr:
     sympy.Expr
         (1 / sqrt(2π))^n
     """
-    n = sp.Symbol('n', integer=True, positive=True)
+    n = sp.Symbol("n", integer=True, positive=True)
     return (1 / sp.sqrt(2 * sp.pi)) ** n

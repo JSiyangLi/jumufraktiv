@@ -21,7 +21,6 @@ For a sample of size n:
 If β is a scalar, it is recycled. If β is a vector, it must have length n.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -32,7 +31,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyGompertz(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for a Gompertz likelihood with known scale.
@@ -95,16 +94,13 @@ def readyGompertz(
     # log_c = Σ log(β_i) + Σ β_i * y_i
     log_c = np.sum(np.log(scale_vals)) + np.sum(scale_vals * data_vals)
 
-    return {
-        'a': a,
-        'b': b,
-        'log_c': log_c
-    }
+    return {"a": a, "b": b, "log_c": log_c}
+
 
 def eachGompertz(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for a Gompertz likelihood.
@@ -156,11 +152,7 @@ def eachGompertz(
     b_vals = exp_term - 1.0
     log_c_vals = np.log(scale_vals) + scale_vals * data_vals
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cGompertz() -> sp.Expr:
@@ -176,9 +168,9 @@ def cGompertz() -> sp.Expr:
     sympy.Expr
         ∏ (β_i * exp(β_i * y_i))
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    beta = sp.IndexedBase('beta')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
+    n = sp.Symbol("n", integer=True, positive=True)
+    beta = sp.IndexedBase("beta")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
     expr = sp.Product(beta[i] * sp.exp(beta[i] * y[i]), (i, 1, n))
     return expr

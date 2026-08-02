@@ -464,7 +464,7 @@ pip install -e ".[dev]"          # development install
 pytest                           # full test suite
 pytest -m "not slow" -x -q       # quick pass, for the iteration loop
 ruff check .                     # lint
-ruff format --check tests/       # formatting (tests/ only, see below)
+ruff format --check .            # formatting, whole tree
 # Documentation. `-W` makes any warning an error, which is what CI enforces,
 # and `-E` discards the saved environment so every page is re-read -- Sphinx
 # skips unchanged documents otherwise, and a warning is emitted during the
@@ -624,9 +624,15 @@ part worth remembering:
 The general lesson is the one this audit keeps relearning: **a suppression
 records that nobody has looked, not that there is nothing to find.**
 
-`ruff format` currently runs over `tests/` only. Reformatting 13k lines of
-library code would bury the audit's real diffs; that lands as its own PR in
-wave 6.
+`ruff format` runs over the whole tree as of PR 14d. It was held back until
+last for one reason: a reformat lands in the same files as the change being
+reviewed, so running it earlier would have buried the diffs the audit existed
+to make legible. Nothing was left to bury by then.
+
+The size is worth recording, because the deferral was argued on a figure that
+conflated two things. "Reformatting 13k lines" was the library's *total* size;
+the reformat itself changed 32 of 40 files by about 466 added and 581 removed
+lines. The reason to defer was sound and the number attached to it was not.
 
 ---
 
@@ -665,7 +671,7 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13f | Routes that refuse rather than return a wrong number | **in review** |
 | 6 | 14b | The Pareto `expint` path | **in review** |
 | 6 | 14c | Array-valued orders | **in review** |
-| 6 | 14d | `ruff format` over the library | planned |
+| 6 | 14d | `ruff format` over the library | **in review** |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
 the earlier waves.** They were split by blast radius — does this change numbers

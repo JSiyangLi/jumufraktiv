@@ -21,7 +21,6 @@ For a sample of size n:
 If α is a scalar, it is recycled. If α is a vector, it must have length n.
 """
 
-
 import numpy as np
 import pandas as pd
 import sympy as sp
@@ -33,7 +32,7 @@ from jumufraktiv.like_stats._common import _extract_1d, _is_1d_dataframe
 def readyInverseGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, float | int]:
     """
     Compute sufficient statistics for an Inverse-Gamma likelihood with known shape.
@@ -93,16 +92,13 @@ def readyInverseGamma(
     b = np.sum(1.0 / data_vals)
     log_c = np.sum(-(shape_vals + 1.0) * np.log(data_vals) - gammaln(shape_vals))
 
-    return {
-        'a': float(a),
-        'b': float(b),
-        'log_c': float(log_c)
-    }
+    return {"a": float(a), "b": float(b), "log_c": float(log_c)}
+
 
 def eachInverseGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
-    **kwargs
+    **kwargs,
 ) -> dict[str, np.ndarray]:
     """
     Compute per-element sufficient statistics for an Inverse-Gamma likelihood.
@@ -152,11 +148,7 @@ def eachInverseGamma(
     b_vals = 1.0 / data_vals
     log_c_vals = -(shape_vals + 1.0) * np.log(data_vals) - gammaln(shape_vals)
 
-    return {
-        'a': a_vals,
-        'b': b_vals,
-        'log_c': log_c_vals
-    }
+    return {"a": a_vals, "b": b_vals, "log_c": log_c_vals}
 
 
 def cInverseGamma() -> sp.Expr:
@@ -172,9 +164,9 @@ def cInverseGamma() -> sp.Expr:
     sympy.Expr
         ∏ ( y_i^{-α_i-1} / Γ(α_i) )
     """
-    n = sp.Symbol('n', integer=True, positive=True)
-    alpha = sp.IndexedBase('alpha')
-    i = sp.Idx('i')
-    y = sp.IndexedBase('y')
-    expr = sp.Product(y[i]**(-alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
+    n = sp.Symbol("n", integer=True, positive=True)
+    alpha = sp.IndexedBase("alpha")
+    i = sp.Idx("i")
+    y = sp.IndexedBase("y")
+    expr = sp.Product(y[i] ** (-alpha[i] - 1) / sp.gamma(alpha[i]), (i, 1, n))
     return expr

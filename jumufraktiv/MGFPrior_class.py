@@ -58,6 +58,7 @@ from jumufraktiv.symbols import t, theta
 # Core container
 # ============================================================
 
+
 @dataclass
 class MGFPrior:
     """
@@ -116,6 +117,7 @@ class MGFPrior:
     >>> gamma_prior.mgf(-1.0)
     0.5625
     """
+
     #: Name of the prior distribution. Set by `from_registry` to the registry
     #: key; `"custom"` for a prior built by hand.
     name: str = "custom"
@@ -285,7 +287,6 @@ class MGFPrior:
         # CASE 1: symbolic input (both must be provided)
         # ----------------------------------------------------
         if self.mgf_sym is not None and self.pdf_sym is not None:
-
             self.cgf_sym = sp.log(self.mgf_sym)
 
             self.mgf = sp.lambdify(t, self.mgf_sym, modules="numpy")
@@ -303,7 +304,6 @@ class MGFPrior:
         # CASE 2: backend input (both must be provided)
         # ----------------------------------------------------
         if self.mgf_backend is not None and self.pdf_backend is not None:
-
             params = self.params or {}
 
             def mgp_np(tval):
@@ -544,8 +544,8 @@ class MGFPrior:
             name=prior_name,
             mgf_sym=mgf_sym,
             pdf_sym=pdf_sym,
-            mgf_backend=None,   # not used
-            pdf_backend=None,   # not used
+            mgf_backend=None,  # not used
+            pdf_backend=None,  # not used
             params=params,
         )
 
@@ -562,12 +562,8 @@ class MGFPrior:
         obj.logimgf_jax = logimgf_jax
 
         # Store symbolic outputs
-        obj.max_finite_moment = float(
-            spec.get("max_finite_moment", float("inf"))
-        )
-        obj.mgf_finite_below = float(
-            spec.get("mgf_finite_below", float("inf"))
-        )
+        obj.max_finite_moment = float(spec.get("max_finite_moment", float("inf")))
+        obj.mgf_finite_below = float(spec.get("mgf_finite_below", float("inf")))
 
         obj.mgf_sym_out = mgf_sym
         obj.cgf_sym = cgf_sym
@@ -585,11 +581,7 @@ class MGFPrior:
         Check if an object is a fully compiled MGFPrior.
         Requires all six compiled functions to be present.
         """
-        required_attrs = [
-            "mgf", "cgf",
-            "mgf_jax", "cgf_jax",
-            "pdf_func", "logpdf_func"
-        ]
+        required_attrs = ["mgf", "cgf", "mgf_jax", "cgf_jax", "pdf_func", "logpdf_func"]
 
         for attr in required_attrs:
             val = getattr(obj, attr, None)
@@ -614,8 +606,11 @@ class MGFPrior:
         - logimgf_sym  (symbolic log)
         """
         required_attrs = [
-            "imgf", "logimgf",
-            "imgf_jax", "logimgf_jax",
-            "imgf_sym", "logimgf_sym"
+            "imgf",
+            "logimgf",
+            "imgf_jax",
+            "logimgf_jax",
+            "imgf_sym",
+            "logimgf_sym",
         ]
         return all(getattr(self, attr, None) is not None for attr in required_attrs)
