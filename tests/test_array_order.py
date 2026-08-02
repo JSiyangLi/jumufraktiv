@@ -288,3 +288,100 @@ def test_a_mixed_integer_and_fractional_array_is_still_one_call():
     assert log_abs.shape == mixed.shape
     for index in range(mixed.size):
         assert float(log_abs[index]) == pytest.approx(float(singles[index]), rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("label", "t_values", "expected"),
+    [
+        ("numeric t", np.array([-1.0, -2.0]), True),
+        ("t is None", np.array([None, None], dtype=object), False),
+        ("symbolic t", None, False),  # filled in below; needs the symbol
+    ],
+)
+def test_only_a_fully_numeric_request_is_batched(
+    gamma_prior, label, t_values, expected
+):
+    """The batch path must decline anything it cannot evaluate as a number.
+
+    A SymPy `Symbol` for `t` is not `None`, so a condition testing only
+    `t is not None` admits it -- and it then fails inside `np.asarray` as
+    `TypeError: Cannot convert expression to float`. A symbolic `t` is
+    unsupported package-wide and always has been, a scalar order raising
+    identically; the requirement here is only that this fast path not become a
+    new way to reach it.
+
+    Asserted on the predicate directly, which is why it was extracted. The
+    batched route cannot be observed from outside: the call site passes
+    `np.asarray(t_arr, dtype=float)`, and an argument is evaluated before the
+    call it belongs to, so a symbolic `t` raises without the route ever being
+    entered. Two earlier versions of this test -- one comparing exception
+    types, one watching for the route -- passed identically with and without
+    the guard, which is how that was found.
+    """
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+    from jumufraktiv.symbols import t as t_sym
+
+    if t_values is None:
+        t_values = np.array([t_sym, t_sym], dtype=object)
+
+    orders = np.array([1.0, 2.0])
+    assert (
+        _array_orders_can_batch(
+            orders,
+            t_values,
+            None,
+            complete=True,
+            method="auto",
+            prior=gamma_prior,
+        )
+        is expected
+    ), label
+
+
+def test_a_symbolic_order_is_never_batched(gamma_prior):
+    """A symbolic order is refused package-wide, so it must not reach here."""
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+
+    orders = np.array([sp.Symbol("n"), 2.0], dtype=object)
+
+    assert not _array_orders_can_batch(
+        orders,
+        np.array([-1.0, -1.0]),
+        np.array([None, None], dtype=object),
+        complete=True,
+        method="auto",
+        prior=gamma_prior,
+    )
+
+
+@pytest.mark.parametrize("method", ["symbolic", "scipy", "mpmath", "bell", "jax"])
+def test_an_explicit_backend_is_never_batched(gamma_prior, method):
+    """Only `auto` and `expectation` reach this route, so only they may batch.
+
+    An explicit `method=` is never reinterpreted anywhere in the package, and
+    silently batching one through a different backend would be exactly that.
+    """
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+
+    assert not _array_orders_can_batch(
+        np.array([1.0, 2.0]),
+        np.array([-1.0, -1.0]),
+        np.array([None, None], dtype=object),
+        complete=True,
+        method=method,
+        prior=gamma_prior,
+    )
+
+
+def test_t_none_still_returns_expressions_for_an_array_order(gamma_prior):
+    """The documented symbolic route must survive the batching.
+
+    `t=None` is how a caller asks for an expression, and the fast path has to
+    decline it for the symbol-numeric principle to hold.
+    """
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    result = mgfDerivative(np.array([1.0, 2.0]), gamma_prior, method="symbolic", t=None)
+
+    assert np.shape(result) == (2,)
+    assert all(isinstance(x, sp.Basic) for x in np.ravel(result))

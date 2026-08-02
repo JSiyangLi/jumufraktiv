@@ -30,6 +30,14 @@ without a deprecation period.
   whatever its type -- a mixed integer and fractional array is not a
   mixed-backend array. (PR 14c)
 
+- `mgfDerivative`'s array-order route declines anything it cannot evaluate as
+  a number. A SymPy `Symbol` for `t` is not `None`, so a condition testing only
+  `t is not None` admitted it and then failed inside `np.asarray`. A symbolic
+  `t` remains unsupported package-wide -- a scalar order raises identically,
+  because `t=None` rather than a free symbol is how a symbolic result is
+  requested -- and the batched route simply does not add a second way to reach
+  it. (PR 14c)
+
 - **The Pareto prior's fractional derivative is 4.6x to 6.9x faster**, and no
   number moved. Its MGF is written with `expint`, the generalised exponential
   integral, which neither SciPy nor NumPy defines — SymPy compiles the name
