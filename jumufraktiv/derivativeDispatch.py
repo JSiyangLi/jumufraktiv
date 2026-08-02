@@ -1549,6 +1549,47 @@ def mgfDerivative(
 
         batch_shape = order_arr.shape
 
+        # ---- One call for the whole array, where the route allows it -----
+        #
+        # The expectation route takes the order as a broadcast dimension
+        # alongside `t` and `u`, so an array of orders is one quadrature
+        # rather than one per element. That matters because the term this
+        # shares is the expensive one: profiling eight orders at a single
+        # point put 73% of the runtime inside the prior's density, across
+        # 4968 separate `logpdf` calls, and the density does not depend on
+        # the order at all -- only `order * log(theta)` does.
+        #
+        # No grouping by backend is needed here, contrary to what the shape
+        # of the problem suggests. The condition below is the same one
+        # `mgfDerivative` applies to a scalar order, and it does not mention
+        # the order: with `auto` and a concrete `t`, *every* element takes
+        # this route whatever its order type. A mixed integer/fractional
+        # array is therefore not a mixed-backend array.
+        requested = method.lower() if isinstance(method, str) else method
+        all_numeric = not any(
+            isinstance(o, sp.Basic) for o in order_arr.flat
+        ) and not any(tt is None for tt in t_arr.flat)
+        if (
+            all_numeric
+            and prior is not None
+            and expectation_is_available(prior)
+            and (requested == "expectation" or (requested == "auto" and t is not None))
+        ):
+            from jumufraktiv.numeric_expectation import DEFAULT_TOL, expectationDeriv
+
+            for one_order, one_t in zip(order_arr.flat, t_arr.flat, strict=True):
+                _check_moment_exists_at_origin(float(one_order), prior, one_t)
+
+            return expectationDeriv(
+                order=np.asarray(order_arr, dtype=float),
+                prior=prior,
+                t=np.asarray(t_arr, dtype=float),
+                u=None if complete else np.asarray(u_arr, dtype=float),
+                complete=complete,
+                log=log,
+                tol=kwargs.get("tol", DEFAULT_TOL),
+            )
+
         results = [
             mgfDerivative(
                 order=o.item() if hasattr(o, "item") else o,

@@ -157,3 +157,134 @@ def test_posterior_predictive_agrees_with_point_by_point(gamma_prior, n):
     singly = np.array([float(np.ravel(post.post_predictive([y]))[0]) for y in new])
 
     assert together == pytest.approx(singly, rel=1e-8)
+
+
+# ==========================================================================
+# Batching over orders (PR 14c)
+# ==========================================================================
+def test_an_array_of_orders_is_one_quadrature_not_one_per_order():
+    """The cost claim, asserted structurally rather than by wall clock.
+
+    Counting the prior's density calls is a property of the algorithm; a
+    timing threshold is a property of the machine, so it would be either
+    flaky or too loose to assert anything. This is the same reasoning
+    `tests/test_batch_evaluation.py` uses for evaluation points.
+
+    Eight orders dispatched one at a time ran eight independent adaptive
+    quadratures, each reaching the density separately -- 4968 `logpdf` calls,
+    73% of the runtime, for a term that does not depend on the order at all.
+    """
+    import warnings
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+
+    calls = {"n": 0}
+    original = prior.logpdf_func
+
+    def counting(theta):
+        calls["n"] += 1
+        return original(theta)
+
+    prior.logpdf_func = counting
+
+    orders = np.linspace(0.5, 2.5, 8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mgfDerivative(orders, prior, method="auto", t=-1.0, log=True)
+    batched = calls["n"]
+
+    calls["n"] = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for order in orders:
+            mgfDerivative(float(order), prior, method="auto", t=-1.0, log=True)
+    per_element = calls["n"]
+
+    # Not a factor of eight: the bracketing and peak search stay per order,
+    # because both depend on it, and only the quadrature batches. Two is a
+    # generous floor that a per-element regression could not sneak under.
+    assert batched * 2 < per_element, (
+        f"batched {batched} density calls against {per_element} per-element; "
+        "the array-order path looks unbatched again"
+    )
+
+
+@pytest.mark.parametrize("t_value", [-0.5, -1.0, -3.0])
+def test_batched_orders_agree_with_the_closed_form(t_value):
+    """Batching may only change the cost, never the answer.
+
+    The reference is the Gamma MGF's derivative in closed form:
+    `E[Theta^a e^{t Theta}] = Gamma(alpha + a)/Gamma(alpha) *
+    beta^alpha / (beta - t)^(alpha + a)`, written out here rather than taken
+    from the package.
+    """
+    import warnings
+
+    import mpmath as mp
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    alpha, beta = 2.0, 3.0
+    prior = MGFPrior.from_registry("gamma", params={"alpha": alpha, "beta": beta})
+
+    orders = np.array([0.5, 1.0, 1.5, 2.0, 2.5])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        log_abs, signs = mgfDerivative(
+            orders, prior, method="auto", t=t_value, log=True
+        )
+
+    assert log_abs.shape == orders.shape
+    assert np.all(signs == 1)
+
+    with mp.workdps(40):
+        for index, order in enumerate(orders):
+            a, al, be, tt = (
+                mp.mpf(float(order)),
+                mp.mpf(alpha),
+                mp.mpf(beta),
+                mp.mpf(t_value),
+            )
+            exact = mp.gamma(al + a) / mp.gamma(al) * be**al / (be - tt) ** (al + a)
+            got = mp.e ** mp.mpf(float(log_abs[index]))
+            assert float(abs(got - exact) / exact) < 1e-12, order
+
+
+def test_a_mixed_integer_and_fractional_array_is_still_one_call():
+    """Mixed order types do not mean mixed backends, which is the surprise.
+
+    The condition sending a request to the expectation route does not mention
+    the order at all -- with `auto` and a concrete `t` every element takes it,
+    whatever its type. So the grouping-by-backend this looked like it needed
+    turns out to be unnecessary, and an array of `[1, 1.5, 2, 2.5]` batches as
+    readily as a uniform one.
+    """
+    import warnings
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+
+    mixed = np.array([1.0, 1.5, 2.0, 2.5])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        log_abs, _ = mgfDerivative(mixed, prior, method="auto", t=-1.0, log=True)
+        singles = [
+            mgfDerivative(float(o), prior, method="auto", t=-1.0, log=True)[0]
+            for o in mixed
+        ]
+
+    assert log_abs.shape == mixed.shape
+    for index in range(mixed.size):
+        assert float(log_abs[index]) == pytest.approx(float(singles[index]), rel=1e-9)

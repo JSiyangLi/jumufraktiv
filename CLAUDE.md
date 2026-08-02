@@ -664,7 +664,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13e | The API reference read against the code; `-W` in CI | **in review** |
 | 6 | 13f | Routes that refuse rather than return a wrong number | **in review** |
 | 6 | 14b | The Pareto `expint` path | **in review** |
-| 6 | 14c | Array-valued orders, and `ruff format` over the library | planned |
+| 6 | 14c | Array-valued orders | **in review** |
+| 6 | 14d | `ruff format` over the library | planned |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
 the earlier waves.** They were split by blast radius — does this change numbers
@@ -896,11 +897,30 @@ Accuracy improved throughout, from a recorded worst case of 1.17e-11 to
 
 The full test suite went from 623 s to 67 s.
 
-**What is left.** The array-valued-order path still dispatches each element
-separately, and it is the hard one: different orders may resolve to different
-backends, so they cannot share a call. Re-measured on the current tree at
-24.8 to 39.8 ms per order, against 2.29 ms per point for a scalar order over a
-batch, so roughly ten-fold remains on it. And `uniform` and `heaviside` route
+**What is left.** The array-valued-order path is batched as of PR 14c, and the
+premise on which it was scheduled turned out to be false. It was recorded as
+the hard one because different orders may resolve to different backends and so
+could not share a call — but the condition selecting the expectation route
+never mentions the order, so under `auto` with a concrete `t` every element
+takes that route whatever its type. A mixed integer and fractional array is
+not a mixed-backend array, and no grouping was needed.
+
+What made it slow was the same thing PR 9 found: the prior's density, 73% of
+the runtime across 4968 separate `logpdf` calls for eight orders, for a term
+that does not vary with the order at all. Carrying the order as a broadcast
+dimension shares it. Per-order cost falls from 39.75 ms to 21.54 at four
+orders, 29.82 to 13.60 at eight and 24.80 to 9.39 at twenty — 1.8× to 2.6×,
+growing with the batch, against the ten-fold this entry predicted.
+
+The shortfall is accounted for rather than mysterious. **Bracketing and the
+peak search remain per element**, because both depend on the order, and having
+batched the quadrature they are now the dominant term: `quad_vec` fell from
+491 ms to 107 for eight orders, leaving ~74 ms in `_bracket`. Sharing the
+bracketing scan across orders is the remaining headroom, and it is a real
+change rather than a tidy-up — a wider shared interval is looser for every
+element in it.
+
+And `uniform` and `heaviside` route
 their far-tail nodes to the exact
 path because those underflow to zero in float64 — skipping them is very
 probably safe, since a node that underflows contributes nothing to a log-space
