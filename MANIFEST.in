@@ -45,5 +45,10 @@ recursive-include tests/benchmarks *.py
 global-exclude *.py[cod]
 global-exclude __pycache__
 prune .github
-prune **/.pytest_cache
-prune **/.ruff_cache
+
+# `prune` takes a directory, not a recursive glob: MANIFEST.in has no `**`.
+# Both tools put their cache at the repository root by default.
+prune .pytest_cache
+prune .ruff_cache
+prune build
+prune dist

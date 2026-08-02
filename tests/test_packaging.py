@@ -46,16 +46,35 @@ SDIST_TEST_HARNESS = ["conftest.py", "tests/conftest.py", "tests/canonical.py"]
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     """Build both distributions once, into a temporary directory."""
+    pytest.importorskip("build", reason="the `build` frontend is a dev extra")
+
     out = tmp_path_factory.mktemp("dist")
     result = subprocess.run(
+        # Isolated, which is the default and is deliberate here. `--no-isolation`
+        # would build with whatever setuptools the test environment happens to
+        # have, and `[build-system] requires` pins `setuptools>=77` because
+        # `pyproject.toml` uses PEP 639's `license = "MIT"` string form. Built
+        # without isolation against setuptools 68 the build fails outright with
+        # "`project.license` must be valid exactly by one definition", so the
+        # test would be measuring the test environment rather than the package.
+        #
+        # The cost is that this needs the network once, which is why the whole
+        # file is `slow`-marked and out of the quick pass.
         [sys.executable, "-m", "build", "--outdir", str(out)],
         cwd=REPO,
         capture_output=True,
         text=True,
         timeout=900,
     )
-    if result.returncode != 0:
-        pytest.skip(f"`python -m build` unavailable: {result.stderr[-400:]}")
+    # A non-zero exit is a packaging regression, which is what this file is for.
+    # Skipping on it would turn the failure these tests exist to catch into a
+    # green run. Only a missing frontend is a reason to skip, and that is
+    # handled above.
+    assert result.returncode == 0, (
+        f"`python -m build` failed:\n"
+        f"--- stdout ---\n{result.stdout[-2000:]}\n"
+        f"--- stderr ---\n{result.stderr[-2000:]}"
+    )
 
     sdists = list(out.glob("*.tar.gz"))
     wheels = list(out.glob("*.whl"))
@@ -90,7 +109,13 @@ def test_the_sdist_test_suite_can_be_collected(built, tmp_path):
     """
     sdist, _ = built
     with tarfile.open(sdist) as archive:
-        archive.extractall(tmp_path, filter="data")
+        try:
+            archive.extractall(tmp_path, filter="data")
+        except TypeError:
+            # `filter=` landed in 3.12 and was backported to later 3.10 and
+            # 3.11 patch releases, so an early 3.10 does not have it. The
+            # tarball is one this test built a moment ago.
+            archive.extractall(tmp_path)
     root = next(tmp_path.glob("jumufraktiv-*"))
 
     result = subprocess.run(
