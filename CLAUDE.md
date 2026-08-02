@@ -566,6 +566,7 @@ agree by inspection.
 | `test_known_broken.py` | every documented defect, as `xfail(strict=True)` |
 | `test_no_unreachable_code.py` | that no module-level function is unreachable |
 | `test_diagnostics_policy.py` | no `print`, and no `__main__` block, in library code |
+| `test_packaging.py` | what the built sdist and wheel contain, and whether the sdist's suite collects |
 | `test_documentation_runs.py` | the README executes and renders, the notebooks parse and carry no stored output, and the docstring examples run as CI invokes them |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
@@ -637,8 +638,8 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 5 | 12b | The moment domain at `t = 0`: the analytic tail | **merged** |
 | 6 | 13a | The front door: README, notebooks, and the docstring examples | **merged** |
 | 6 | 13b | Quantities that come back wrong without saying so | **in review** |
-| 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | planned |
-| 6 | 13d | Packaging: what the sdist and wheel actually contain | planned |
+| 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | **merged** |
+| 6 | 13d | Packaging: what the sdist and wheel actually contain | **in review** |
 | 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
