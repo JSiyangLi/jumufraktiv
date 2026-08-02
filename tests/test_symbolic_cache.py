@@ -165,12 +165,18 @@ def test_an_expression_that_will_not_compile_falls_back():
     than raising is what keeps such a prior usable, since the symbolic path
     computes the same quantity exactly.
 
-    `sympy.Chi`, the hyperbolic cosine integral, stands in for that class of
-    name. It used to be `expint` from the Pareto MGF, which was the real case
-    that motivated the probe -- but `jumufraktiv.special` now supplies `expint`
-    precisely so it compiles, so it is no longer an example of anything. The
-    mechanism it demonstrated is unchanged and still needs a witness; see
-    `test_the_pareto_mgf_now_compiles` for the other side.
+    The witness is an *undefined* SymPy function, which is stable by
+    construction: SymPy cannot acquire a numeric backend for a name invented
+    here, so this can only ever fail at call time.
+
+    A named special function would be the more realistic witness and is the
+    wrong choice. `expint` from the Pareto MGF was the real case that motivated
+    the probe, and `jumufraktiv.special` now supplies it precisely so it
+    compiles -- so it is no longer an example of anything. `sympy.Chi` was
+    tried next and has the same defect waiting: `scipy.special.shichi` already
+    computes it, so a future SymPy printer could map the two and quietly turn
+    this into a test of nothing. See `test_the_pareto_mgf_now_compiles` for the
+    other side of the property.
     """
     import numpy as np
     import sympy as sp
@@ -178,14 +184,17 @@ def test_an_expression_that_will_not_compile_falls_back():
     from jumufraktiv.symbolic_cache import cached_lambdify
     from jumufraktiv.symbols import t as t_sym
 
-    uncompilable = sp.Chi(t_sym)
+    uncompilable = sp.Function("no_such_special_function")(t_sym)
     probe = (np.array([0.5]),)
 
     assert cached_lambdify(uncompilable, (t_sym,), probe=probe) is None
     # ... and the verdict is cached, so the failure is paid once.
     assert cached_lambdify(uncompilable, (t_sym,), probe=probe) is None
 
-    # The premise, so this cannot pass because SymPy stopped emitting the name.
+    # The premise, asserted rather than assumed: `lambdify` must BUILD without
+    # complaint and fail only when called. If it ever started refusing at build
+    # time, `cached_lambdify` would still return None and the assertions above
+    # would still pass, while the behaviour they describe had changed.
     raw = sp.lambdify((t_sym,), uncompilable, modules=["scipy", "numpy"])
     with pytest.raises(NameError):
         raw(np.array([0.5]))
