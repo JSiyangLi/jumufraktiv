@@ -113,7 +113,7 @@ def readyBurrXII(
         'log_c': log_c
     }
 
-def bereitBurrXII(
+def eachBurrXII(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     known_shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

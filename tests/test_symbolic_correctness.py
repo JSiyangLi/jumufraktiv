@@ -23,7 +23,7 @@ import sympy as sp
 
 from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbols import param, t, theta, u
 
 alpha = param("alpha")
@@ -46,12 +46,12 @@ def _gamma_pdf():
 @pytest.fixture
 def symbolic_prior():
     """A Gamma prior whose hyperparameters are left as free symbols."""
-    return mitMGFprior(
+    return MGFPrior(
         name="gamma_symbolic",
         mgf_sym=_gamma_mgf(),
         pdf_sym=_gamma_pdf(),
         params={},
-    ).as_mitMGFprior()
+    ).as_MGFPrior()
 
 
 @pytest.fixture
@@ -62,12 +62,12 @@ def substituted_prior():
     expressions carry `alpha` and `beta`, and `params` says what they are, so
     a correct implementation resolves them and an incorrect one does not.
     """
-    return mitMGFprior(
+    return MGFPrior(
         name="gamma_substituted",
         mgf_sym=_gamma_mgf(),
         pdf_sym=_gamma_pdf(),
         params={"alpha": ALPHA, "beta": BETA},
-    ).as_mitMGFprior()
+    ).as_MGFPrior()
 
 
 def _with_imgf(prior):
@@ -239,7 +239,7 @@ def test_symbolic_and_numeric_evidence_agree(symbolic_prior):
     They took it from different places -- `c_func()` symbolically and `log_c`
     numerically -- which is exactly how they came to disagree.
     """
-    from jumufraktiv.mitMGFprior_class import mitMGFprior as Prior
+    from jumufraktiv.MGFPrior_class import MGFPrior as Prior
 
     symbolic = _numbers(_posterior(symbolic_prior).evidence())
 

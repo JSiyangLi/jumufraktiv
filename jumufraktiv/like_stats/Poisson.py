@@ -23,7 +23,7 @@ The user-facing argument is `scale`, which corresponds to the exposure s_i.
 This module provides two statistics functions:
 
 - `readyPoisson` : aggregated sufficient statistics (scalars) for the whole sample.
-- `bereitPoisson` : per-element sufficient statistics (arrays) for vectorised
+- `eachPoisson` : per-element sufficient statistics (arrays) for vectorised
   predictive evaluation (used in `post_predictive` when `individual=True`).
 
 Additionally, `cPoisson()` returns a symbolic expression for the normalising constant.
@@ -115,7 +115,7 @@ def readyPoisson(
         'log_c': float(log_c)
     }
 
-def bereitPoisson(
+def eachPoisson(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     scale: float | int | pd.DataFrame | pd.Series | list | np.ndarray = 1.0,
     **kwargs

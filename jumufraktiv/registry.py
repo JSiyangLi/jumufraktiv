@@ -189,7 +189,7 @@ def make_prior_spec(**kwargs):
 
     This function validates that the required fields are present and
     returns the kwargs as a dictionary. It is used by prior factories
-    to produce a consistent output format expected by `mitMGFprior`.
+    to produce a consistent output format expected by `MGFPrior`.
 
     Parameters
     ----------

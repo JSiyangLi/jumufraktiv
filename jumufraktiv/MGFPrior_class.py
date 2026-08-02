@@ -1,9 +1,9 @@
 """
-mitMGFprior.py
+MGFPrior.py
 
 Unified container for moment-generating function (MGF) priors.
 
-This module defines the `mitMGFprior` class, which serves as a standardised
+This module defines the `MGFPrior` class, which serves as a standardised
 container for prior distributions in the MGF marginalisation framework.
 It holds both symbolic and numeric representations of the prior MGF, CGF,
 and PDF, along with JAX-compatible versions for fast computation.
@@ -23,21 +23,21 @@ Key features:
 
 - Provides a `has_iMGF()` method to check if all iMGF components are present.
 - Includes a factory method `from_registry` for automatic construction from
-  the registry, and a manual compiler `as_mitMGFprior` for custom priors.
+  the registry, and a manual compiler `as_MGFPrior` for custom priors.
 
-- Validation via `is_mitMGFprior` ensures a prior object is fully compiled.
+- Validation via `is_MGFPrior` ensures a prior object is fully compiled.
 
 Examples
 --------
 >>> # Build from registry
->>> gamma_prior = mitMGFprior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
+>>> gamma_prior = MGFPrior.from_registry('gamma', params={'alpha':2.0, 'beta':3.0})
 >>> gamma_prior.mgf(-1.0)  # numeric MGF
 0.5625
 
 >>> # Manual construction with symbolic expressions
 >>> from jumufraktiv.symbols import t, theta
->>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta*sp.exp(-theta))
->>> prior = prior.as_mitMGFprior()
+>>> prior = MGFPrior(mgf_sym=(1 - t)**(-2), pdf_sym=theta*sp.exp(-theta))
+>>> prior = prior.as_MGFPrior()
 >>> float(prior.mgf(-0.5))
 0.4444444444444444
 """
@@ -59,7 +59,7 @@ from jumufraktiv.symbols import t, theta
 # ============================================================
 
 @dataclass
-class mitMGFprior:
+class MGFPrior:
     """
     Container for a prior distribution's MGF, CGF, and PDF.
 
@@ -74,7 +74,7 @@ class mitMGFprior:
     The class follows a two-step construction pattern:
 
     1. Create an instance with raw inputs (symbolic or backend).
-    2. Call `as_mitMGFprior()` to compile and populate all functions.
+    2. Call `as_MGFPrior()` to compile and populate all functions.
 
     The registry route (`from_registry`) performs both steps automatically.
 
@@ -83,7 +83,7 @@ class mitMGFprior:
     supplies. The two *domain* fields, `max_finite_moment` and
     `mgf_finite_below`, declare where the prior's moments and MGF exist. The
     rest are *compiled* and are `None` until construction fills them in. Both
-    routes produce the six `is_mitMGFprior` requires — `mgf`, `cgf`, their
+    routes produce the six `is_MGFPrior` requires — `mgf`, `cgf`, their
     `_jax` counterparts, `pdf_func` and `logpdf_func` — plus `cgf_sym`.
 
     One compiled field is set by the registry route only, and is `None` on a
@@ -104,13 +104,13 @@ class mitMGFprior:
     --------
     >>> # Manual symbolic prior
     >>> from jumufraktiv.symbols import t, theta
-    >>> prior = mitMGFprior(mgf_sym=(1 - t)**(-2), pdf_sym=theta * sp.exp(-theta))
-    >>> prior = prior.as_mitMGFprior()
+    >>> prior = MGFPrior(mgf_sym=(1 - t)**(-2), pdf_sym=theta * sp.exp(-theta))
+    >>> prior = prior.as_MGFPrior()
     >>> prior.mgf(-0.5)
     0.4444444444444444
 
     >>> # Registry-based prior
-    >>> gamma_prior = mitMGFprior.from_registry(
+    >>> gamma_prior = MGFPrior.from_registry(
     ...     'gamma', params={'alpha':2.0, 'beta':3.0}
     ... )
     >>> gamma_prior.mgf(-1.0)
@@ -129,7 +129,7 @@ class mitMGFprior:
     # already emits, and Sphinx warns about the duplicate.
     # -----------------------------
 
-    # `as_mitMGFprior` has two modes and takes the pairs whole: either both
+    # `as_MGFPrior` has two modes and takes the pairs whole: either both
     # symbolic fields or both backend ones. Supplying one of a pair raises
     # rather than falling back, since a prior with an MGF and no density
     # cannot serve the default route and one with a density and no MGF cannot
@@ -215,7 +215,7 @@ class mitMGFprior:
     # ============================================================
     # USER ROUTE: manual construction compiler
     # ============================================================
-    def as_mitMGFprior(self):
+    def as_MGFPrior(self):
         """
         Compile the prior object from raw inputs into a fully functional prior.
 
@@ -237,7 +237,7 @@ class mitMGFprior:
 
         Returns
         -------
-        mitMGFprior
+        MGFPrior
             The compiled prior object (self), with all callables populated.
 
         Raises
@@ -263,11 +263,11 @@ class mitMGFprior:
         --------
         >>> # Symbolic mode
         >>> from jumufraktiv.symbols import t, theta
-        >>> prior = mitMGFprior(
+        >>> prior = MGFPrior(
         ...     mgf_sym=(1 - t)**(-2),
         ...     pdf_sym=theta * sp.exp(-theta)
         ... )
-        >>> prior = prior.as_mitMGFprior()
+        >>> prior = prior.as_MGFPrior()
         >>> prior.mgf(-0.5)
         0.4444444444444444
 
@@ -276,8 +276,8 @@ class mitMGFprior:
         ...     return xp.exp(x)
         >>> def pdf_backend(x, xp, **params):
         ...     return xp.exp(-x)
-        >>> prior = mitMGFprior(mgf_backend=mgf_backend, pdf_backend=pdf_backend)
-        >>> prior = prior.as_mitMGFprior()
+        >>> prior = MGFPrior(mgf_backend=mgf_backend, pdf_backend=pdf_backend)
+        >>> prior = prior.as_MGFPrior()
         >>> float(prior.mgf(0.0))
         1.0
         """
@@ -351,7 +351,7 @@ class mitMGFprior:
         Build a fully compiled prior object from the registry.
 
         This factory method retrieves the prior specification from the global
-        `PRIOR_REGISTRY` and constructs a `mitMGFprior` instance with all
+        `PRIOR_REGISTRY` and constructs a `MGFPrior` instance with all
         symbolic and numeric functions compiled. It automatically includes
         both complete and incomplete MGF (iMGF) functions if they are available
         in the registry.
@@ -367,7 +367,7 @@ class mitMGFprior:
 
         Returns
         -------
-        mitMGFprior
+        MGFPrior
             A fully compiled prior object with all callables populated.
 
         Raises
@@ -385,19 +385,19 @@ class mitMGFprior:
         - If iMGF functions (`imgf_sym`, `imgf`, `imgf_jax`, etc.) are present,
           they are also extracted and stored.
 
-        - The method bypasses the manual `as_mitMGFprior` compiler and directly
+        - The method bypasses the manual `as_MGFPrior` compiler and directly
           assigns the compiled functions to the object.
 
         Examples
         --------
-        >>> gamma_prior = mitMGFprior.from_registry(
+        >>> gamma_prior = MGFPrior.from_registry(
         ...     'gamma', params={'alpha':2.0, 'beta':3.0}
         ... )
         >>> gamma_prior.mgf(-1.0)
         0.5625
 
         >>> # With symbolic simplification
-        >>> prior = mitMGFprior.from_registry(
+        >>> prior = MGFPrior.from_registry(
         ...     'pareto', params={'alpha':0.5, 'xi':1.0}, simplify=True
         ... )
         """
@@ -472,8 +472,8 @@ class mitMGFprior:
                 f"{'is' if len(free_symbols) == 1 else 'are'} symbolic. "
                 "Registry priors compile a numeric density, which a free "
                 "symbol cannot supply. For a prior whose hyperparameters stay "
-                "free, build it directly -- mitMGFprior(mgf_sym=..., "
-                "pdf_sym=..., params={}).as_mitMGFprior() -- and substitute "
+                "free, build it directly -- MGFPrior(mgf_sym=..., "
+                "pdf_sym=..., params={}).as_MGFPrior() -- and substitute "
                 "the values later, or pass them through `params` to have them "
                 "resolved."
             )
@@ -549,7 +549,7 @@ class mitMGFprior:
             params=params,
         )
 
-        # Directly assign the compiled functions (bypass as_mitMGFprior)
+        # Directly assign the compiled functions (bypass as_MGFPrior)
         obj.mgf = mgf_math
         obj.cgf = cgf_math
         obj.mgf_jax = mgf_jax
@@ -580,9 +580,9 @@ class mitMGFprior:
     # VALIDATION
     # ============================================================
     @staticmethod
-    def is_mitMGFprior(obj) -> bool:
+    def is_MGFPrior(obj) -> bool:
         """
-        Check if an object is a fully compiled mitMGFprior.
+        Check if an object is a fully compiled MGFPrior.
         Requires all six compiled functions to be present.
         """
         required_attrs = [

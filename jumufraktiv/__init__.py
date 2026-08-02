@@ -4,7 +4,7 @@ See :file:`README.md` for the method and :file:`CLAUDE.md` for the internals.
 
 The names below are the supported surface. Three workflows reach for them:
 
-* **Infer.** Build a prior with :class:`mitMGFprior`, hand it and your data to
+* **Infer.** Build a prior with :class:`MGFPrior`, hand it and your data to
   :class:`MGFDerivative`, and ask that for the evidence, density, CDF,
   quantiles, moments, predictive or a sequential update.
 
@@ -28,7 +28,7 @@ from .derivativeDispatch import (
     mgfDerivative_integer,
 )
 from .MGFDerivative_class import MGFDerivative
-from .mitMGFprior_class import mitMGFprior
+from .MGFPrior_class import MGFPrior
 from .registry import (
     failed_prior_modules,
     list_priors,
@@ -40,6 +40,7 @@ from .registry import (
 #: re-exports read as intentional rather than as unused imports.
 __all__ = [
     "MGFDerivative",
+    "MGFPrior",
     "__version__",
     "failed_prior_modules",
     "list_priors",
@@ -47,6 +48,5 @@ __all__ = [
     "mgfDerivative",
     "mgfDerivative_fractional",
     "mgfDerivative_integer",
-    "mitMGFprior",
     "register_prior",
 ]

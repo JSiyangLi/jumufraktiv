@@ -27,7 +27,7 @@ The user-facing argument is `shape`, which corresponds to the known shape parame
 This module provides two statistics functions:
 
 - `readyGamma` : aggregated sufficient statistics (scalars) for the whole sample.
-- `bereitGamma` : per-element sufficient statistics (arrays) for vectorised
+- `eachGamma` : per-element sufficient statistics (arrays) for vectorised
   predictive evaluation.
 
 Additionally, `cGamma()` returns a symbolic expression for the normalising constant.
@@ -108,7 +108,7 @@ def readyGamma(
         'log_c': float(log_c)
     }
 
-def bereitGamma(
+def eachGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

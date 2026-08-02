@@ -37,6 +37,8 @@ RETIRED = {
     r"\bregister_likelihood\b": "there is no runtime API for registering a likelihood",
     r"\bintegerDeriv_method\s*=": "renamed to integer_method",
     r"\bimport\s+mgf2post\b": "the mgf2post alias was removed",
+    r"\bmitMGFprior\b": "renamed to MGFPrior; there is no alias",
+    r"\bbereit[A-Z]": "the bereit* statistics are now each*; there is no alias",
 }
 
 
@@ -133,7 +135,7 @@ def test_the_readme_likelihood_table_matches_the_registry():
         )
 
         row = next(ln for ln in source.splitlines() if ln.strip().startswith(cell))
-        ready_func = entry[0]  # (ready, c, bereit)
+        ready_func = entry[0]  # (ready, c, each)
         for keyword in sorted(_likelihood_kwargs(ready_func)):
             assert f"``{keyword}``" in row, (
                 f"README row for '{name}' does not name its known parameter "
@@ -202,7 +204,7 @@ def test_the_docstring_examples_run():
             "pytest",
             "--doctest-modules",
             "jumufraktiv/MGFDerivative_class.py",
-            "jumufraktiv/mitMGFprior_class.py",
+            "jumufraktiv/MGFPrior_class.py",
             "-q",
         ],
         capture_output=True,

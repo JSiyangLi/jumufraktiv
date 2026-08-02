@@ -24,7 +24,7 @@ poisson          ``b`` 4.0 -> 2.0, the evaluation point, halved
 Halving `a` is not a small error. It is the order of the derivative, so the
 package computed a different quantity entirely and reported it without comment.
 
-**`bereit*`** returns per-observation statistics, and **none of the fourteen
+**`each*`** returns per-observation statistics, and **none of the fourteen
 rejected 2-D input**. Worse, all fourteen returned `a` and `b` with *mismatched
 shapes* — thirteen gave `a` of shape (2,) beside `b` of shape (2, 2), and
 poisson the mirror image. `post_predictive` consumes exactly these pairs.
@@ -95,28 +95,28 @@ def test_ready_accepts_the_flat_equivalent(name):
 
 
 # ==========================================================================
-# bereit*: per-observation statistics
+# each*: per-observation statistics
 # ==========================================================================
 @pytest.mark.parametrize("name", sorted(KNOWN))
-def test_bereit_rejects_two_dimensional_data(name):
+def test_each_rejects_two_dimensional_data(name):
     """Not one of the fourteen used to reject 2-D input; all fourteen now do."""
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
+    _, _, each = LIKELIHOOD_REGISTRY[name]
 
     with pytest.raises(ValueError, match="1-dimensional"):
-        bereit(_data(name, nested=True), **KNOWN[name])
+        each(_data(name, nested=True), **KNOWN[name])
 
 
 @pytest.mark.parametrize("name", sorted(KNOWN))
-def test_bereit_returns_consistent_shapes_on_flat_data(name):
+def test_each_returns_consistent_shapes_on_flat_data(name):
     """`a`, `b` and `log_c` must agree in shape.
 
     The mismatch this guards against is what made the 2-D case dangerous
     rather than merely wrong: `post_predictive` consumes the `a`/`b` pair, so
     two different shapes reach a computation that assumes one.
     """
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
+    _, _, each = LIKELIHOOD_REGISTRY[name]
 
-    stats = bereit(_data(name, nested=False), **KNOWN[name])
+    stats = each(_data(name, nested=False), **KNOWN[name])
     shapes = {k: np.shape(np.asarray(v)) for k, v in stats.items()}
 
     assert len(set(shapes.values())) == 1, shapes

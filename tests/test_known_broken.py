@@ -145,10 +145,10 @@ def test_refusing_a_symbolic_order_does_not_warn_first(gamma_prior):
 # defect was reproduced and the assertions were already the right ones.
 def _pareto_prior():
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    return mitMGFprior.from_registry("pareto", params={"alpha": 3.0, "xi": 1.0})
+    return MGFPrior.from_registry("pareto", params={"alpha": 3.0, "xi": 1.0})
 
 
 #: E[e^{tX} 1{X <= u}] for Pareto(alpha=3, xi=1) at t=-1, u=2, by direct
@@ -190,7 +190,7 @@ def test_pareto_numeric_incomplete_mgf_matches_quadrature(alpha, t_value, u_valu
     """
     import mpmath as mp
 
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     mp.mp.dps = 40
 
@@ -198,7 +198,7 @@ def test_pareto_numeric_incomplete_mgf_matches_quadrature(alpha, t_value, u_valu
         return mp.e ** (mp.mpf(t_value) * theta) * mp.mpf(alpha) / theta ** (alpha + 1)
 
     expected = float(mp.quad(density, [1.0, u_value]))
-    prior = mitMGFprior.from_registry("pareto", params={"alpha": alpha, "xi": 1.0})
+    prior = MGFPrior.from_registry("pareto", params={"alpha": alpha, "xi": 1.0})
 
     assert prior.imgf(t_value, u_value) == pytest.approx(expected, rel=1e-12)
 
@@ -320,10 +320,10 @@ def test_the_tail_correction_is_inert_for_a_light_tailed_prior(
     """
     import mpmath as mp
 
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     mp.mp.dps = 40
-    prior = mitMGFprior.from_registry(prior_name, params=params)
+    prior = MGFPrior.from_registry(prior_name, params=params)
 
     if prior_name == "gamma":
         reference = float(
@@ -341,10 +341,10 @@ def test_the_tail_correction_is_inert_for_a_light_tailed_prior(
 
 def _pareto_prior_alpha_two():
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    return mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+    return MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
 
 # ==========================================================================
@@ -519,9 +519,9 @@ def test_the_signed_moment_really_can_be_negative():
     the upper endpoint, which makes it left-skewed: `mu_3 = -0.0219`. Under a
     Gamma prior the same moment is `+0.0741`.
     """
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
-    uniform = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+    uniform = MGFPrior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
     post = MGFDerivative(uniform, data=[1, 2, 3], likelihood="poisson", scale=1.0)
 
     log_abs, sign = post.post_central_moment(3)
@@ -607,16 +607,16 @@ def test_symbolic_joint_predictive_accepts_an_array():
     """
     from test_symbolic_correctness import _gamma_mgf, _gamma_pdf
 
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     params = {"alpha": 2.0, "beta": 3.0}
-    symbolic = mitMGFprior(
+    symbolic = MGFPrior(
         name="gamma_substituted",
         mgf_sym=_gamma_mgf(),
         pdf_sym=_gamma_pdf(),
         params=params,
-    ).as_mitMGFprior()
-    numeric = mitMGFprior.from_registry("gamma", params=params)
+    ).as_MGFPrior()
+    numeric = MGFPrior.from_registry("gamma", params=params)
 
     def posterior(prior, **kwargs):
         return MGFDerivative(
@@ -643,10 +643,10 @@ def test_uniform_cgf_works_below_the_origin():
     """
     import mpmath as mp
 
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     mp.mp.dps = 40
-    prior = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+    prior = MGFPrior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
 
     for t_value in (-50.0, -5.0, -1.0, -0.5):
         reference = float(
@@ -748,10 +748,10 @@ def test_the_pareto_evidence_factorises_on_the_auto_route():
 
 def _uniform_prior():
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    return mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+    return MGFPrior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
 
 
 def _uniform_expectation(order, t):
@@ -854,10 +854,10 @@ def test_a_one_signed_cgf_is_never_refused(order):
     import mpmath as mp
 
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
 
     with mp.workdps(80):
         exact = float(
@@ -887,10 +887,10 @@ def _cancellation_check(expr, t_values):
     happens to produce it, which tests the search rather than the guard.
     """
     from jumufraktiv.derivativeDispatch import _check_cancellation
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     _check_cancellation(
-        expr, np.asarray(t_values, dtype=float), 3, mitMGFprior(), "symbolic"
+        expr, np.asarray(t_values, dtype=float), 3, MGFPrior(), "symbolic"
     )
 
 
@@ -951,12 +951,12 @@ def test_a_prior_without_a_symbolic_mgf_is_not_blamed_for_a_singularity():
         _check_fractional_kernel_at_origin,
         _kernel_derivative_at_origin,
     )
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
-    prior = mitMGFprior(
+    prior = MGFPrior(
         mgf_backend=lambda x, xp=np, **p: xp.exp(x),
         pdf_backend=lambda x, xp=np, **p: xp.exp(-x),
-    ).as_mitMGFprior()
+    ).as_MGFPrior()
 
     assert _kernel_derivative_at_origin(1.5, prior) is None
     _check_fractional_kernel_at_origin(1.5, prior, 0.0, "scipy")

@@ -106,7 +106,7 @@ def readyWeibull(
         'log_c': log_c
     }
 
-def bereitWeibull(
+def eachWeibull(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     rho: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

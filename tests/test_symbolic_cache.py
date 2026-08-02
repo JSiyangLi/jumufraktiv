@@ -171,12 +171,12 @@ def test_an_expression_that_will_not_compile_falls_back(gamma_prior):
     import numpy as np
 
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
     from jumufraktiv.symbolic_cache import cached_diff, cached_lambdify
     from jumufraktiv.symbols import t as t_sym
 
     registry.initialize()
-    pareto = mitMGFprior.from_registry("pareto", params={"alpha": 2.5, "xi": 1.0})
+    pareto = MGFPrior.from_registry("pareto", params={"alpha": 2.5, "xi": 1.0})
 
     second = cached_diff(pareto.mgf_sym, t_sym, 2)
     assert "expint" in str(second), "this test is pointless if the MGF changed"

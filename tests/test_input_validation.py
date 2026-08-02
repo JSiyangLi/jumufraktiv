@@ -19,7 +19,7 @@ from test_likelihood_stats import COUNTS, DATA, LIKELIHOOD_KWARGS
 from conftest import POISSON_DATA
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import LIKELIHOOD_REGISTRY, MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 ALL_LIKELIHOODS = sorted(LIKELIHOOD_REGISTRY)
 
@@ -51,11 +51,11 @@ def test_non_finite_data_is_rejected(name, bad):
 @pytest.mark.parametrize("name", ALL_LIKELIHOODS)
 def test_non_finite_data_is_rejected_pointwise_too(name):
     """The per-element form shares the guard, not just the aggregated one."""
-    _, _, bereit = LIKELIHOOD_REGISTRY[name]
+    _, _, each = LIKELIHOOD_REGISTRY[name]
     data = [*_data_for(name)[:-1], np.nan]
 
     with pytest.raises(ValueError, match="finite"):
-        bereit(data, **LIKELIHOOD_KWARGS[name])
+        each(data, **LIKELIHOOD_KWARGS[name])
 
 
 def test_rejection_message_names_the_data():
@@ -156,13 +156,13 @@ class TestMomentDomain:
         prior is improper, so the integral diverges for every `a >= 0`, `a = 0`
         included, and its MGF exists only for `t < 0`.
         """
-        prior = mitMGFprior.from_registry(prior_name, params=params)
+        prior = MGFPrior.from_registry(prior_name, params=params)
 
         assert prior.max_finite_moment == expected
 
     def test_custom_priors_default_to_no_restriction(self, gamma_prior):
         """The safe default defers to the numerical result rather than guessing."""
-        assert mitMGFprior().max_finite_moment == np.inf
+        assert MGFPrior().max_finite_moment == np.inf
 
     @pytest.mark.parametrize("order", [2, 3])
     def test_order_at_or_above_the_bound_is_rejected_at_the_origin(self, order):
@@ -172,13 +172,13 @@ class TestMomentDomain:
         `TypeError: Cannot convert complex to float` at order 3, neither of
         which named the cause.
         """
-        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+        prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
         with pytest.raises(ValueError, match="t = 0"):
             MGFDerivative(prior, data=[0.1] * order, likelihood="pareto", scale=0.1)
 
     def test_order_below_the_bound_is_accepted_at_the_origin(self):
-        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+        prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
         post = MGFDerivative(prior, data=[0.1], likelihood="pareto", scale=0.1)
 
         assert np.isfinite(post.evidence())
@@ -206,7 +206,7 @@ class TestMomentDomain:
         operator exists to support.
         """
         params = {"alpha": 2.0, "xi": 1.0} if prior_name == "pareto" else {"k": 0.5}
-        prior = mitMGFprior.from_registry(prior_name, params=params)
+        prior = MGFPrior.from_registry(prior_name, params=params)
 
         post = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
 
@@ -215,7 +215,7 @@ class TestMomentDomain:
 
     def test_improper_prior_is_rejected_at_every_order_at_the_origin(self):
         """The heaviside prior is improper: not even E[Theta^0] is finite."""
-        prior = mitMGFprior.from_registry("heaviside", params={"k": 0.5})
+        prior = MGFPrior.from_registry("heaviside", params={"k": 0.5})
 
         with pytest.raises(ValueError, match="t = 0"):
             MGFDerivative(prior, data=[0.5, 0.5], likelihood="laplace", mean=0.5)
@@ -237,7 +237,7 @@ class TestMomentDomain:
             mgfDerivative_integer,
         )
 
-        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+        prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
         with pytest.raises(ValueError, match="t = 0"):
             mgfDerivative(order, prior, method="symbolic", t=0.0)
@@ -268,7 +268,7 @@ class TestMomentDomain:
             mgfDerivative_fractional,
         )
 
-        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+        prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
         # `auto` is settled by the unified dispatcher; the fractional entry
         # point takes a concrete backend name only.
@@ -296,7 +296,7 @@ class TestMomentDomain:
         """
         from jumufraktiv.derivativeDispatch import mgfDerivative_fractional
 
-        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+        prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
         with pytest.raises(ValueError, match=r"M\^\(2\)\(0\)"):
             mgfDerivative_fractional(1.5, prior, method="scipy", t=0.0, log=True)
@@ -356,7 +356,7 @@ def test_a_symbolic_observation_is_refused_by_name():
     import sympy as sp
 
     registry.initialize()
-    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
     deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
 
     with pytest.raises(NotImplementedError) as excinfo:
@@ -375,7 +375,7 @@ def test_the_first_central_moment_is_zero_not_the_mean():
     error.
     """
     registry.initialize()
-    prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
     deriv = MGFDerivative(prior, data=POISSON_DATA, likelihood="poisson", scale=1.0)
 
     assert float(deriv.post_central_moment(order=1, log=False)) == 0.0
@@ -413,12 +413,12 @@ def test_a_symbolic_path_does_not_mask_a_deliberate_refusal():
     # A free shape leaves the posterior symbolic, which is what routes the call
     # into the symbolic branch that carries the wrapper.
     alpha = param("alpha")
-    free_prior = mitMGFprior(
+    free_prior = MGFPrior(
         name="gamma_free_shape",
         mgf_sym=(3 / (3 - t)) ** alpha,
         pdf_sym=3**alpha * theta ** (alpha - 1) * sp.exp(-3 * theta) / sp.gamma(alpha),
         params={},
-    ).as_mitMGFprior()
+    ).as_MGFPrior()
     deriv = MGFDerivative(
         free_prior,
         data=POISSON_DATA,
@@ -474,8 +474,8 @@ def test_a_sympy_number_is_a_number(prior_name, spelling):
     other = {"gamma": {"beta": 3.0}, "pareto": {"xi": 1.0}}[prior_name]
     key = "alpha"
 
-    reference = mitMGFprior.from_registry(prior_name, params={key: 2.0, **other})
-    got = mitMGFprior.from_registry(prior_name, params={key: value, **other})
+    reference = MGFPrior.from_registry(prior_name, params={key: 2.0, **other})
+    got = MGFPrior.from_registry(prior_name, params={key: value, **other})
 
     assert float(got.mgf(-1.0)) == pytest.approx(float(reference.mgf(-1.0)), rel=1e-14)
     assert float(got.pdf_func(1.0)) == pytest.approx(
@@ -491,13 +491,13 @@ def test_a_free_symbol_is_refused_by_name():
     alpha = sp.Symbol("alpha", positive=True)
 
     with pytest.raises(TypeError, match=r"alpha, beta are symbolic"):
-        mitMGFprior.from_registry(
+        MGFPrior.from_registry(
             "gamma", params={"alpha": alpha, "beta": sp.Symbol("beta", positive=True)}
         )
 
     # An expression that still carries a symbol is refused for the same reason.
     with pytest.raises(TypeError, match=r"alpha is symbolic"):
-        mitMGFprior.from_registry("gamma", params={"alpha": alpha + 1, "beta": 3.0})
+        MGFPrior.from_registry("gamma", params={"alpha": alpha + 1, "beta": 3.0})
 
 
 @pytest.mark.parametrize(
@@ -513,7 +513,7 @@ def test_a_non_finite_hyperparameter_is_refused(value):
     registry.initialize()
 
     with pytest.raises(ValueError, match=r"finite hyperparameters"):
-        mitMGFprior.from_registry("gamma", params={"alpha": value, "beta": 3.0})
+        MGFPrior.from_registry("gamma", params={"alpha": value, "beta": 3.0})
 
 
 def test_a_non_finite_hyperparameter_is_refused_in_its_sympy_spelling_too():
@@ -528,16 +528,16 @@ def test_a_non_finite_hyperparameter_is_refused_in_its_sympy_spelling_too():
     registry.initialize()
 
     with pytest.raises(ValueError, match=r"finite hyperparameters"):
-        mitMGFprior.from_registry("gamma", params={"alpha": sp.oo, "beta": 3.0})
+        MGFPrior.from_registry("gamma", params={"alpha": sp.oo, "beta": 3.0})
 
     # Complex infinity has no float at all, so it is reported as not a number
     # rather than as a number of the wrong size.
     with pytest.raises(TypeError, match=r"cannot be converted to a float"):
-        mitMGFprior.from_registry("gamma", params={"alpha": sp.zoo, "beta": 3.0})
+        MGFPrior.from_registry("gamma", params={"alpha": sp.zoo, "beta": 3.0})
 
 
 def test_a_hyperparameter_that_is_not_a_number_names_its_type():
     registry.initialize()
 
     with pytest.raises(TypeError, match=r"alpha \(str\) cannot be converted"):
-        mitMGFprior.from_registry("gamma", params={"alpha": "two", "beta": 3.0})
+        MGFPrior.from_registry("gamma", params={"alpha": "two", "beta": 3.0})

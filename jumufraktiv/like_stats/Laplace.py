@@ -94,7 +94,7 @@ def readyLaplace(
         'log_c': log_c
     }
 
-def bereitLaplace(
+def eachLaplace(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     mean: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs

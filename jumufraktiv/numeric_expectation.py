@@ -37,7 +37,7 @@ it never forms the cancelling terms at all.
 When it is used
 ---------------
 ``method="auto"`` prefers this route for **numeric evaluation**, whenever the
-prior supplies a density -- which is always, since :class:`mitMGFprior` refuses
+prior supplies a density -- which is always, since :class:`MGFPrior` refuses
 to construct without one in both its symbolic and its backend mode. An explicit
 ``method=`` is never diverted.
 
@@ -151,7 +151,7 @@ def _add_polynomial_tail(
         Log of the quadrature over ``[low, high]``, one entry per live point.
     order : float
         Derivative order ``a``.
-    prior : mitMGFprior
+    prior : MGFPrior
         Consulted for ``max_finite_moment``.
     t_values, u_values : numpy.ndarray
         Evaluation and truncation points for the live entries.
@@ -311,7 +311,7 @@ def expectationDeriv(
     order : float
         Derivative order. Any non-negative real; integer and fractional orders
         take the same path, since the expectation does not care.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior supplying a density. Check with :func:`expectation_is_available`.
     t : float or array-like
         Evaluation point(s).

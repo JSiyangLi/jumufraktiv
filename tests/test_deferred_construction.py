@@ -96,9 +96,9 @@ def _build(name, **kwargs):
 
 @functools.cache
 def gamma_prior_spec():
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
-    return mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    return MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
 
 
 # ==========================================================================
@@ -534,9 +534,9 @@ class TestAutoUsesTheExpectationRoute:
 
     @staticmethod
     def _uniform_prior():
-        from jumufraktiv.mitMGFprior_class import mitMGFprior
+        from jumufraktiv.MGFPrior_class import MGFPrior
 
-        return mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+        return MGFPrior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
 
     @pytest.mark.parametrize("data", [[1, 2, 3], [8, 9, 10], [20, 20, 20]])
     def test_the_class_matches_the_oracle_for_an_alternating_cgf(self, data):
@@ -595,14 +595,14 @@ class TestAutoUsesTheExpectationRoute:
         """
         from test_symbolic_correctness import _gamma_mgf, _gamma_pdf
 
-        from jumufraktiv.mitMGFprior_class import mitMGFprior
+        from jumufraktiv.MGFPrior_class import MGFPrior
 
-        prior = mitMGFprior(
+        prior = MGFPrior(
             name="gamma_symbolic",
             mgf_sym=_gamma_mgf(),
             pdf_sym=_gamma_pdf(),
             params={},
-        ).as_mitMGFprior()
+        ).as_MGFPrior()
         post = MGFDerivative(
             prior, data=[1, 2, 3], likelihood="poisson", scale=1.0, method="symbolic"
         )

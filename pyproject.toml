@@ -45,7 +45,7 @@ classifiers = [
 # Every package below is imported at *import time* by shipped library code, so
 # each one is a hard requirement today. `pandas` is imported by all 14
 # `like_stats` modules, `mpmath` by the high-precision fractional backend, and
-# `jax` by `mitMGFprior_class` and `root_finding`.
+# `jax` by `MGFPrior_class` and `root_finding`.
 #
 # Making `jax` and `pandas` optional (lazy import + graceful degradation) is
 # tracked for a later wave of the audit; see CLAUDE.md.

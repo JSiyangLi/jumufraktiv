@@ -20,7 +20,7 @@ from jax import grad
 from jax.experimental import jet
 
 from jumufraktiv.logsum import logminus
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.numeric_symbolic_decision import suggest_method_integerDeriv
 from jumufraktiv.symbolic_cache import cached_diff
 
@@ -202,7 +202,7 @@ def bell_polynomial_log_batched(logv, vsign):
 # ===== main function =====
 def integerDeriv_numeric_bell(
     t,
-    prior: mitMGFprior,
+    prior: MGFPrior,
     order: int,
     symbolic_timeout: float = 600.0,
     cgf_mode: str = 'auto',
@@ -224,7 +224,7 @@ def integerDeriv_numeric_bell(
     ----------
     t : scalar or array-like
         Evaluation point(s) for t.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object.
     order : int
         Derivative order.

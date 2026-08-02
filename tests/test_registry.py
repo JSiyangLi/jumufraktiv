@@ -1,4 +1,4 @@
-"""Tests for the prior registry and the ``mitMGFprior`` container."""
+"""Tests for the prior registry and the ``MGFPrior`` container."""
 
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ import sympy as sp
 from conftest import ALPHA, BETA, POISSON_DATA, POISSON_SCALE, poisson_log_evidence
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbols import t, theta
 
 
@@ -107,18 +107,18 @@ class TestRegistry:
 
 
 # ==========================================================================
-# mitMGFprior container
+# MGFPrior container
 # ==========================================================================
-class TestMitMGFPrior:
+class TestMGFPrior:
     def test_registry_prior_is_fully_compiled(self, gamma_prior):
-        assert mitMGFprior.is_mitMGFprior(gamma_prior)
+        assert MGFPrior.is_MGFPrior(gamma_prior)
 
     def test_gamma_prior_exposes_the_incomplete_mgf(self, gamma_prior):
         assert gamma_prior.has_iMGF()
 
     def test_unknown_prior_name_raises_valueerror(self):
         with pytest.raises(ValueError, match="Unknown prior"):
-            mitMGFprior.from_registry("no-such-prior")
+            MGFPrior.from_registry("no-such-prior")
 
     def test_from_registry_works_as_the_first_registry_call(self):
         """`from_registry` must not depend on some other call having run first.
@@ -136,8 +136,8 @@ class TestMitMGFPrior:
             """
             import warnings
             warnings.simplefilter("ignore")
-            from jumufraktiv.mitMGFprior_class import mitMGFprior
-            prior = mitMGFprior.from_registry(
+            from jumufraktiv.MGFPrior_class import MGFPrior
+            prior = MGFPrior.from_registry(
                 "gamma", params={"alpha": 2.0, "beta": 3.0}
             )
             assert prior.name == "gamma"
@@ -175,14 +175,14 @@ class TestCustomPrior:
         pdf_sym = (
             BETA**ALPHA / sp.gamma(ALPHA) * theta ** (ALPHA - 1) * sp.exp(-BETA * theta)
         )
-        return mitMGFprior(
+        return MGFPrior(
             name="custom_gamma", mgf_sym=mgf_sym, pdf_sym=pdf_sym
-        ).as_mitMGFprior()
+        ).as_MGFPrior()
 
     def test_symbolic_construction_compiles(self):
         prior = self._build()
 
-        assert mitMGFprior.is_mitMGFprior(prior)
+        assert MGFPrior.is_MGFPrior(prior)
         assert prior.mgf(-1.0) == pytest.approx((BETA / (BETA + 1.0)) ** ALPHA)
 
     def test_custom_prior_reproduces_the_registry_result(self):
@@ -207,11 +207,11 @@ class TestCustomPrior:
         }
 
         with pytest.raises(ValueError, match="requires both"):
-            mitMGFprior(**kwargs).as_mitMGFprior()
+            MGFPrior(**kwargs).as_MGFPrior()
 
     def test_empty_prior_is_rejected(self):
         with pytest.raises(ValueError, match="Must provide either"):
-            mitMGFprior().as_mitMGFprior()
+            MGFPrior().as_MGFPrior()
 
 
 # ==========================================================================
@@ -219,7 +219,7 @@ class TestCustomPrior:
 # ==========================================================================
 class TestMGFDerivativeValidation:
     def test_non_prior_object_is_rejected(self):
-        with pytest.raises(TypeError, match="must be a mitMGFprior"):
+        with pytest.raises(TypeError, match="must be a MGFPrior"):
             MGFDerivative("gamma", data=POISSON_DATA, likelihood="poisson")
 
     def test_unknown_likelihood_is_rejected(self, gamma_prior):

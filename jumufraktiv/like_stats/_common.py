@@ -3,7 +3,7 @@
 The two functions below are defined here and nowhere else, and no likelihood
 module carries its own copy. That is what makes their validation *uniform*: the
 dimensionality and finiteness checks live in :func:`_extract_1d`, and every
-``ready*`` and ``bereit*`` entry point passes its data — and every known
+``ready*`` and ``each*`` entry point passes its data — and every known
 parameter — through it, so "one guard, applied everywhere" holds by
 construction rather than by fourteen-fold agreement.
 """

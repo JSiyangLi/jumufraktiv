@@ -21,7 +21,7 @@ import concurrent.futures
 
 import sympy as sp
 
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.symbolic_cache import cached_diff
 
 
@@ -90,7 +90,7 @@ def _is_unevaluated_transform(expr):
 
 def fractionalDeriv_symbolic(
     order: float,
-    prior: mitMGFprior,
+    prior: MGFPrior,
     simplify: bool = False,
     complete: bool = True,
     timeout_seconds: float = 30.0
@@ -105,7 +105,7 @@ def fractionalDeriv_symbolic(
     ----------
     order : float
         Fractional order (positive, non-integer).
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing the symbolic MGF expression (mgf_sym).
     simplify : bool, optional
         If True, simplify the final expression.

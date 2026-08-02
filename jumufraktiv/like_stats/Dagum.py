@@ -121,7 +121,7 @@ def readyDagum(
 
     return {'a': a_stat, 'b': b_stat, 'log_c': log_c}
 
-def bereitDagum(
+def eachDagum(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     r: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     s: float | int | pd.DataFrame | pd.Series | list | np.ndarray,

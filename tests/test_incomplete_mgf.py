@@ -20,7 +20,7 @@ import pytest
 
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 #: Every registry prior, with hyperparameters and the support its density lives
 #: on. The support matters: outside it the truncated integral captures no new
@@ -93,7 +93,7 @@ def test_every_registry_prior_supplies_an_incomplete_mgf(name):
     both truncated integrals are elementary.
     """
     registry.initialize()
-    prior = mitMGFprior.from_registry(name, params=PRIORS[name][0])
+    prior = MGFPrior.from_registry(name, params=PRIORS[name][0])
 
     assert prior.has_iMGF()
 
@@ -104,7 +104,7 @@ def test_the_incomplete_mgf_matches_quadrature(name, t_value):
     """Against the integral written out here, not against the package."""
     registry.initialize()
     params, density, (low, high) = PRIORS[name]
-    prior = mitMGFprior.from_registry(name, params=params)
+    prior = MGFPrior.from_registry(name, params=params)
 
     for u_value in [float(low) - 0.1, float(low), float(low) + 0.25, 1.5, 3.0]:
         if u_value <= 0:
@@ -129,7 +129,7 @@ def test_the_posterior_cdf_is_available_and_right_for_every_prior(name, method):
     """
     registry.initialize()
     params, density, (low, high) = PRIORS[name]
-    prior = mitMGFprior.from_registry(name, params=params)
+    prior = MGFPrior.from_registry(name, params=params)
     post = MGFDerivative(
         prior, data=DATA, likelihood="poisson", scale=SCALE, method=method
     )
@@ -154,7 +154,7 @@ def test_the_quantile_methods_work_for_the_newly_supported_priors(name):
     """
     registry.initialize()
     params, density, (low, high) = PRIORS[name]
-    prior = mitMGFprior.from_registry(name, params=params)
+    prior = MGFPrior.from_registry(name, params=params)
     post = MGFDerivative(prior, data=DATA, likelihood="poisson", scale=SCALE)
 
     def exact_quantile(probability):
@@ -189,7 +189,7 @@ def test_the_uniform_incomplete_mgf_is_flat_above_its_support():
     so it looks plausible.
     """
     registry.initialize()
-    prior = mitMGFprior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
+    prior = MGFPrior.from_registry("uniform", params={"a": 0.5, "b": 2.0})
 
     at_upper = float(prior.imgf(-1.0, 2.0))
     assert float(prior.imgf(-1.0, 5.0)) == pytest.approx(at_upper, rel=1e-14)
@@ -209,7 +209,7 @@ def test_the_heaviside_incomplete_mgf_refuses_a_non_negative_t():
     fine.
     """
     registry.initialize()
-    prior = mitMGFprior.from_registry("heaviside", params={"k": 0.5})
+    prior = MGFPrior.from_registry("heaviside", params={"k": 0.5})
 
     with pytest.raises(ValueError, match="only for t < 0"):
         prior.logimgf(0.0, 1.0)
@@ -222,7 +222,7 @@ def test_the_heaviside_incomplete_mgf_refuses_a_non_negative_t():
 def test_the_new_incomplete_mgfs_broadcast(name):
     """The tuple-vectorisation principle applies to `(t, u)` here as elsewhere."""
     registry.initialize()
-    prior = mitMGFprior.from_registry(name, params=PRIORS[name][0])
+    prior = MGFPrior.from_registry(name, params=PRIORS[name][0])
 
     t_values = np.array([-2.0, -1.0, -0.5])
     u_values = np.array([1.0, 1.5, 1.9])

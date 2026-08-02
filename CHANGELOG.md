@@ -10,6 +10,21 @@ without a deprecation period.
 
 ## [Unreleased]
 
+### Changed
+
+- **The internal names are English.** `mitMGFprior` is now `MGFPrior`, its
+  module `jumufraktiv/mitMGFprior_class.py` is `jumufraktiv/MGFPrior_class.py`,
+  and its two constructors follow: `as_mitMGFprior` and `is_mitMGFprior` are
+  `as_MGFPrior` and `is_MGFPrior`. The fourteen `bereit<Distribution>`
+  functions are `each<Distribution>`, keeping them parallel to the `ready*`
+  functions they sit beside — `ready*` aggregates over the sample, `each*`
+  returns one entry per observation.
+
+  A breaking change with no aliases, which is what pre-release means. The
+  package name stays `jumufraktiv`: a distribution name is an identity and is
+  expensive to change once published, while an identifier a caller types is
+  not. (PR 14a)
+
 ### Added
 
 - **Two guards that stop a route returning a number it can prove is wrong.**
@@ -78,7 +93,7 @@ without a deprecation period.
   digits: worst relative error 1.25e-15 over 42 `(t, u)` pairs for uniform and
   9.09e-16 over 24 for heaviside. (PR 13b)
 
-- `mitMGFprior.mgf_finite_below`, the supremum of `t` for which the prior's MGF
+- `MGFPrior.mgf_finite_below`, the supremum of `t` for which the prior's MGF
   is finite. Declared by each registry prior and consulted by `post_mgf`.
   Custom priors default to infinity. (PR 13b)
 
@@ -87,7 +102,7 @@ without a deprecation period.
   `LIKELIHOOD_REGISTRY`, and runs the docstring examples. (PR 13a)
 
 - Docstrings for `MGFDerivative.is_symbolic`, `.value_numeric` and
-  `.prior_has_iMGF`, and for the `mitMGFprior` fields, which had been described
+  `.prior_has_iMGF`, and for the `MGFPrior` fields, which had been described
   only in their class's summary tables. (PR 13e)
 
 ### Fixed
@@ -112,7 +127,7 @@ without a deprecation period.
   uniform call from `solve_root` and now say plainly that they are not read,
   naming `dps` and `maxiter` as what to adjust instead. (PR 13e)
 
-- `mitMGFprior.pdf_sym_func` is removed. It was read from a prior-spec key no
+- `MGFPrior.pdf_sym_func` is removed. It was read from a prior-spec key no
   prior module supplies and no code path consumed, so it was `None` on all
   four registry priors and on every hand-built one. (PR 13e)
 
@@ -257,7 +272,7 @@ without a deprecation period.
 
 ### Added
 
-- `mitMGFprior.max_finite_moment`, the strict supremum of admissible derivative
+- `MGFPrior.max_finite_moment`, the strict supremum of admissible derivative
   orders at `t = 0`: infinite for `gamma` and `uniform`, the tail index for
   `pareto`, and zero for the improper `heaviside` prior, which has no finite
   moments at all. Defaults to infinity for custom priors, deferring to the
@@ -283,7 +298,7 @@ without a deprecation period.
   accepted.
 - Removed a stray `from unittest import result` that shadowed a local name.
 
-- `mitMGFprior.from_registry` now initialises the registry. It previously read
+- `MGFPrior.from_registry` now initialises the registry. It previously read
   `PRIOR_REGISTRY` directly, so in a fresh process it raised
   `Unknown prior 'gamma'` — the registry was simply empty — unless some other
   registry function happened to have run first.
@@ -391,7 +406,7 @@ without a deprecation period.
 ### Removed
 
 - `jumufraktiv/tests/test_custom_features.py` and
-  `jumufraktiv/tests/mitMGFprior_test.py`. Neither was a test: both were
+  `jumufraktiv/tests/MGFPrior_test.py`. Neither was a test: both were
   print-driven scripts with no assertions that nothing executed, and
   `test_custom_features.py` had been dead since the `MGFDerivative`
   constructor stopped accepting string priors — it could only raise

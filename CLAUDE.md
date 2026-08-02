@@ -97,7 +97,7 @@ rounded.
 
 Priors therefore declare `max_finite_moment`, the strict supremum of admissible
 orders: `∞` for gamma and uniform, `α` for pareto, and `0` for the improper
-heaviside prior, which has no finite moments at all. `mitMGFprior` defaults it
+heaviside prior, which has no finite moments at all. `MGFPrior` defaults it
 to `∞`, which is the right default for a custom prior — it defers to the
 numerical result instead of guessing.
 
@@ -135,7 +135,7 @@ Three layers, each with a single responsibility. Respect the boundaries.
                      └───────────────┬──────────────┘
                                      │  reads MGF/CGF/PDF
                      ┌───────────────▼──────────────┐
-  data         ───▶  │  mitMGFprior_class.py        │  prior container
+  data         ───▶  │  MGFPrior_class.py        │  prior container
                      │  registry.py + MGFdictionary │  prior registry
                      └──────────────────────────────┘
 
@@ -150,7 +150,7 @@ Three layers, each with a single responsibility. Respect the boundaries.
 
 - `MGFDerivative` delegates *all* mathematics to `mgfDerivative`. It must not
   differentiate anything itself.
-- `derivativeDispatch` reads priors through the `mitMGFprior` interface only.
+- `derivativeDispatch` reads priors through the `MGFPrior` interface only.
   It must not know which distribution it is handling.
 - Priors never import from the inference layer.
 - `like_stats` modules are pure functions of the data. They know nothing about
@@ -402,10 +402,18 @@ treats as `θ`, and confirm the reference is expressed in that same parameter.
 Report only what survives that, and say explicitly which parameterisation was
 used on both sides.
 
-**Naming.** Some internals use German (`mitMGFprior`, `bereit*` for per-element
-statistics alongside `ready*` for aggregated ones). Anglicising the internals
-while keeping the package name is planned for a later wave; until then, follow
-the existing convention rather than mixing a third one in.
+**Naming.** The internals are English. They were not: the prior container was
+`mitMGFprior` and the per-element statistics were `bereit*`, alongside `ready*`
+for the aggregated ones. Both are renamed — `MGFPrior`, and `each*` beside
+`ready*` — with no aliases, since nothing has been released.
+
+The package name stays `jumufraktiv`. That is a deliberate split rather than an
+oversight: a distribution name is an identity and is expensive to change once
+published, while an identifier a caller types is not.
+
+The pair to keep parallel is `ready*` and `each*`: the first aggregates over
+the sample, the second returns one entry per observation. Nothing else in the
+package should introduce a third spelling for that distinction.
 
 **Diagnostics.** Library code uses `logging` and `warnings`, never `print`.
 This is now enforced — `tests/test_diagnostics_policy.py` fails the build on a
@@ -425,7 +433,7 @@ priors that way.
 **Likelihood modules.** Each `like_stats/X.py` exports exactly three functions:
 
 - `readyX(data, **kwargs) -> {'a', 'b', 'log_c'}` — aggregated over the sample.
-- `bereitX(data, **kwargs) -> {'a', 'b', 'log_c'}` — per-element arrays, used
+- `eachX(data, **kwargs) -> {'a', 'b', 'log_c'}` — per-element arrays, used
   by the vectorised posterior predictive.
 - `cX() -> sympy.Expr` — symbolic normalising constant.
 
@@ -468,7 +476,7 @@ sphinx-build -W -E -b html docs docs/_build/html
 # `deriv` and `prior` lives in the root conftest.py precisely because this
 # command collects from jumufraktiv/ and never loads tests/conftest.py.
 pytest --doctest-modules jumufraktiv/MGFDerivative_class.py \
-                         jumufraktiv/mitMGFprior_class.py
+                         jumufraktiv/MGFPrior_class.py
 ```
 
 **The notebooks are run by hand, not by the suite.** `pytest` checks them
@@ -559,7 +567,7 @@ agree by inspection.
 | `conftest.py` | fixtures and closed-form references |
 | `test_analytic_reference.py` | evidence, density, CDF, MGF, moments, predictive, sequential update vs. exact values |
 | `test_design_principles.py` | the three normative principles, with Hypothesis |
-| `test_likelihood_stats.py` | the `ready`/`bereit`/`c` contract across all 14 likelihoods |
+| `test_likelihood_stats.py` | the `ready`/`each`/`c` contract across all 14 likelihoods |
 | `test_likelihood_correctness.py` | that `a`, `b`, `log_c` reconstruct the true density, vs. `scipy.stats` |
 | `test_input_validation.py` | non-finite inputs, and the moment domain at `t = 0` |
 | `test_constructor_kwargs.py` | keyword-argument routing on the constructor |
@@ -1170,7 +1178,7 @@ instead, which integrates `E[Θ^a]` directly.
 **Dimensionality is now checked in one place.** The `ndim != 1` guard lives
 inside the shared `like_stats/_common.py::_extract_1d`, which every entry point
 routes its data *and* its known parameters through. All twenty-eight `ready*`
-and `bereit*` functions reject 2-D input, where previously ten of twenty-eight
+and `each*` functions reject 2-D input, where previously ten of twenty-eight
 did. That it is one guard rather than fourteen agreeing ones is the point:
 byte-identical copies are exactly how the four unguarded modules went
 unnoticed.
@@ -1235,7 +1243,7 @@ Same quantity by definition, entirely different arithmetic, and **the integrand
 is positive**, so it cannot cancel.
 
 `resolve_backend` sends `method="auto"` to the expectation route whenever the
-prior supplies a density, which is always: `mitMGFprior` refuses to construct
+prior supplies a density, which is always: `MGFPrior` refuses to construct
 without one in both its symbolic and its backend mode. An explicit `method=` is
 never reinterpreted.
 
@@ -1458,7 +1466,10 @@ uniform, where double precision degrades from order ~12.
 - Replace the `(log_abs, sign)` return convention with a small result type.
   Now needed in one place rather than several: only `post_central_moment`
   returns the pair, since it is the only quantity that can be negative.
-- Anglicise internal naming.
+- ~~Anglicise internal naming.~~ **Done** (owner's decision), with no aliases:
+  `mitMGFprior` is `MGFPrior`, and the fourteen `bereit*` are `each*`. The
+  package name stays `jumufraktiv`. See "Naming" above for why those two
+  answers differ.
 
 The `sys.modules["mgf2post"]` alias is **removed**, and it was more than a
 tidiness item. Assigning into `sys.modules` claimed a name this project does

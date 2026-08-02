@@ -40,10 +40,10 @@ def _relative_error(order, t):
 
 def _prior():
     from jumufraktiv import registry
-    from jumufraktiv.mitMGFprior_class import mitMGFprior
+    from jumufraktiv.MGFPrior_class import MGFPrior
 
     registry.initialize()
-    return mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    return MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
 
 
 @pytest.mark.parametrize("order,t,previous_error", PREVIOUSLY_WRONG)

@@ -20,12 +20,12 @@ unresolved symbols remain. Numeric methods are fully vectorised for array
 inputs, following the **tuple-vectorisation principle** for evaluation
 points `(t, u)`.
 
-Priors are represented as `mitMGFprior` objects. The class also supports
+Priors are represented as `MGFPrior` objects. The class also supports
 sequential Bayesian updating via the `update` method, which treats the
 current posterior as the prior for a new dataset.
 
 Likelihoods are registered with `ready_func` (aggregated sufficient
-statistics) and `bereit_func` (per-element statistics for vectorised
+statistics) and `each_func` (per-element statistics for vectorised
 predictive evaluation).
 """
 
@@ -44,38 +44,38 @@ from jumufraktiv.derivativeDispatch import (
     mgfDerivative,
     resolve_backend,
 )
-from jumufraktiv.like_stats.BurrXII import bereitBurrXII, cBurrXII, readyBurrXII
-from jumufraktiv.like_stats.Dagum import bereitDagum, cDagum, readyDagum
-from jumufraktiv.like_stats.Gamma import bereitGamma, cGamma, readyGamma
-from jumufraktiv.like_stats.Gompertz import bereitGompertz, cGompertz, readyGompertz
+from jumufraktiv.like_stats.BurrXII import cBurrXII, eachBurrXII, readyBurrXII
+from jumufraktiv.like_stats.Dagum import cDagum, eachDagum, readyDagum
+from jumufraktiv.like_stats.Gamma import cGamma, eachGamma, readyGamma
+from jumufraktiv.like_stats.Gompertz import cGompertz, eachGompertz, readyGompertz
 from jumufraktiv.like_stats.HalfNormal import (
-    bereitHalfNormal,
     cHalfNormal,
+    eachHalfNormal,
     readyHalfNormal,
 )
 from jumufraktiv.like_stats.InverseGamma import (
-    bereitInverseGamma,
     cInverseGamma,
+    eachInverseGamma,
     readyInverseGamma,
 )
-from jumufraktiv.like_stats.Laplace import bereitLaplace, cLaplace, readyLaplace
-from jumufraktiv.like_stats.Levy import bereitLevy, cLevy, readyLevy
+from jumufraktiv.like_stats.Laplace import cLaplace, eachLaplace, readyLaplace
+from jumufraktiv.like_stats.Levy import cLevy, eachLevy, readyLevy
 from jumufraktiv.like_stats.MaxwellBoltzmann import (
-    bereitMaxwellBoltzmann,
     cMaxwellBoltzmann,
+    eachMaxwellBoltzmann,
     readyMaxwellBoltzmann,
 )
-from jumufraktiv.like_stats.Normal import bereitNormal, cNormal, readyNormal
-from jumufraktiv.like_stats.Pareto import bereitPareto, cPareto, readyPareto
+from jumufraktiv.like_stats.Normal import cNormal, eachNormal, readyNormal
+from jumufraktiv.like_stats.Pareto import cPareto, eachPareto, readyPareto
 
 # ============================================================
 # Likelihood registry
 # ============================================================
 # ---- Likelihood imports ----
-from jumufraktiv.like_stats.Poisson import bereitPoisson, cPoisson, readyPoisson
-from jumufraktiv.like_stats.Rayleigh import bereitRayleigh, cRayleigh, readyRayleigh
-from jumufraktiv.like_stats.Weibull import bereitWeibull, cWeibull, readyWeibull
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.like_stats.Poisson import cPoisson, eachPoisson, readyPoisson
+from jumufraktiv.like_stats.Rayleigh import cRayleigh, eachRayleigh, readyRayleigh
+from jumufraktiv.like_stats.Weibull import cWeibull, eachWeibull, readyWeibull
+from jumufraktiv.MGFPrior_class import MGFPrior
 from jumufraktiv.root_finding import solve_root
 
 # `q` is deliberately absent. The moment methods take a parameter named `q`
@@ -106,22 +106,22 @@ _DELIBERATE_REFUSALS = (NotImplementedError,)
 # Likelihood registry
 # ============================================================
 LIKELIHOOD_REGISTRY = {
-    'poisson': (readyPoisson, cPoisson, bereitPoisson),
-    'gamma': (readyGamma, cGamma, bereitGamma),
-    'laplace': (readyLaplace, cLaplace, bereitLaplace),
-    'normal': (readyNormal, cNormal, bereitNormal),
-    'rayleigh': (readyRayleigh, cRayleigh, bereitRayleigh),
+    'poisson': (readyPoisson, cPoisson, eachPoisson),
+    'gamma': (readyGamma, cGamma, eachGamma),
+    'laplace': (readyLaplace, cLaplace, eachLaplace),
+    'normal': (readyNormal, cNormal, eachNormal),
+    'rayleigh': (readyRayleigh, cRayleigh, eachRayleigh),
     'maxwell-boltzmann': (
-        readyMaxwellBoltzmann, cMaxwellBoltzmann, bereitMaxwellBoltzmann
+        readyMaxwellBoltzmann, cMaxwellBoltzmann, eachMaxwellBoltzmann
     ),
-    'inverse gamma': (readyInverseGamma, cInverseGamma, bereitInverseGamma),
-    'levy': (readyLevy, cLevy, bereitLevy),
-    'weibull': (readyWeibull, cWeibull, bereitWeibull),
-    'burrxii': (readyBurrXII, cBurrXII, bereitBurrXII),
-    'pareto': (readyPareto, cPareto, bereitPareto),
-    'dagum': (readyDagum, cDagum, bereitDagum),
-    'gompertz': (readyGompertz, cGompertz, bereitGompertz),
-    'halfnormal': (readyHalfNormal, cHalfNormal, bereitHalfNormal),
+    'inverse gamma': (readyInverseGamma, cInverseGamma, eachInverseGamma),
+    'levy': (readyLevy, cLevy, eachLevy),
+    'weibull': (readyWeibull, cWeibull, eachWeibull),
+    'burrxii': (readyBurrXII, cBurrXII, eachBurrXII),
+    'pareto': (readyPareto, cPareto, eachPareto),
+    'dagum': (readyDagum, cDagum, eachDagum),
+    'gompertz': (readyGompertz, cGompertz, eachGompertz),
+    'halfnormal': (readyHalfNormal, cHalfNormal, eachHalfNormal),
 }
 
 
@@ -283,7 +283,7 @@ class MGFDerivative:
     Posterior distribution derived via MGF marginalisation.
 
     This class encapsulates a posterior distribution obtained from a prior
-    (a `mitMGFprior` object) and a likelihood from the MGF-marginalisable
+    (a `MGFPrior` object) and a likelihood from the MGF-marginalisable
     family. It computes the posterior normalising constant (evidence) and
     provides methods for density, CDF, quantiles, moments, and predictive
     inference.
@@ -305,7 +305,7 @@ class MGFDerivative:
         Log-normalising constant from the likelihood.
     log : bool
         Whether the normalising constant is stored in log-scale.
-    prior : mitMGFprior
+    prior : MGFPrior
         The prior object used.
     method : str
         Derivative backend method.
@@ -321,9 +321,9 @@ class MGFDerivative:
 
     Examples
     --------
-    >>> from jumufraktiv.mitMGFprior_class import mitMGFprior
+    >>> from jumufraktiv.MGFPrior_class import MGFPrior
     >>> from jumufraktiv.MGFDerivative_class import MGFDerivative
-    >>> prior = mitMGFprior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+    >>> prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
     >>> deriv = MGFDerivative(prior, data=[1, 2, 3], likelihood="poisson", scale=1.0)
     >>> print(f"{deriv.evidence():.6f}")               # log marginal likelihood
     -6.096596
@@ -335,7 +335,7 @@ class MGFDerivative:
     """
     def __init__(
         self,
-        prior,                  # mitMGFprior object ONLY
+        prior,                  # MGFPrior object ONLY
         data,
         likelihood='poisson',
         method='auto',
@@ -344,13 +344,13 @@ class MGFDerivative:
         **kwargs
     ):
         """
-        prior must be a mitMGFprior instance.
+        prior must be a MGFPrior instance.
         """
         # ----------------------------------------------------
         # PRIOR HANDLING
         # ----------------------------------------------------
-        if not isinstance(prior, mitMGFprior):
-            raise TypeError("prior must be a mitMGFprior object")
+        if not isinstance(prior, MGFPrior):
+            raise TypeError("prior must be a MGFPrior object")
 
         self.prior = prior
         self.params = prior.params
@@ -367,7 +367,7 @@ class MGFDerivative:
         if self.likelihood not in LIKELIHOOD_REGISTRY:
             raise ValueError(f"Unknown likelihood: {likelihood}")
 
-        self.ready_func, self.c_func, self.bereit_func = (
+        self.ready_func, self.c_func, self.each_func = (
             LIKELIHOOD_REGISTRY[self.likelihood]
         )
 
@@ -411,7 +411,7 @@ class MGFDerivative:
         The parameters a likelihood needs -- ``mean`` for normal, ``shape`` for
         gamma, ``rho`` for weibull -- are supplied once at construction and
         stored in ``_ready_kwargs``. Anything that later calls ``ready_func`` or
-        ``bereit_func`` needs them again, because those functions take them as
+        ``each_func`` needs them again, because those functions take them as
         required positional arguments.
 
         An override replaces the stored value for this call only, so the
@@ -679,7 +679,7 @@ class MGFDerivative:
     def _compute(self):
         """
         Delegates ALL math to mgfDerivative,
-        using mitMGFprior ONLY as input.
+        using MGFPrior ONLY as input.
         """
         result = self._evaluate_derivative(-self.b)
         self._store_result(result)
@@ -1404,7 +1404,7 @@ class MGFDerivative:
             If True (default), return an array of densities for each new data point.
             If False, return the joint density (product of individual densities).
         **kwargs : additional arguments passed to the likelihood's
-            `ready_func` or `bereit_func`.
+            `ready_func` or `each_func`.
             For example, `scale` for Poisson or `shape` for Gamma.
 
         Returns
@@ -1464,13 +1464,13 @@ class MGFDerivative:
         >>> # the predictive mass then comes back as an expression in it.
         >>> from jumufraktiv.symbols import param, t, theta
         >>> alpha = param("alpha")
-        >>> free_prior = mitMGFprior(
+        >>> free_prior = MGFPrior(
         ...     name="gamma_free_shape",
         ...     mgf_sym=(3 / (3 - t)) ** alpha,
         ...     pdf_sym=3**alpha * theta ** (alpha - 1) * sp.exp(-3 * theta)
         ...     / sp.gamma(alpha),
         ...     params={},
-        ... ).as_mitMGFprior()
+        ... ).as_MGFPrior()
         >>> sym = MGFDerivative(free_prior, data=[1, 2, 3],
         ...                     likelihood="poisson", scale=1.0,
         ...                     method="symbolic")
@@ -1522,7 +1522,7 @@ class MGFDerivative:
         scalar_input = len(new_data_arr) == 1
 
         if individual:
-            stats = self.bereit_func(
+            stats = self.each_func(
                 new_data_arr, **self._likelihood_arguments(**kwargs)
             )
             a_vals = np.asarray(stats['a']).ravel()
@@ -2054,7 +2054,7 @@ class MGFDerivative:
 
         >>> # An odd central moment is genuinely signed, which is why `log=True`
         >>> # returns a pair here and a bare log everywhere else
-        >>> unif = mitMGFprior.from_registry("uniform", {"a": 0.5, "b": 2.0})
+        >>> unif = MGFPrior.from_registry("uniform", {"a": 0.5, "b": 2.0})
         >>> skewed = MGFDerivative(
         ...     unif, data=[1, 2, 3], likelihood="poisson", scale=1.0
         ... )
@@ -2533,7 +2533,7 @@ class MGFDerivative:
         """
         Convert the current posterior distribution into a prior object.
 
-        This method constructs a :class:`mitMGFprior` object that can be used
+        This method constructs a :class:`MGFPrior` object that can be used
         as a prior in a subsequent sequential update. It first attempts to create
         a **symbolic** prior by extracting the symbolic MGF and PDF from the
         current posterior (via `post_mgf` and `post_density`). The posterior MGF
@@ -2547,7 +2547,7 @@ class MGFDerivative:
 
         Returns
         -------
-        mitMGFprior
+        MGFPrior
             A prior object representing the posterior distribution. The prior's MGF
             and PDF are derived from the current posterior.
 
@@ -2593,12 +2593,12 @@ class MGFDerivative:
             pdf_sym_expr = self.post_density(theta, log=False)  # use canonical theta
 
             if isinstance(mgf_sym_expr, sp.Expr) and isinstance(pdf_sym_expr, sp.Expr):
-                return mitMGFprior(
+                return MGFPrior(
                     name="posterior_prior_symbolic",
                     mgf_sym=mgf_sym_expr,
                     pdf_sym=pdf_sym_expr,
                     params=self.params
-                ).as_mitMGFprior()
+                ).as_MGFPrior()
 
         # ---- Backend (numeric) route ----
         #
@@ -2613,12 +2613,12 @@ class MGFDerivative:
         def pdf_backend(theta_val, xp=np, **params):
             return self.post_density(theta_val, log=False)
 
-        return mitMGFprior(
+        return MGFPrior(
             name="posterior_prior",
             mgf_backend=mgf_backend,
             pdf_backend=pdf_backend,
             params=self.params
-        ).as_mitMGFprior()
+        ).as_MGFPrior()
 
     def update(self, new_data, **kwargs):
         """
@@ -2633,7 +2633,7 @@ class MGFDerivative:
         ----------
         new_data : array-like
             New observations to condition on. Must be compatible with the likelihood's
-            `ready_func` or `bereit_func`.
+            `ready_func` or `each_func`.
         **kwargs : additional keyword arguments
             - method : str, optional
                 Derivative backend for the new object. Defaults to the current method.

@@ -23,14 +23,14 @@ from scipy.special import gammaln
 
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _initialised_registry():
     """Populate the prior registry once for the whole session.
 
-    ``mitMGFprior.from_registry`` does not initialise the registry itself; see
+    ``MGFPrior.from_registry`` does not initialise the registry itself; see
     ``test_known_broken.py::test_from_registry_initialises_registry``.
     """
     registry.initialize()
@@ -39,7 +39,7 @@ def _initialised_registry():
 @pytest.fixture
 def gamma_prior():
     """A Gamma(ALPHA, BETA) prior built through the registry."""
-    return mitMGFprior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
+    return MGFPrior.from_registry("gamma", params={"alpha": ALPHA, "beta": BETA})
 
 
 @pytest.fixture

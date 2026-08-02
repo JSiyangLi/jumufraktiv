@@ -50,7 +50,7 @@ def _integerDeriv_numeric_jax_scalar(
     ----------
     t : float
         Evaluation point for the canonical variable `t`.
-    prior : mitMGFprior
+    prior : MGFPrior
         Prior object providing JAX-compatible MGF functions.
     order : int
         Non-negative derivative order (must be scalar).
@@ -208,7 +208,7 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
     ----------
     t : scalar or array-like
         Evaluation point(s) for t.
-    prior : mitMGFprior
+    prior : MGFPrior
         The prior whose MGF is differentiated. Supplies `cgf_jax` for the
         complete MGF and `logimgf_jax` for the incomplete one.
     order : int

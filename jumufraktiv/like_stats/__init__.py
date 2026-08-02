@@ -4,7 +4,7 @@ Each module here exports exactly three functions for one likelihood:
 
 ``readyX(data, **kwargs)``
     Statistics ``{'a', 'b', 'log_c'}`` aggregated over the whole sample.
-``bereitX(data, **kwargs)``
+``eachX(data, **kwargs)``
     The same statistics per observation, used by the vectorised posterior
     predictive.
 ``cX()``

@@ -21,7 +21,7 @@ import sympy as sp
 
 from jumufraktiv import registry
 from jumufraktiv.MGFDerivative_class import MGFDerivative
-from jumufraktiv.mitMGFprior_class import mitMGFprior
+from jumufraktiv.MGFPrior_class import MGFPrior
 
 #: Prior name -> (hyperparameters, declared MGF bound, density, support).
 #: The bound is the supremum of `t` with `M(t) < inf`; it is a property of the
@@ -39,7 +39,7 @@ DATA, SCALE, ORDER, RATE = [1, 2, 3], 1.0, 6.0, 3.0
 
 def _posterior(name, method="auto"):
     registry.initialize()
-    prior = mitMGFprior.from_registry(name, params=PRIORS[name][0])
+    prior = MGFPrior.from_registry(name, params=PRIORS[name][0])
     return MGFDerivative(
         prior, data=DATA, likelihood="poisson", scale=SCALE, method=method
     )
@@ -189,7 +189,7 @@ def test_a_moment_below_the_bound_is_still_admitted_at_the_origin():
     the over-correction.
     """
     registry.initialize()
-    prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+    prior = MGFPrior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
     post = MGFDerivative(prior, data=[1], likelihood="poisson", scale=1.0)
 
     assert np.isfinite(float(post.post_mgf(1.0, log=False)))

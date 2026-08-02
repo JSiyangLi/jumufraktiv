@@ -93,7 +93,7 @@ def readyMaxwellBoltzmann(
         'log_c': log_c
     }
 
-def bereitMaxwellBoltzmann(
+def eachMaxwellBoltzmann(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
 ) -> dict[str, np.ndarray]:

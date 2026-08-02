@@ -99,7 +99,7 @@ def readyInverseGamma(
         'log_c': float(log_c)
     }
 
-def bereitInverseGamma(
+def eachInverseGamma(
     data: pd.DataFrame | pd.Series | list | np.ndarray,
     shape: float | int | pd.DataFrame | pd.Series | list | np.ndarray,
     **kwargs
