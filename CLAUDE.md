@@ -638,7 +638,8 @@ lines. The reason to defer was sound and the number attached to it was not.
 
 ## Audit status
 
-The repository is undergoing a staged audit. Work lands one PR at a time.
+The repository went through a staged audit, one PR at a time. It is complete —
+every row below is merged — and the convention holds for whatever comes next.
 
 | Wave | PR | Scope | Status |
 |------|----|-------|--------|
@@ -667,11 +668,24 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 6 | 13b | Quantities that come back wrong without saying so | **merged** |
 | 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | **merged** |
 | 6 | 13d | Packaging: what the sdist and wheel actually contain | **merged** |
-| 6 | 13e | The API reference read against the code; `-W` in CI | **in review** |
-| 6 | 13f | Routes that refuse rather than return a wrong number | **in review** |
-| 6 | 14b | The Pareto `expint` path | **in review** |
-| 6 | 14c | Array-valued orders | **in review** |
-| 6 | 14d | `ruff format` over the library | **in review** |
+| 6 | 13e | The API reference read against the code; `-W` in CI | **merged** |
+| 6 | 13f | Routes that refuse rather than return a wrong number | **merged** |
+| 6 | 14a | Anglicise the internal names | **merged** |
+| 6 | 14b | The Pareto `expint` path | **merged** |
+| 6 | 14c | Array-valued orders, batched over the order dimension | **merged** |
+| 6 | 14d | `ruff format` over the library | **merged** |
+
+**The table has no planned rows left.** Waves 0 through 6, PRs 1 through 14d,
+are merged. That is a statement about the *scheduled* work rather than about
+the package being finished; what is still open is listed under "Open, and
+unscheduled" below, and none of it has an owner.
+
+Six of the thirty-one rows above needed correcting, which is worth keeping as
+an instance of the failure this document keeps recording. Five said "in review"
+for changes that had merged; the sixth, 14a, had no row at all — the rename was
+carried out and recorded everywhere except here. A status column nobody
+re-derives drifts in exactly the direction that flatters progress: nothing was
+marked merged that had not been.
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
 the earlier waves.** They were split by blast radius — does this change numbers
@@ -899,7 +913,7 @@ Accuracy improved throughout, from a recorded worst case of 1.17e-11 to
 | `jax` (integer) | 657.7 ms | 66.6 ms |
 | `bell` (integer) | 8.5 ms | 1.7 ms |
 | `auto` (integer) | 24.0 ms | 7.8 ms |
-| array-valued order | 37.0 ms | 38.1 ms — **still flat** |
+| array-valued order | 37.0 ms | 38.1 ms — **untouched by PR 9** |
 
 The full test suite went from 623 s to 67 s.
 
@@ -921,17 +935,11 @@ growing with the batch, against the ten-fold this entry predicted.
 The shortfall is accounted for rather than mysterious. **Bracketing and the
 peak search remain per element**, because both depend on the order, and having
 batched the quadrature they are now the dominant term: `quad_vec` fell from
-491 ms to 107 for eight orders, leaving ~74 ms in `_bracket`. Sharing the
-bracketing scan across orders is the remaining headroom, and it is a real
-change rather than a tidy-up — a wider shared interval is looser for every
-element in it.
+491 ms to 107 for eight orders, leaving ~74 ms in `_bracket`.
 
-And `uniform` and `heaviside` route
-their far-tail nodes to the exact
-path because those underflow to zero in float64 — skipping them is very
-probably safe, since a node that underflows contributes nothing to a log-space
-accumulation, but "very probably" is not a verification and the check was not
-done.
+That, and the `uniform` and `heaviside` far-tail nodes that fall through to the
+exact symbolic path, are the two costs wave 4 leaves behind. Both are listed
+under "Open, and unscheduled" below, with what it would take to close them.
 
 **A bloat-and-simplification audit ran after wave 1 and is folded into the
 table above rather than kept as a separate stream.** Most of what it found
@@ -972,14 +980,64 @@ risks hiding the finding that most undermines confidence in the rest of the
 suite. The mitigation is that PR 6 must call it out explicitly rather than
 folding it into a list of numerical fixes.
 
+### Open, and unscheduled
+
+Four things are known to be imperfect, and none of them has an owner or a
+planned PR. They are collected here because the audit table no longer lists
+anything, and an open item with no row is an open item that disappears.
+
+Two are cost rather than correctness, and both were measured in PR 14c:
+
+- **Bracketing and the peak search in the expectation route are still per
+  element.** Batching the quadrature over the order dimension left them as the
+  dominant term — `quad_vec` fell from 491 ms to 107 for eight orders, leaving
+  ~74 ms in `_bracket`. Sharing one bracketing scan across the orders is the
+  remaining headroom, and it is a genuine numerical trade rather than a
+  tidy-up: a shared interval is wider than any single element needs, so it is
+  looser for every element in it.
+- **`uniform` and `heaviside` send their far-tail nodes to the exact symbolic
+  path.** The compiled float64 evaluation underflows to exactly zero there, and
+  the dispatcher routes any zero to the exact path deliberately, because a
+  value that underflowed is not necessarily zero. Skipping those nodes is very
+  probably safe — a node that underflows contributes nothing to a log-space
+  accumulation — but "very probably" is not a verification, and the check was
+  never done.
+
+One is an undiagnosed numerical gap, and it is the suite's only live
+`xfail(strict=True)`:
+
+- **The Pareto prior's evidence does not factorise on the default route.**
+  `p(y₁, y₂) = p(y₁)·p(y₂ | y₁)` is an identity, so the test needs no oracle:
+  sequential updating must reproduce the batch evidence whatever route computed
+  it. Gamma, uniform and heaviside factorise to ~3e-15 on both routes, and
+  Pareto factorises to 1.8e-15 on the `symbolic` route — but is **6.9e-05 nats
+  out on `auto`**, which is the route a caller gets without asking for one. The
+  gap is the right size to be quadrature tolerance on the Pareto expectation
+  integral and the wrong size to be obviously that. Settling it means measuring
+  the two evidences against an independent oracle rather than against each
+  other, which is the same rule the rest of this audit ran under.
+
+The fourth is a deferred interface decision rather than a defect: replacing the
+`(log_abs, sign)` return convention with a small result type. Its scope has
+shrunk to one method, since `post_central_moment` is the only quantity in the
+package that can legitimately be negative — but it is also what bounds the
+mpmath backend's *return* precision, so the interface question and the
+numerical one should not be confused. See "Deferred decisions".
+
 ### Known-broken, scheduled for repair
 
-Do not build on these paths; do not paper over them. **Every entry here has a
-matching `xfail(strict=True)` test in `tests/test_known_broken.py`, and that
-correspondence was re-established by measurement rather than assumed** — it had
-drifted to four entries against one marker, three of them citing merged PRs, so
-nobody could tell a live defect from a stale record. Reconciled by rerunning
-each reproduction:
+**Nothing is listed, because nothing is scheduled.** The section stays because
+the mechanism does: an entry here carries a matching `xfail(strict=True)` test
+in `tests/test_known_broken.py`, which keeps the suite green while the defect
+exists and *fails the build* the moment a PR repairs it, so the record and the
+code cannot drift apart. The one live `xfail(strict=True)` belongs to the
+unscheduled list above rather than here.
+
+Do not build on a path listed here; do not paper over one. **The
+correspondence between the list and the markers was re-established by
+measurement rather than assumed** — it had drifted to four entries against one
+marker, three of them citing merged PRs, so nobody could tell a live defect
+from a stale record. Reconciled by rerunning each reproduction:
 
 | entry | recorded | measured | outcome |
 |---|---|---|---|
