@@ -157,3 +157,231 @@ def test_posterior_predictive_agrees_with_point_by_point(gamma_prior, n):
     singly = np.array([float(np.ravel(post.post_predictive([y]))[0]) for y in new])
 
     assert together == pytest.approx(singly, rel=1e-8)
+
+
+# ==========================================================================
+# Batching over orders (PR 14c)
+# ==========================================================================
+def test_an_array_of_orders_is_one_quadrature_not_one_per_order():
+    """The cost claim, asserted structurally rather than by wall clock.
+
+    Counting the prior's density calls is a property of the algorithm; a
+    timing threshold is a property of the machine, so it would be either
+    flaky or too loose to assert anything. This is the same reasoning
+    `tests/test_batch_evaluation.py` uses for evaluation points.
+
+    Eight orders dispatched one at a time ran eight independent adaptive
+    quadratures, each reaching the density separately -- 4968 `logpdf` calls,
+    73% of the runtime, for a term that does not depend on the order at all.
+    """
+    import warnings
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+
+    calls = {"n": 0}
+    original = prior.logpdf_func
+
+    def counting(theta):
+        calls["n"] += 1
+        return original(theta)
+
+    prior.logpdf_func = counting
+
+    orders = np.linspace(0.5, 2.5, 8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mgfDerivative(orders, prior, method="auto", t=-1.0, log=True)
+    batched = calls["n"]
+
+    calls["n"] = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for order in orders:
+            mgfDerivative(float(order), prior, method="auto", t=-1.0, log=True)
+    per_element = calls["n"]
+
+    # Not a factor of eight: the bracketing and peak search stay per order,
+    # because both depend on it, and only the quadrature batches. Two is a
+    # generous floor that a per-element regression could not sneak under.
+    assert batched * 2 < per_element, (
+        f"batched {batched} density calls against {per_element} per-element; "
+        "the array-order path looks unbatched again"
+    )
+
+
+@pytest.mark.parametrize("t_value", [-0.5, -1.0, -3.0])
+def test_batched_orders_agree_with_the_closed_form(t_value):
+    """Batching may only change the cost, never the answer.
+
+    The reference is the Gamma MGF's derivative in closed form:
+    `E[Theta^a e^{t Theta}] = Gamma(alpha + a)/Gamma(alpha) *
+    beta^alpha / (beta - t)^(alpha + a)`, written out here rather than taken
+    from the package.
+    """
+    import warnings
+
+    import mpmath as mp
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    alpha, beta = 2.0, 3.0
+    prior = MGFPrior.from_registry("gamma", params={"alpha": alpha, "beta": beta})
+
+    orders = np.array([0.5, 1.0, 1.5, 2.0, 2.5])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        log_abs, signs = mgfDerivative(
+            orders, prior, method="auto", t=t_value, log=True
+        )
+
+    assert log_abs.shape == orders.shape
+    assert np.all(signs == 1)
+
+    with mp.workdps(40):
+        for index, order in enumerate(orders):
+            a, al, be, tt = (
+                mp.mpf(float(order)),
+                mp.mpf(alpha),
+                mp.mpf(beta),
+                mp.mpf(t_value),
+            )
+            exact = mp.gamma(al + a) / mp.gamma(al) * be**al / (be - tt) ** (al + a)
+            got = mp.e ** mp.mpf(float(log_abs[index]))
+            assert float(abs(got - exact) / exact) < 1e-12, order
+
+
+def test_a_mixed_integer_and_fractional_array_is_still_one_call():
+    """Mixed order types do not mean mixed backends, which is the surprise.
+
+    The condition sending a request to the expectation route does not mention
+    the order at all -- with `auto` and a concrete `t` every element takes it,
+    whatever its type. So the grouping-by-backend this looked like it needed
+    turns out to be unnecessary, and an array of `[1, 1.5, 2, 2.5]` batches as
+    readily as a uniform one.
+    """
+    import warnings
+
+    from jumufraktiv import registry
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+    from jumufraktiv.MGFPrior_class import MGFPrior
+
+    registry.initialize()
+    prior = MGFPrior.from_registry("gamma", params={"alpha": 2.0, "beta": 3.0})
+
+    mixed = np.array([1.0, 1.5, 2.0, 2.5])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        log_abs, _ = mgfDerivative(mixed, prior, method="auto", t=-1.0, log=True)
+        singles = [
+            mgfDerivative(float(o), prior, method="auto", t=-1.0, log=True)[0]
+            for o in mixed
+        ]
+
+    assert log_abs.shape == mixed.shape
+    for index in range(mixed.size):
+        assert float(log_abs[index]) == pytest.approx(float(singles[index]), rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("label", "t_values", "expected"),
+    [
+        ("numeric t", np.array([-1.0, -2.0]), True),
+        ("t is None", np.array([None, None], dtype=object), False),
+        ("symbolic t", None, False),  # filled in below; needs the symbol
+    ],
+)
+def test_only_a_fully_numeric_request_is_batched(
+    gamma_prior, label, t_values, expected
+):
+    """The batch path must decline anything it cannot evaluate as a number.
+
+    A SymPy `Symbol` for `t` is not `None`, so a condition testing only
+    `t is not None` admits it -- and it then fails inside `np.asarray` as
+    `TypeError: Cannot convert expression to float`. A symbolic `t` is
+    unsupported package-wide and always has been, a scalar order raising
+    identically; the requirement here is only that this fast path not become a
+    new way to reach it.
+
+    Asserted on the predicate directly, which is why it was extracted. The
+    batched route cannot be observed from outside: the call site passes
+    `np.asarray(t_arr, dtype=float)`, and an argument is evaluated before the
+    call it belongs to, so a symbolic `t` raises without the route ever being
+    entered. Two earlier versions of this test -- one comparing exception
+    types, one watching for the route -- passed identically with and without
+    the guard, which is how that was found.
+    """
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+    from jumufraktiv.symbols import t as t_sym
+
+    if t_values is None:
+        t_values = np.array([t_sym, t_sym], dtype=object)
+
+    orders = np.array([1.0, 2.0])
+    assert (
+        _array_orders_can_batch(
+            orders,
+            t_values,
+            None,
+            complete=True,
+            method="auto",
+            prior=gamma_prior,
+        )
+        is expected
+    ), label
+
+
+def test_a_symbolic_order_is_never_batched(gamma_prior):
+    """A symbolic order is refused package-wide, so it must not reach here."""
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+
+    orders = np.array([sp.Symbol("n"), 2.0], dtype=object)
+
+    assert not _array_orders_can_batch(
+        orders,
+        np.array([-1.0, -1.0]),
+        np.array([None, None], dtype=object),
+        complete=True,
+        method="auto",
+        prior=gamma_prior,
+    )
+
+
+@pytest.mark.parametrize("method", ["symbolic", "scipy", "mpmath", "bell", "jax"])
+def test_an_explicit_backend_is_never_batched(gamma_prior, method):
+    """Only `auto` and `expectation` reach this route, so only they may batch.
+
+    An explicit `method=` is never reinterpreted anywhere in the package, and
+    silently batching one through a different backend would be exactly that.
+    """
+    from jumufraktiv.derivativeDispatch import _array_orders_can_batch
+
+    assert not _array_orders_can_batch(
+        np.array([1.0, 2.0]),
+        np.array([-1.0, -1.0]),
+        np.array([None, None], dtype=object),
+        complete=True,
+        method=method,
+        prior=gamma_prior,
+    )
+
+
+def test_t_none_still_returns_expressions_for_an_array_order(gamma_prior):
+    """The documented symbolic route must survive the batching.
+
+    `t=None` is how a caller asks for an expression, and the fast path has to
+    decline it for the symbol-numeric principle to hold.
+    """
+    from jumufraktiv.derivativeDispatch import mgfDerivative
+
+    result = mgfDerivative(np.array([1.0, 2.0]), gamma_prior, method="symbolic", t=None)
+
+    assert np.shape(result) == (2,)
+    assert all(isinstance(x, sp.Basic) for x in np.ravel(result))

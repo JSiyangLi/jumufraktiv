@@ -12,6 +12,32 @@ without a deprecation period.
 
 ### Changed
 
+- **An array of derivative orders is now one quadrature rather than one per
+  order**, 1.8x to 2.6x faster and growing with the batch. The expectation
+  route takes the order as a broadcast dimension alongside `t` and `u`, so the
+  prior's density -- which does not depend on the order at all, and was 73% of
+  the runtime -- is evaluated once for the whole batch instead of once per
+  order. Density calls for eight orders fall from 4968 to 1286; for twenty,
+  from 12211 to 2175. Per-order cost goes from 39.75 ms to 21.54 at four
+  orders, 29.82 to 13.60 at eight, and 24.80 to 9.39 at twenty.
+
+  Verified against the Gamma MGF's closed-form derivative, written out
+  separately: agreement to 2.6e-14 or better, at three evaluation points.
+
+  No grouping by backend was needed, which the shape of the problem had
+  suggested it would be. The condition selecting the expectation route does not
+  mention the order, so under `auto` with a concrete `t` every element takes it
+  whatever its type -- a mixed integer and fractional array is not a
+  mixed-backend array. (PR 14c)
+
+- `mgfDerivative`'s array-order route declines anything it cannot evaluate as
+  a number. A SymPy `Symbol` for `t` is not `None`, so a condition testing only
+  `t is not None` admitted it and then failed inside `np.asarray`. A symbolic
+  `t` remains unsupported package-wide -- a scalar order raises identically,
+  because `t=None` rather than a free symbol is how a symbolic result is
+  requested -- and the batched route simply does not add a second way to reach
+  it. (PR 14c)
+
 - **The Pareto prior's fractional derivative is 4.6x to 6.9x faster**, and no
   number moved. Its MGF is written with `expint`, the generalised exponential
   integral, which neither SciPy nor NumPy defines — SymPy compiles the name

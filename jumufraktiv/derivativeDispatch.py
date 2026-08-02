@@ -1371,6 +1371,62 @@ def resolve_backend(
     return order_type, method, integer_method
 
 
+def _array_orders_can_batch(order_arr, t_arr, u_arr, *, complete, method, prior):
+    """Whether a whole array of orders can go to the expectation route at once.
+
+    Parameters
+    ----------
+    order_arr, t_arr : numpy.ndarray
+        The request, already broadcast to a common shape.
+    u_arr : numpy.ndarray or None
+        Truncation points, or `None` when `complete` is True, in which case
+        the caller has none to give.
+    complete : bool
+        Whether the complete MGF is being differentiated.
+    method : str
+        The backend as the caller spelled it, before resolution.
+    prior : MGFPrior or None
+        Consulted only for whether it supplies a density.
+
+    Returns
+    -------
+    bool
+        True if one batched call serves the whole array.
+
+    Notes
+    -----
+    A predicate rather than an inline condition because it is the part worth
+    testing on its own. The batch itself raises before it can be observed: the
+    call site passes ``np.asarray(t_arr, dtype=float)``, and an argument
+    expression is evaluated before the function it is being passed to, so a
+    symbolic ``t`` fails without the batched route ever being entered. A test
+    watching for that route could not tell a declined request from a request
+    that failed on its way in -- which is what the first attempt at one did,
+    passing equally with and without this guard.
+
+    Every element must be a *number*, and ``is not None`` is not that test. A
+    SymPy ``Symbol`` for ``t`` is not None, and admitting it here would make
+    this fast path a new way to reach a failure that already exists: a
+    symbolic ``t`` is unsupported package-wide, a scalar order raising
+    identically, since ``t=None`` rather than a free symbol is how a symbolic
+    result is requested.
+    """
+
+    def is_number(value):
+        return value is not None and not isinstance(value, sp.Basic)
+
+    requested = method.lower() if isinstance(method, str) else method
+    if requested not in ("auto", "expectation"):
+        return False
+    if prior is None or not expectation_is_available(prior):
+        return False
+    if any(isinstance(o, sp.Basic) for o in order_arr.flat):
+        return False
+    if not all(is_number(tt) for tt in t_arr.flat):
+        return False
+    return complete or all(is_number(uu) for uu in u_arr.flat)
+
+
 def mgfDerivative(
     order: float | np.ndarray | list | sp.Basic,
     prior,
@@ -1400,11 +1456,18 @@ def mgfDerivative(
     they are broadcast to a common shape and the derivative is evaluated for
     all points simultaneously.
 
-    If `order` is array-like, each order is dispatched independently and the
-    results are returned in the shape of the broadcast request. An `order` of
-    shape ``(2, 3)`` against a scalar `t` returns arrays of shape ``(2, 3)``;
-    an `order` of shape ``(3,)`` against a `t` of shape ``(3,)`` pairs them
-    elementwise and returns shape ``(3,)``.
+    If `order` is array-like, the results are returned in the shape of the
+    broadcast request. An `order` of shape ``(2, 3)`` against a scalar `t`
+    returns arrays of shape ``(2, 3)``; an `order` of shape ``(3,)`` against a
+    `t` of shape ``(3,)`` pairs them elementwise and returns shape ``(3,)``.
+
+    How that is *computed* depends on the route, and the difference is one of
+    cost rather than of result. When every element is numeric and the request
+    reaches the expectation route — `method='auto'` with a concrete `t`, or
+    `method='expectation'` — the whole array is one quadrature, because the
+    order enters the integrand only through ``order * log(theta)`` and the
+    prior's density, which dominates the cost, does not depend on it at all.
+    Otherwise each element is dispatched independently.
 
     Elements are not coerced. A fractional order stays fractional, `t` may be
     `None` — in which case an array of expressions is returned, per the
@@ -1413,7 +1476,9 @@ def mgfDerivative(
     Parameters
     ----------
     order : float, array-like, or sympy.Basic
-        Derivative order(s). If array-like, each element is processed separately.
+        Derivative order(s). An array is evaluated as one batch on the
+        expectation route and element by element otherwise; either way the
+        answers are the same and are returned in the broadcast shape.
         If a SymPy expression, the derivative is treated symbolically.
     prior : MGFPrior
         Prior object providing symbolic and/or backend MGF/PDF representations.
@@ -1548,6 +1613,49 @@ def mgfDerivative(
             u_flat = list(u_arr.flat)
 
         batch_shape = order_arr.shape
+
+        # ---- One call for the whole array, where the route allows it -----
+        #
+        # The expectation route takes the order as a broadcast dimension
+        # alongside `t` and `u`, so an array of orders is one quadrature
+        # rather than one per element. That matters because the term this
+        # shares is the expensive one: profiling eight orders at a single
+        # point put 73% of the runtime inside the prior's density, across
+        # 4968 separate `logpdf` calls, and the density does not depend on
+        # the order at all -- only `order * log(theta)` does.
+        #
+        # No grouping by backend is needed here, contrary to what the shape
+        # of the problem suggests. The condition below is the same one
+        # `mgfDerivative` applies to a scalar order, and it does not mention
+        # the order: with `auto` and a concrete `t`, *every* element takes
+        # this route whatever its order type. A mixed integer/fractional
+        # array is therefore not a mixed-backend array.
+        # `u_arr` exists only on the incomplete branch, so it is passed as
+        # `None` otherwise rather than referenced. The inline form this
+        # replaced short-circuited on `complete` and never touched it; an
+        # argument is always evaluated, which is the difference.
+        if _array_orders_can_batch(
+            order_arr,
+            t_arr,
+            None if complete else u_arr,
+            complete=complete,
+            method=method,
+            prior=prior,
+        ):
+            from jumufraktiv.numeric_expectation import DEFAULT_TOL, expectationDeriv
+
+            for one_order, one_t in zip(order_arr.flat, t_arr.flat, strict=True):
+                _check_moment_exists_at_origin(float(one_order), prior, one_t)
+
+            return expectationDeriv(
+                order=np.asarray(order_arr, dtype=float),
+                prior=prior,
+                t=np.asarray(t_arr, dtype=float),
+                u=None if complete else np.asarray(u_arr, dtype=float),
+                complete=complete,
+                log=log,
+                tol=kwargs.get("tol", DEFAULT_TOL),
+            )
 
         results = [
             mgfDerivative(
