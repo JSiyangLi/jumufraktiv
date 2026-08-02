@@ -10,6 +10,91 @@ without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+- **The posterior CDF, quantile, interval and sampling methods now work for
+  every registry prior.** `post_cdf` needs the prior's incomplete MGF, and
+  `post_quantile`, `post_interval` and `post_sample` are built on it, so the
+  `uniform` and `heaviside` priors were losing four public methods at once,
+  on every backend, behind a message that read as a statement about the
+  mathematics. Both integrals are elementary. Verified against mpmath at 40
+  digits: worst relative error 1.25e-15 over 42 `(t, u)` pairs for uniform and
+  9.09e-16 over 24 for heaviside. (PR 13b)
+
+- `mitMGFprior.mgf_finite_below`, the supremum of `t` for which the prior's MGF
+  is finite. Declared by each registry prior and consulted by `post_mgf`.
+  Custom priors default to infinity. (PR 13b)
+
+- `tests/test_documentation_runs.py`, which executes the README's code blocks,
+  renders it the way PyPI does, checks its likelihood table against
+  `LIKELIHOOD_REGISTRY`, and runs the docstring examples. (PR 13a)
+
+### Fixed
+
+- **`post_mgf` returned the value of a formula outside the domain where that
+  formula is the MGF.** The Gamma(8, 6) posterior's is `(6/(6-r))**8`, finite
+  only for `r < 6`; the even power kept it positive and plausible past the
+  radius --- `25.63` at `r = 10` and `2.76e-10` at `r = 100`, where the answer
+  is infinite. It now refuses, naming the largest admissible `r`. (PR 13b)
+
+- **`post_mgf` returned `nan` at `r = b` for three of the four priors.** There
+  `t = 0` and the value reduces to a raw moment. The uniform prior's MGF has
+  `t` in a denominator so substitution is `0/0`; pareto and heaviside diverge
+  and nothing refused. Uniform now returns the exact value and the other two
+  raise. `sp.limit` is not the fix --- it returns `oo` where the value is
+  `12.19` --- so the origin routes through the expectation backend. (PR 13b)
+
+- **The README's quick start raised `TypeError`.** `evidence()` became a bare
+  log scalar and the README, both notebooks and ten of the twelve worked
+  examples in the API reference were not updated with it. (PR 13a)
+
+- `post_predictive` documented a symbolic-observation route whose branch could
+  never succeed; it is now an explicit `NotImplementedError`. (PR 13a)
+
+- `post_central_moment` described order 1 as "the mean"; it is
+  `E[Theta - E[Theta]] = 0`. (PR 13a)
+
+- The four symbolic paths wrapped every exception in `RuntimeError`, costing a
+  deliberate refusal both its type and its advice. They now let
+  `NotImplementedError` through. (PR 13a)
+
+- `from_registry` rejected SymPy *numbers* as well as symbols. It now converts
+  them, and refuses non-finite or unconvertible hyperparameters by name --- the
+  latter used to build a prior whose every derived quantity was `0` or `nan`.
+  (PR 13a)
+
+- **The API reference documented 2 of the package's modules.** The `automodule`
+  directives named modules bare rather than `jumufraktiv.`-qualified, so
+  autodoc could not import them and silently produced nothing while the build
+  exited zero. Now 26 modules, 73 functions, 32 methods and 43 attributes.
+  (PR 13c)
+
+- `html_theme` was assigned twice in `docs/conf.py`, so the declared
+  `sphinx-rtd-theme` was inert and every build shipped alabaster. (PR 13c)
+
+- Roughly 70 reStructuredText defects in docstrings --- unindented bullet
+  continuations, formulae read as definition lists, and mathematical absolute
+  bars read as substitution references. These were invisible until the
+  `automodule` repair made the modules render at all. (PR 13c)
+
+- Array evaluation points, array-valued derivative orders, the batched
+  expectation route, the fixed-grid kernel, symbolic-path correctness, domain
+  guards and `logminus`, `like_stats` de-duplication, the diagnostics policy,
+  the symbolic-differentiation cache, and the public API surface. These landed
+  as PRs 4b through 12b while this file was not being updated; the pull request
+  descriptions carry the measurements. (PRs 4b, 4c, 4d, 5, 6a, 6b, 6c, 7, 8, 9,
+  10, 12, 12a, 12b)
+
+### Changed
+
+- The two new incomplete MGFs are batched rather than looped: 4.5x faster at 10
+  evaluation points and 620x at 10000, and flat rather than linear in between.
+  (PR 13b)
+
+- `docs/` gains `installation`, `tutorial` and `examples` pages, which the
+  toctree referenced but which did not exist. (PR 13c)
+
+
 ### Fixed
 
 - **Two thirds of the backend matrix could not be reached through

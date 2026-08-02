@@ -10,15 +10,18 @@ The MGF is:
 For t < 0, the MGF is finite and positive. The CGF is defined as log M(t).
 
 Numerical stability notes:
+
 - The expressions involve differences of exponentials (exp(t*b) - exp(t*a)),
   which cancel when t is small or when a and b are close. `uniform_cgf` forms
   that difference with `logminus`, the log of a difference, rather than
   subtracting two logs.
+
 - Neither factor of M(t) is positive on its own below the origin: exp(t*b) is
   then the smaller exponential and t is negative. The signs cancel in the
   ratio, so the numerator must be ordered by the sign of t. `uniform_cgf_jax`
   sidesteps this by dividing before taking the log, which is why the two
   implementations differ in shape.
+
 - For t=0, the CGF is defined as 0 (and the MGF as 1) by continuity.
 
 Symbolic, numeric (SciPy), and JAX backends are supported.

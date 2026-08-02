@@ -21,59 +21,59 @@ Main Classes
 Core Derivative Dispatch
 ------------------------
 
-.. automodule:: derivativeDispatch
+.. automodule:: jumufraktiv.derivativeDispatch
    :members:
    :undoc-members:
 
 Root Finding
 ------------
 
-.. automodule:: root_finding
+.. automodule:: jumufraktiv.root_finding
    :members:
    :undoc-members:
 
 Registry and Symbols
 --------------------
 
-.. automodule:: registry
+.. automodule:: jumufraktiv.registry
    :members:
    :undoc-members:
 
-.. automodule:: symbols
+.. automodule:: jumufraktiv.symbols
    :members:
    :undoc-members:
 
 Symbolic Backends
 -----------------
 
-.. automodule:: symbolic_integerDeriv
+.. automodule:: jumufraktiv.symbolic_integerDeriv
    :members:
    :undoc-members:
 
-.. automodule:: symbolic_fractionalDeriv
+.. automodule:: jumufraktiv.symbolic_fractionalDeriv
    :members:
    :undoc-members:
 
 Numeric Backends
 ----------------
 
-.. automodule:: numeric_integerDeriv_Bell
+.. automodule:: jumufraktiv.numeric_integerDeriv_Bell
    :members:
    :undoc-members:
 
-.. automodule:: numeric_integerDeriv_JAX
+.. automodule:: jumufraktiv.numeric_integerDeriv_JAX
    :members:
    :undoc-members:
 
-.. automodule:: numeric_fractionalDeriv_grid
+.. automodule:: jumufraktiv.numeric_fractionalDeriv_grid
    :members:
    :undoc-members:
 
-.. automodule:: numeric_fractionalDeriv_mpmath
+.. automodule:: jumufraktiv.numeric_fractionalDeriv_mpmath
    :members:
    :undoc-members:
 
-.. automodule:: numeric_expectation
+.. automodule:: jumufraktiv.numeric_expectation
    :members:
    :undoc-members:
 
@@ -85,59 +85,59 @@ Each distribution module provides:
 - `bereit<Distribution>`: per‑element statistics for vectorised predictive evaluation.
 - `c<Distribution>`: symbolic normalising constant.
 
-.. automodule:: like_stats.Poisson
+.. automodule:: jumufraktiv.like_stats.Poisson
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Gamma
+.. automodule:: jumufraktiv.like_stats.Gamma
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Laplace
+.. automodule:: jumufraktiv.like_stats.Laplace
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Normal
+.. automodule:: jumufraktiv.like_stats.Normal
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Rayleigh
+.. automodule:: jumufraktiv.like_stats.Rayleigh
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.MaxwellBoltzmann
+.. automodule:: jumufraktiv.like_stats.MaxwellBoltzmann
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.InverseGamma
+.. automodule:: jumufraktiv.like_stats.InverseGamma
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Levy
+.. automodule:: jumufraktiv.like_stats.Levy
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Weibull
+.. automodule:: jumufraktiv.like_stats.Weibull
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.BurrXII
+.. automodule:: jumufraktiv.like_stats.BurrXII
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Pareto
+.. automodule:: jumufraktiv.like_stats.Pareto
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Dagum
+.. automodule:: jumufraktiv.like_stats.Dagum
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.Gompertz
+.. automodule:: jumufraktiv.like_stats.Gompertz
    :members:
    :undoc-members:
 
-.. automodule:: like_stats.HalfNormal
+.. automodule:: jumufraktiv.like_stats.HalfNormal
    :members:
    :undoc-members:
 
@@ -146,5 +146,5 @@ Prior Dictionary (``MGFdictionary``)
 
 This subpackage imports all prior modules and registers them. It is not intended for direct use; use :func:`registry.get_prior` instead.
 
-.. automodule:: MGFdictionary
+.. automodule:: jumufraktiv.MGFdictionary
    :members:

@@ -21,6 +21,7 @@ length equal to the number of observations.
 The user-facing argument is `scale`, which corresponds to the exposure s_i.
 
 This module provides two statistics functions:
+
 - `readyPoisson` : aggregated sufficient statistics (scalars) for the whole sample.
 - `bereitPoisson` : per-element sufficient statistics (arrays) for vectorised
   predictive evaluation (used in `post_predictive` when `individual=True`).

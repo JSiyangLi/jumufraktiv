@@ -42,5 +42,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
-html_static_path = ['_static']
+# `html_theme` and `html_static_path` are both set above. Both were assigned a
+# second time here, and for `html_theme` the second assignment won -- so the
+# declared theme was inert, the `docs` extra installed sphinx-rtd-theme, and
+# every build shipped alabaster regardless.

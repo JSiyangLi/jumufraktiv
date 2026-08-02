@@ -14,12 +14,15 @@ exponential integral in arbitrary precision, via
 `_log_upper_gamma_negative_order`.
 
 **Numerical notes:**
+
 - The logarithm is taken inside the arbitrary-precision evaluation, so
   `pareto_cgf` and `pareto_logimgf` stay finite where Γ(−α, z) itself
   underflows float64.
+
 - `pareto_logimgf` is a difference of two such terms and forms it with
   `logminus`, the log of a difference, rather than subtracting two logs — the
   two coincide as `u` approaches `xi`.
+
 - JAX has neither an incomplete gamma at negative order nor an exponential
   integral at real order, so every JAX entry point here raises
   `NotImplementedError`. Use a SciPy backend for a Pareto prior.
