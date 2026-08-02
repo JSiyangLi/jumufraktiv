@@ -252,22 +252,54 @@ class TestMomentDomain:
         """The bound is about the caller's order, not the integrator's own step.
 
         The Caputo form of order `a` differentiates the MGF `floor(a) + 1`
-        times, so a request for order 1.5 against Pareto(alpha=2) asks the
-        integer backend for order 2 -- whose moment does not exist. Checking
-        that intermediate would refuse a computable answer: `E[Theta^1.5]` is
-        `2 / (2 - 1.5) = 4`, perfectly finite.
+        times, so a request for order 1.5 against Pareto(alpha=2) needs
+        `E[Theta^2]`, which does not exist. That must not make the *request*
+        inadmissible: `E[Theta^1.5] = 2/(2 - 1.5) = 4` is perfectly finite, and
+        refusing it package-wide would lose a computable answer.
+
+        Asserted against the routes that compute it rather than the one that
+        cannot. This test used to call `method='scipy'` at `rel=1e-3` on the
+        log, and passed against a value wrong by 2.8e-04 -- the tolerance was
+        loose enough to accept the truncated tail it was meant to rule out.
+        `scipy` now refuses, which the companion test below pins.
+        """
+        from jumufraktiv.derivativeDispatch import (
+            mgfDerivative,
+            mgfDerivative_fractional,
+        )
+
+        prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
+
+        # `auto` is settled by the unified dispatcher; the fractional entry
+        # point takes a concrete backend name only.
+        calls = [
+            ("auto", lambda: mgfDerivative(1.5, prior, method="auto", t=0.0, log=True)),
+            (
+                "mpmath",
+                lambda: mgfDerivative_fractional(
+                    1.5, prior, method="mpmath", t=0.0, log=True
+                ),
+            ),
+        ]
+        for label, call in calls:
+            log_abs, sign = call()
+            assert sign == 1, label
+            assert np.isfinite(log_abs), label
+            assert log_abs == pytest.approx(np.log(4.0), rel=1e-12), label
+
+    def test_the_grid_route_says_so_rather_than_truncating_that_tail(self):
+        """A route that cannot reach the answer must not return a nearby one.
+
+        The refusal names the derivative it needs, `M^(2)(0) = E[Theta^2]`, so
+        the message distinguishes "this order is inadmissible" -- which it is
+        not -- from "this route cannot serve it", which is the true statement.
         """
         from jumufraktiv.derivativeDispatch import mgfDerivative_fractional
 
         prior = mitMGFprior.from_registry("pareto", params={"alpha": 2.0, "xi": 1.0})
 
-        log_abs, sign = mgfDerivative_fractional(
-            1.5, prior, method="scipy", t=0.0, log=True
-        )
-
-        assert sign == 1
-        assert np.isfinite(log_abs)
-        assert log_abs == pytest.approx(np.log(4.0), rel=1e-3)
+        with pytest.raises(ValueError, match=r"M\^\(2\)\(0\)"):
+            mgfDerivative_fractional(1.5, prior, method="scipy", t=0.0, log=True)
 
 
 REGISTRY_PARAMS = {

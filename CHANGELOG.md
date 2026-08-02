@@ -12,6 +12,43 @@ without a deprecation period.
 
 ### Added
 
+- **Two guards that stop a route returning a number it can prove is wrong.**
+  Neither reroutes: an explicit `method=` is still never reinterpreted, and
+  each error names the route that does work. (PR 13f)
+
+  `method='symbolic'` and `method='bell'` now measure how far the
+  differentiated MGF's terms cancelled — `sum|term| / |sum term|`, so `log10`
+  of it is the number of significant digits lost — and refuse below eight
+  surviving digits. Against Uniform(0.5, 2) at `t = -1` the route used to
+  return `3.60e+16` for a true `6.67e+06` at order 30, and errors of 2.0e-06
+  and 1.8e-02 at orders 16 and 20. Orders 6 and 12 retain 13.4 and 9.0 digits
+  and still compute. Gamma's ratio is exactly 1.0 at every order, so the check
+  never fires for a prior whose CGF has one-signed derivatives.
+
+  The fractional routes now check the derivative their kernel needs,
+  `M^(floor(a)+1)`, at `t = 0`. It is infinite for a heavy-tailed prior once
+  `floor(a)+1` reaches the moment bound, which the fixed grid cannot resolve —
+  against Pareto(alpha=3) it is right to 1.6e-14 at order 1.95 and wrong by
+  1.8e-06 at 2.011, a step rather than a slope, which is why the condition is
+  exact rather than a tolerance. `mpmath` absorbs that one and is not refused.
+
+### Fixed
+
+- **Both fractional routes returned nonsense at `t = 0` for any prior whose
+  MGF has a removable singularity there.** Uniform and heaviside carry `t` in a
+  denominator, so `M^(floor(a)+1)` reads 0/0 at the origin even though the
+  value is finite. Against Uniform(0.5, 2) at order 1.5 the relative error was
+  6.0e+05 for `scipy` and 5.2e+149 for `mpmath`, with no warning. Both now
+  refuse and name `method='auto'`, which computes `E[Theta^a]` directly from
+  the density and is exact to ~1e-16. Found while testing the guard above; it
+  had never been recorded. (PR 13f)
+
+- `cached_term_values` probes a compiled expression before trusting it, the
+  same way `cached_lambdify` does — SymPy compiles Pareto's `expint` without
+  complaint and the result raises `NameError` on the first call. (PR 13f)
+
+### Added
+
 - **The posterior CDF, quantile, interval and sampling methods now work for
   every registry prior.** `post_cdf` needs the prior's incomplete MGF, and
   `post_quantile`, `post_interval` and `post_sample` are built on it, so the
