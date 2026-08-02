@@ -29,7 +29,40 @@ without a deprecation period.
   renders it the way PyPI does, checks its likelihood table against
   `LIKELIHOOD_REGISTRY`, and runs the docstring examples. (PR 13a)
 
+- Docstrings for `MGFDerivative.is_symbolic`, `.value_numeric` and
+  `.prior_has_iMGF`, and for the `mitMGFprior` fields, which had been described
+  only in their class's summary tables. (PR 13e)
+
 ### Fixed
+
+- **The API reference described twenty-five members twice, and invented two
+  more.** Napoleon renders the NumPyDoc `Attributes` and `Methods` sections
+  into `.. attribute::` and `.. method::` directives, which collide with the
+  ones `autoclass :members:` already emits. The rendered page also gained
+  attributes literally named `Properties` and `----------`, from a heading
+  napoleon does not recognise being absorbed into the preceding section.
+  Members are now documented on themselves. (PR 13e)
+
+- **Six of the twelve signatures in `MGFDerivative`'s hand-written method
+  table had drifted from the code**, `post_sample` never having learned about
+  the `rng` argument that made it reproducible and `post_quantile` omitting
+  six parameters. autodoc reads signatures from the code, so the table is
+  gone rather than corrected. (PR 13e)
+
+- Three inert parameters that the reference advertised as controls:
+  `resolve_backend(prior=...)`, which is removed; and `tol` on the mpmath
+  fractional backend and on the three JAX root-finders, which are kept for a
+  uniform call from `solve_root` and now say plainly that they are not read,
+  naming `dps` and `maxiter` as what to adjust instead. (PR 13e)
+
+- `mitMGFprior.pdf_sym_func` is removed. It was read from a prior-spec key no
+  prior module supplies and no code path consumed, so it was `None` on all
+  four registry priors and on every hand-built one. (PR 13e)
+
+- Three docstrings listed their parameters in an order the signature does not
+  declare them in, `integerDeriv_numeric_jax` most visibly, whose signature
+  begins `(t, prior, order)` while its documentation began with `order`. The
+  suite now asserts the ordering across all 94 documented callables. (PR 13e)
 
 - **`post_mgf` returned the value of a formula outside the domain where that
   formula is the MGF.** The Gamma(8, 6) posterior's is `(6/(6-r))**8`, finite
@@ -93,6 +126,11 @@ without a deprecation period.
 
 - `docs/` gains `installation`, `tutorial` and `examples` pages, which the
   toctree referenced but which did not exist. (PR 13c)
+
+- CI builds the documentation with `-W -E`, so any Sphinx warning fails the
+  build. This replaces a counted baseline, which permitted swapping one defect
+  for another; `-E` is needed because Sphinx skips unchanged pages and the
+  warnings are emitted during the read being skipped. (PR 13e)
 
 
 ### Fixed

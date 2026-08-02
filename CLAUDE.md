@@ -457,7 +457,12 @@ pytest                           # full test suite
 pytest -m "not slow" -x -q       # quick pass, for the iteration loop
 ruff check .                     # lint
 ruff format --check tests/       # formatting (tests/ only, see below)
-sphinx-build -b html docs docs/_build/html   # documentation
+# Documentation. `-W` makes any warning an error, which is what CI enforces,
+# and `-E` discards the saved environment so every page is re-read -- Sphinx
+# skips unchanged documents otherwise, and a warning is emitted during the
+# read it is skipping, so an incremental build reports clean for a page that
+# is not. Drop both while iterating; run them before pushing.
+sphinx-build -W -E -b html docs docs/_build/html
 
 # The docstring examples. Run from the repository root: the fixture supplying
 # `deriv` and `prior` lives in the root conftest.py precisely because this
@@ -567,7 +572,8 @@ agree by inspection.
 | `test_no_unreachable_code.py` | that no module-level function is unreachable |
 | `test_diagnostics_policy.py` | no `print`, and no `__main__` block, in library code |
 | `test_packaging.py` | what the built sdist and wheel contain, and whether the sdist's suite collects |
-| `test_documentation_runs.py` | the README executes and renders, the notebooks parse and carry no stored output, and the docstring examples run as CI invokes them |
+| `test_documentation_runs.py` | the README executes and renders, the notebooks parse and carry no stored output, the docstring examples run as CI invokes them, and no class docstring lists a member autodoc already documents |
+| `test_packaging.py` | what the wheel and the sdist contain, and the citation file against the CFF schema |
 
 **`test_known_broken.py` is the mechanism that keeps this document honest.**
 Each test asserts the *correct* behaviour and is marked `xfail(strict=True)`,
@@ -637,9 +643,10 @@ The repository is undergoing a staged audit. Work lands one PR at a time.
 | 5 | 12 | Public API surface, the prose sweep, and the lint baseline | **merged** |
 | 5 | 12b | The moment domain at `t = 0`: the analytic tail | **merged** |
 | 6 | 13a | The front door: README, notebooks, and the docstring examples | **merged** |
-| 6 | 13b | Quantities that come back wrong without saying so | **in review** |
+| 6 | 13b | Quantities that come back wrong without saying so | **merged** |
 | 6 | 13c | Documentation infrastructure and the CHANGELOG catch-up | **merged** |
-| 6 | 13d | Packaging: what the sdist and wheel actually contain | **in review** |
+| 6 | 13d | Packaging: what the sdist and wheel actually contain | **merged** |
+| 6 | 13e | The API reference read against the code; `-W` in CI | **in review** |
 | 6 | 14 | Array-valued orders, the Pareto `expint` path, `ruff format` | planned |
 
 **Wave 6 is split by *who notices the defect*, which is a different axis from
@@ -656,6 +663,10 @@ defect reaches:
   wrong. They cannot be found by reading, only by computing a reference.
 - **13c** and **13d** are read by contributors and by packaging tools rather
   than by callers.
+- **13e** is what 13c made visible. Repairing the `automodule` directives took
+  the API reference from 2 modules to 26, so roughly twelve times as much
+  docstring mathematics rendered for the first time — and prose nobody could
+  read was prose nobody had checked.
 
 **13a's charter is that a claim nobody runs is indistinguishable from a claim
 that is false**, and the defect that motivated it proves the point: the README
@@ -700,6 +711,74 @@ eleventh printed a right value in a form NumPy 2 does not produce (`1.0` for
 what renders as `np.float64(1.0)`). Every replacement is checked against a
 closed form (SciPy's `gamma` and `nbinom`, or mpmath quadrature with the
 density written out separately), never against the package.
+
+**13e found that the API reference described twenty-five members twice, and
+the mechanism is worth stating because the obvious guess is wrong.** It is not
+`autoclass` colliding with an `automodule`, and it is not two directives in
+`api.rst`: a nine-line file with one class and one `autoclass` reproduces it.
+**Napoleon renders the NumPyDoc `Attributes` and `Methods` sections into
+`.. attribute::` and `.. method::` directives of its own**, so a name that
+`:members:` also emits is registered twice. That is the whole of it.
+
+Two corollaries decide what to do about it, and both were measured rather
+than reasoned:
+
+- *A section entry for a name autodoc cannot see is harmless.* An attribute
+  assigned in `__init__` with no class-level declaration is invisible to
+  `:members:`, so the section is its only documentation and there is nothing to
+  collide with. `MGFDerivative` has seven of those and they never warned, which
+  is why its `Attributes` section stays while its `Methods` section goes.
+- *A heading napoleon does not know is absorbed into the preceding section.*
+  `Properties` is not one of its section names; standing alone it stays plain
+  text, but placed after `Attributes` it became two further attributes — the
+  published page carried members literally named `Properties` and `----------`.
+
+Duplication was not the worst of it. A hand-written `Methods` table restates
+signatures that autodoc reads from the code, so it drifts and nothing catches
+it: **six of the twelve had**, `post_sample` never having learned about the
+`rng` argument PR 12 added to make it reproducible, and `post_quantile`
+listing two parameters of nine. The table is deleted rather than corrected,
+because correcting it only resets the clock.
+
+`tests/test_documentation_runs.py` now asserts the invariant directly — no
+`Attributes` or `Methods` section may list a name in `dir(cls)` — and it was
+confirmed to fail against the unfixed tree, naming all sixteen methods.
+
+**Three docstrings listed their parameters in an order the signature does not
+declare them in**, of 94 documented callables — `integerDeriv_numeric_jax`
+most visibly, whose signature begins `(t, prior, order)` while its
+documentation began with `order`. That is worth a test rather than a fix
+because of what the ordering is *for*: reading a docstring against its
+signature is the cheapest check available, and it only works side by side.
+When the orders agree an added or removed parameter shows up as one
+misalignment; when they do not, every line has to be matched by name and an
+omission looks like nothing at all. `tests/test_documentation_runs.py` now
+asserts it over the names common to both, so documenting a subset stays legal.
+
+**Three parameters were documented as controls and are not read.** Found by
+comparing every `Parameters` section against the real signature: of 131
+callables, three had drifted, and chasing those turned up the inert ones.
+`resolve_backend(prior=...)` is removed — it was left over from when the
+choice between differentiating and taking the expectation was to be made
+there, and that choice moved to `mgfDerivative`. The other two are kept,
+because `solve_root` passes one argument list to every backend and the JAX
+loops are `fori_loop`s that cannot exit on a data-dependent condition: `tol`
+on the three JAX root-finders, and `tol` on the mpmath backend, where PR 6c
+deliberately derived the truncation range from `dps` instead and only the
+docstring was not told. All three now say so, and name what to adjust
+instead.
+
+**A stale non-editable copy of the package in `dist-packages` cost twenty
+minutes and is worth recognising by its signature.** `docs/conf.py` puts the
+repository root first on `sys.path`, so a build run from `docs/` reads the
+working tree while anything run from elsewhere read the installed copy. The
+symptom was a scratch build of a byte-identical copy of `docs/` reporting 24
+warnings the real build did not — same command, same files, different answer.
+That is the same hazard as the cached-ruff-verdict entry below: **a check that
+resolves its subject differently from the thing it is checking is measuring
+something else.** `pip install -e .` needs build isolation here, because
+`pyproject.toml` uses PEP 639's `license = "MIT"` and the environment's own
+setuptools is older than the 77 that requires.
 
 **PR 12 grew well past its charter, and the growth was not scope creep but
 consequence.** It was scoped as five recorded interface defects. Two things

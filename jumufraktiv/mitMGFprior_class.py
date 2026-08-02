@@ -69,51 +69,36 @@ class mitMGFprior:
     backends for high-performance computation and incomplete MGF (iMGF)
     functions for truncated distributions.
 
-    Attributes
-    ----------
-    name : str, default "custom"
-        Name of the prior distribution.
-    mgf_sym : sympy.Expr, optional
-        Symbolic expression for the MGF.
-    pdf_sym : sympy.Expr, optional
-        Symbolic expression for the PDF.
-    mgf_backend : callable, optional
-        Numeric MGF function (e.g., from a custom implementation).
-    pdf_backend : callable, optional
-        Numeric PDF function.
-    params : dict, optional
-        Dictionary of numeric parameters (e.g., `{'alpha': 2.0, 'beta': 3.0}`).
-
-    Compiled functions (populated by `as_mitMGFprior` or `from_registry`):
-
-    - mgf, cgf : NumPy-based MGF and CGF functions.
-    - mgf_jax, cgf_jax : JAX-based MGF and CGF functions.
-    - pdf_func, logpdf_func : NumPy-based PDF and log-PDF functions.
-
-    Incomplete MGF (iMGF) attributes (if supported):
-
-    - imgf, logimgf : Numeric ordinary and log-scale iMGF.
-    - imgf_jax, logimgf_jax : JAX versions.
-    - imgf_sym, logimgf_sym : Symbolic expressions.
-
-    Methods
-    -------
-    as_mitMGFprior()
-        Compile the prior from symbolic or backend inputs.
-    from_registry(cls, prior_name, params=None, simplify=False)
-        Factory method to build a prior from the registry.
-    is_mitMGFprior(obj)
-        Static method to check if an object is a fully compiled prior.
-    has_iMGF()
-        Return True if all iMGF components are present.
-
     Notes
     -----
     The class follows a two-step construction pattern:
+
     1. Create an instance with raw inputs (symbolic or backend).
     2. Call `as_mitMGFprior()` to compile and populate all functions.
 
     The registry route (`from_registry`) performs both steps automatically.
+
+    The fields divide into three groups. The *raw* fields — `name`, `mgf_sym`,
+    `pdf_sym`, `mgf_backend`, `pdf_backend`, `params` — are what a caller
+    supplies. The two *domain* fields, `max_finite_moment` and
+    `mgf_finite_below`, declare where the prior's moments and MGF exist. The
+    rest are *compiled* and are `None` until construction fills them in. Both
+    routes produce the six `is_mitMGFprior` requires — `mgf`, `cgf`, their
+    `_jax` counterparts, `pdf_func` and `logpdf_func` — plus `cgf_sym`.
+
+    One compiled field is set by the registry route only, and is `None` on a
+    prior built by hand: `mgf_sym_out`, the MGF expression with `params`
+    substituted. A hand-built prior keeps its own `mgf_sym` and needs no
+    second copy.
+
+    The incomplete MGF is a fourth group and behaves differently again.
+    `imgf`, `logimgf`, their `_jax` counterparts and `imgf_sym`, `logimgf_sym`
+    are *attached* by the registry route only for a prior that has one, rather
+    than declared as fields and left `None`. They are therefore absent rather
+    than empty, so test with `has_iMGF()` instead of reading an attribute that
+    may not exist. All four registry priors have one; a hand-built prior has
+    none, and loses `post_cdf`, `post_quantile`, `post_interval` and
+    `post_sample` with it.
 
     Examples
     --------
@@ -131,17 +116,50 @@ class mitMGFprior:
     >>> gamma_prior.mgf(-1.0)
     0.5625
     """
+    #: Name of the prior distribution. Set by `from_registry` to the registry
+    #: key; `"custom"` for a prior built by hand.
     name: str = "custom"
 
     # -----------------------------
     # user inputs (raw layer)
+    #
+    # These carry `#:` comments rather than a NumPyDoc `Attributes` section in
+    # the class docstring. Napoleon renders that section into `.. attribute::`
+    # directives, which for a dataclass field collides with the one autodoc
+    # already emits, and Sphinx warns about the duplicate.
     # -----------------------------
+
+    # `as_mitMGFprior` has two modes and takes the pairs whole: either both
+    # symbolic fields or both backend ones. Supplying one of a pair raises
+    # rather than falling back, since a prior with an MGF and no density
+    # cannot serve the default route and one with a density and no MGF cannot
+    # serve any differentiating backend.
+
+    #: Symbolic expression for the MGF, in the canonical symbol
+    #: `jumufraktiv.symbols.t`. Required together with `pdf_sym` for the
+    #: symbolic construction mode.
     mgf_sym: sp.Expr | None = None
+
+    #: Symbolic expression for the density, in `jumufraktiv.symbols.theta`.
+    #: Required together with `mgf_sym`. A density is needed in one form or
+    #: the other because the default `auto` route computes `E[θ^a e^{tθ}]`
+    #: directly and never reads the MGF.
     pdf_sym: sp.Expr | None = None
 
+    #: Numeric MGF with signature ``(x, xp, **params)``, where `xp` is the
+    #: array module to compute in — `numpy` or `jax.numpy`. Required together
+    #: with `pdf_backend` for the backend construction mode.
     mgf_backend: Callable | None = None
+
+    #: Numeric density, same signature as `mgf_backend` and required with it.
     pdf_backend: Callable | None = None
 
+    #: Numeric hyperparameters, e.g. ``{'alpha': 2.0, 'beta': 3.0}``. Used two
+    #: ways depending on how the prior was built: `from_registry` substitutes
+    #: them into the prior module's symbolic expressions, while the backend
+    #: route forwards them as ``**params`` to the callables supplied. Values
+    #: must be finite real numbers; a free symbol is refused, because a prior
+    #: carrying one produces `0` or `nan` from every derived quantity.
     params: dict[str, Any] | None = None
 
     #: Supremum of the orders `a` for which `E[Θ^a]` is finite, i.e. the moment
@@ -187,9 +205,12 @@ class mitMGFprior:
     pdf_func: Callable | None = None
     logpdf_func: Callable | None = None
 
+    #: The MGF expression with `params` substituted, set by the registry route.
+    #: `None` on a prior built by hand, which keeps its own `mgf_sym`.
     mgf_sym_out: Any = None
+
+    #: `log M(t)`, set by both construction routes.
     cgf_sym: Any = None
-    pdf_sym_func: Any = None
 
     # ============================================================
     # USER ROUTE: manual construction compiler
@@ -550,7 +571,6 @@ class mitMGFprior:
 
         obj.mgf_sym_out = mgf_sym
         obj.cgf_sym = cgf_sym
-        obj.pdf_sym_func = spec.get("pdf_sym_func")
         obj.imgf_sym = imgf_sym
         obj.logimgf_sym = logimgf_sym
 

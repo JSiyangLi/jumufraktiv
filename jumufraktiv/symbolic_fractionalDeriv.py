@@ -4,8 +4,10 @@ symbolic_fractionalDeriv.py
 Symbolic computation of Liouville-Caputo fractional derivatives of MGFs.
 
 This module evaluates the defining integral of the Liouville-Caputo derivative
-with lower terminal -∞ directly. Substituting x = t - z gives
+with lower terminal -∞ directly. Substituting x = t - z gives::
+
     D^α_{(-∞)+} M(t) = 1/Γ(γ) ∫_0^∞ z^{γ-1} M^{(n+1)}(t - z) dz
+
 where n = floor(α) and γ = n+1-α.
 
 The main function `fractionalDeriv_symbolic` hands that single integral to SymPy

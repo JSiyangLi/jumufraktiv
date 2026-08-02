@@ -271,6 +271,13 @@ def _unknown_kwargs_message(
 # ============================================================
 # Core class
 # ============================================================
+# The `Attributes` section below is the only documentation these seven have:
+# they are assigned in `__init__` with no class-level declaration, so autodoc
+# cannot see them and `:members:` does not emit them. Sections listing names
+# autodoc CAN see are a different matter -- napoleon turns `Attributes` and
+# `Methods` into `.. attribute::` and `.. method::` directives, so such a name
+# is registered twice and Sphinx warns. Methods and properties are documented
+# by their own docstrings for that reason; do not add a summary table back.
 class MGFDerivative:
     """
     Posterior distribution derived via MGF marginalisation.
@@ -304,42 +311,6 @@ class MGFDerivative:
         Derivative backend method.
     simplify : bool
         Whether to simplify symbolic expressions.
-
-    Properties
-    ----------
-    is_symbolic : bool
-        True if the normalising constant is a symbolic expression.
-    value_numeric : float
-        Numeric value of the normalising constant (if numeric).
-    prior_has_iMGF : bool
-        True if the prior supports the incomplete MGF (iMGF).
-
-    Methods
-    -------
-    evidence()
-        Return the marginal likelihood (evidence).
-    post_density(theta_val, log=True)
-        Evaluate the posterior density.
-    post_cdf(u_val, log=True)
-        Evaluate the posterior CDF.
-    post_quantile(p, root_method='auto')
-        Compute quantiles (inverse CDF).
-    post_mgf(r_val, log=True)
-        Evaluate the posterior MGF.
-    post_raw_moment(q, numerator_method='auto', log=True)
-        Compute raw moments.
-    post_central_moment(order=None, log=True, numerator_method='auto')
-        Compute central moments (1,2,3,4).
-    post_interval(level=0.95, root_method='auto')
-        Compute credible intervals.
-    post_sample(n=None, u=None, root_method='auto')
-        Generate posterior samples.
-    post_predictive(new_data, log=True, individual=True)
-        Compute posterior predictive density.
-    to_prior_object()
-        Convert the posterior to a prior object for sequential updating.
-    update(new_data, **kwargs)
-        Perform a sequential Bayesian update.
 
     Notes
     -----
@@ -503,7 +474,6 @@ class MGFDerivative:
             self.method,
             self._deriv_kwargs.get("integer_method", "symbolic"),
             self._deriv_kwargs.get("int_tol", 1e-12),
-            prior=self.prior,
         )
 
         self._deriv_numeric = self._deferred_derivative()
@@ -778,11 +748,34 @@ class MGFDerivative:
             self._sign = None
 
     @property
-    def is_symbolic(self):
+    def is_symbolic(self) -> bool:
+        """
+        Whether the normalising constant is held as a symbolic expression.
+
+        `True` when free symbols remain — which happens on the `symbolic`
+        backend before an evaluation point is supplied — and `False` when it
+        is a number. This is the flag the symbol-numeric principle turns on:
+        methods that manipulate the derivative algebraically branch on it.
+        """
         return self._is_symbolic
 
     @property
-    def value_numeric(self):
+    def value_numeric(self) -> float:
+        """
+        The normalising constant as an ordinary (non-log) number.
+
+        Returns
+        -------
+        float
+            The evidence on the linear scale, undoing the log storage if the
+            constant was stored in log-scale.
+
+        Raises
+        ------
+        ValueError
+            If the normalising constant is symbolic, in which case there is no
+            number to return. Test `is_symbolic` first.
+        """
         if self._is_symbolic:
             raise ValueError("Result is symbolic")
 
@@ -793,6 +786,14 @@ class MGFDerivative:
 
     @property
     def prior_has_iMGF(self) -> bool:
+        """
+        Whether the prior supplies an incomplete MGF (iMGF).
+
+        `post_cdf` needs `M(t, u) = int_{-inf}^{u} e^{tx} p(x) dx`, and
+        `post_quantile`, `post_interval` and `post_sample` are all built on
+        the CDF — so a prior without an iMGF loses four methods at once. All
+        four registry priors supply one; a custom prior need not.
+        """
         return self.prior.has_iMGF()
 
     # ========================================================

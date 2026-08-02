@@ -265,6 +265,225 @@ def test_every_api_reference_module_is_importable():
         importlib.import_module(target)
 
 
+#: A NumPyDoc section heading plus its underline, at any indentation. Only the
+#: two napoleon turns into directives are listed: `Attributes` becomes
+#: ``.. attribute::`` and `Methods` becomes ``.. method::``. `Parameters`,
+#: `Returns`, `Raises` and the rest become field lists, which register nothing
+#: and therefore cannot collide.
+_DIRECTIVE_SECTION = re.compile(
+    r"^([ \t]*)(Attributes|Methods)[ \t]*\n[ \t]*-{4,}[ \t]*$", re.M
+)
+
+
+def _section_entries(docstring, heading):
+    """The names a NumPyDoc `Attributes` or `Methods` section lists.
+
+    An entry is a line at the section's own indentation; `name : type` and
+    `name(args)` both reduce to `name`. Lines indented further are the
+    descriptions, and a blank line at that indentation ends the section.
+    """
+    match = _DIRECTIVE_SECTION.search(docstring)
+    while match and match.group(2) != heading:
+        match = _DIRECTIVE_SECTION.search(docstring, match.end())
+    if match is None:
+        return []
+
+    indent = len(match.group(1))
+    names = []
+    for line in docstring[match.end() :].splitlines()[1:]:
+        if not line.strip():
+            break
+        if len(line) - len(line.lstrip()) != indent:
+            continue  # a description belonging to the entry above
+        names.append(re.split(r"[ (:]", line.strip(), maxsplit=1)[0])
+    return names
+
+
+@pytest.mark.parametrize("heading", ["Attributes", "Methods"])
+def test_no_documented_class_lists_a_name_autodoc_can_see(heading):
+    """Napoleon's `Attributes` and `Methods` sections register objects too.
+
+    Sphinx builds the API reference from `autoclass` with `:members:`, which
+    emits one directive per member. Napoleon renders these two NumPyDoc
+    sections into `.. attribute::` and `.. method::` directives of their own,
+    so any name appearing in both is described twice and Sphinx warns.
+
+    Twenty-five names did. The rendered page also gained two attributes named
+    `Properties` and `----------`, because a heading napoleon does not know
+    gets absorbed into the preceding `Attributes` section as further entries.
+
+    A section entry for a name autodoc *cannot* see is fine and is why this
+    test asks about `dir()` rather than banning the sections outright:
+    `MGFDerivative` assigns seven attributes in `__init__` with no class-level
+    declaration, so its `Attributes` section is their only documentation.
+
+    Duplication is not the whole cost. A hand-written `Methods` table repeats
+    signatures that autodoc reads from the code, so it drifts silently: six of
+    the twelve listed here had, `post_sample` having never learned about the
+    `rng` argument that made it reproducible.
+    """
+    import importlib
+    import inspect
+
+    source = (REPO / "docs" / "api.rst").read_text(encoding="utf-8")
+    classes = re.findall(r"^\.\. autoclass:: (\S+)$", source, flags=re.M)
+    assert classes, "docs/api.rst declares no autoclass targets"
+
+    package = importlib.import_module("jumufraktiv")
+    offenders = []
+    for name in classes:
+        cls = getattr(package, name.rpartition(".")[2])
+        doc = inspect.getdoc(cls) or ""
+        visible = set(dir(cls))
+        offenders += [
+            f"{name}.{entry}"
+            for entry in _section_entries(doc, heading)
+            if entry in visible
+        ]
+
+    assert not offenders, (
+        f"the '{heading}' section of a class docstring lists "
+        f"{len(offenders)} name(s) that autodoc also documents, so Sphinx "
+        f"describes each twice: {', '.join(offenders)}. Document these on the "
+        "member itself -- a method's own docstring, or a `#:` comment above a "
+        "class-level attribute."
+    )
+
+
+#: The NumPyDoc sections that end a `Parameters` block when one follows it.
+_NUMPYDOC_SECTIONS = frozenset(
+    {
+        "Parameters",
+        "Returns",
+        "Yields",
+        "Raises",
+        "Warns",
+        "Notes",
+        "Examples",
+        "See Also",
+        "References",
+        "Attributes",
+        "Methods",
+        "Other Parameters",
+    }
+)
+
+
+def _documented_parameters(docstring):
+    """The names a `Parameters` section lists, in the order it lists them.
+
+    Returns `None` when there is no such section, which is different from an
+    empty one and must not be treated as a violation.
+    """
+    lines = docstring.splitlines()
+    start = indent = None
+    for i, line in enumerate(lines[:-1]):
+        if line.strip() == "Parameters" and set(lines[i + 1].strip()) == {"-"}:
+            start, indent = i + 2, len(line) - len(line.lstrip())
+            break
+    if start is None:
+        return None
+
+    names = []
+    for j in range(start, len(lines)):
+        line = lines[j]
+        if not line.strip():
+            continue  # NumPyDoc allows blank lines between entries
+        if (
+            line.strip() in _NUMPYDOC_SECTIONS
+            and j + 1 < len(lines)
+            and set(lines[j + 1].strip()) == {"-"}
+        ):
+            break
+        depth = len(line) - len(line.lstrip())
+        if depth < indent:
+            break
+        if depth != indent:
+            continue  # the description of the entry above
+        # `a, b : int` documents two parameters on one line; `*args` and
+        # `**kwargs` are documented without their stars.
+        for name in line.strip().split(":")[0].split(","):
+            name = name.strip().lstrip("*")
+            if name:
+                names.append(name)
+    return names
+
+
+def _public_callables():
+    """Every public function and method the package defines, deduplicated."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import jumufraktiv
+
+    modules = [jumufraktiv]
+    for info in pkgutil.walk_packages(jumufraktiv.__path__, "jumufraktiv."):
+        try:
+            modules.append(importlib.import_module(info.name))
+        except Exception:
+            # An optional backend may be absent; a module that cannot be
+            # imported simply has no docstrings for this test to check.
+            continue
+
+    seen = {}
+    for module in modules:
+        for attr, obj in vars(module).items():
+            if attr.startswith("_"):
+                continue
+            found = []
+            if inspect.isfunction(obj) and obj.__module__.startswith("jumufraktiv"):
+                found = [(f"{obj.__module__}.{obj.__qualname__}", obj)]
+            elif inspect.isclass(obj) and obj.__module__.startswith("jumufraktiv"):
+                found = [
+                    (f"{obj.__module__}.{obj.__qualname__}.{name}", member)
+                    for name, member in vars(obj).items()
+                    if inspect.isfunction(member) and not name.startswith("_")
+                ]
+            for full, fn in found:
+                seen.setdefault(full, fn)
+    return seen
+
+
+def test_documented_parameters_are_in_signature_order():
+    """A `Parameters` section out of order is how a signature change hides.
+
+    Reading a docstring against its signature is the cheapest check there is,
+    and it only works if the two can be read side by side. When the orders
+    agree, an added or removed parameter shows up as a single misalignment;
+    when they do not, every line has to be matched by name and an omission
+    looks like nothing at all.
+
+    Order is compared over the names common to both, so documenting a subset
+    is allowed -- this asks whether the documented ones appear in the order
+    the signature declares them, not whether all of them appear.
+    """
+    import inspect
+
+    offenders = []
+    for full, fn in sorted(_public_callables().items()):
+        documented = _documented_parameters(inspect.getdoc(fn) or "")
+        if not documented:
+            continue
+        try:
+            real = [
+                p for p in inspect.signature(fn).parameters if p not in ("self", "cls")
+            ]
+        except (ValueError, TypeError):
+            continue  # a builtin or C-implemented callable has no signature
+        in_doc_order = [name for name in documented if name in real]
+        in_sig_order = [name for name in real if name in documented]
+        if in_doc_order != in_sig_order:
+            offenders.append(
+                f"{full}\n   documented: {in_doc_order}\n   signature:  {in_sig_order}"
+            )
+
+    assert not offenders, (
+        f"{len(offenders)} callable(s) document their parameters in an order "
+        "the signature does not declare them in:\n" + "\n".join(offenders)
+    )
+
+
 def test_the_documentation_toctree_resolves():
     """A toctree entry with no document is a dead link in the sidebar."""
     index = (REPO / "docs" / "index.rst").read_text(encoding="utf-8")

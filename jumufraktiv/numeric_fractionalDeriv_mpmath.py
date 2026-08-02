@@ -323,15 +323,20 @@ def fractionalDeriv_numeric_mpmath(
         Evaluation point(s) for t.
     method : str, optional
         'symbolic', 'jax', or 'bell' -- method for computing the integer derivative.
-    simplify : bool, optional
-        Ignored for numeric; kept for interface consistency.
     complete : bool, optional
         If True (default), differentiate the complete MGF.
         If False, differentiate the incomplete MGF.
+    simplify : bool, optional
+        Ignored for numeric; kept for interface consistency.
     return_log : bool, optional
         If True, return (log_abs, sign) instead of ordinary value.
     tol : float
-        Relative tolerance for convergence (default 1e-8).
+        **Accepted and not used.** This backend's accuracy is governed by
+        `dps` alone: the truncation range is derived from ``10**-dps`` and the
+        quadrature carries the same precision throughout. Deriving the range
+        from `tol` instead would cap the answer near 1e-8 however high `dps`
+        went, which is no better than the `scipy` backend and defeats the
+        point of using mpmath. Raise `dps` to ask for more digits.
     use_tan : bool
         If True, directly use the tan-transform method.
     dps : int

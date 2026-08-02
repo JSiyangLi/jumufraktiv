@@ -206,19 +206,22 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
 
     Parameters
     ----------
-    order : int
-        Must be scalar.
     t : scalar or array-like
         Evaluation point(s) for t.
+    prior : mitMGFprior
+        The prior whose MGF is differentiated. Supplies `cgf_jax` for the
+        complete MGF and `logimgf_jax` for the incomplete one.
+    order : int
+        Must be scalar.
+    complete : bool, optional
+        If True, differentiate the complete MGF. If False, differentiate
+        the incomplete MGF (requires `u`).
     u : scalar or array-like, optional
         Upper limit(s) for the incomplete MGF.
 
         Together with t, defines the evaluation point (t,u).
         t and u are broadcast using NumPy broadcasting rules before
         vectorised evaluation.
-    complete : bool, optional
-        If True, differentiate the complete MGF. If False, differentiate
-        the incomplete MGF (requires `u`).
 
     Returns
     -------
