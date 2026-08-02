@@ -301,6 +301,59 @@ def test_the_former_package_name_no_longer_hijacks_sys_modules():
         import mgf2post  # noqa: F401
 
 
+#: Directories a filesystem walk must not descend into: caches, build output
+#: and the git database itself. None hold source, and the git database holds
+#: every past revision, so scanning it would report the old names forever.
+_NOT_SOURCE = {
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "_build",
+    "build",
+    "dist",
+}
+
+
+def _source_files(repo):
+    """Every source file under `repo`, as posix paths relative to it.
+
+    Uses ``git ls-files`` where it works, because it honours ``.gitignore`` and
+    so never reports a scratch file a developer happens to have lying about.
+    Falls back to walking the tree, because the suite is expected to run
+    somewhere that is not a checkout: the sdist ships ``tests/`` precisely so a
+    packager can run it, and an unpacked sdist has no ``.git``. Shelling out
+    with ``check=True`` there raises ``CalledProcessError`` and fails the test
+    for a reason that has nothing to do with what it asserts.
+    """
+    import subprocess
+
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=repo,
+        ).stdout.split()
+        if listed:
+            return listed
+    except (OSError, subprocess.SubprocessError):
+        pass  # no git binary, or not a checkout; walk instead
+
+    found = []
+    for path in repo.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(repo)
+        if _NOT_SOURCE.intersection(relative.parts):
+            continue
+        if relative.suffix == ".egg-info" or relative.parts[0].endswith(".egg-info"):
+            continue
+        found.append(relative.as_posix())
+    return found
+
+
 #: Files that name the pre-rename identifiers on purpose, and why. Recording
 #: the rename requires writing the old name down; a reference to it does not.
 #: That is the distinction this exemption draws, so an entry added here must be
@@ -330,20 +383,11 @@ def test_no_german_identifier_survives_the_rename():
     types is not.
     """
     import re
-    import subprocess
 
     repo = pathlib.Path(__file__).resolve().parent.parent
-    tracked = subprocess.run(
-        ["git", "ls-files"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=repo,
-    ).stdout.split()
-
     stale = re.compile(r"mitMGF|bereit", re.IGNORECASE)
     offenders = []
-    for name in tracked:
+    for name in _source_files(repo):
         if name in _MAY_NAME_THE_OLD_IDENTIFIERS:
             continue
         path = repo / name
@@ -361,4 +405,36 @@ def test_no_german_identifier_survives_the_rename():
         "the pre-rename names survive in "
         f"{len(offenders)} place(s); they have no aliases, so each is either "
         "dead prose or a broken reference:\n" + "\n".join(offenders[:20])
+    )
+
+
+def test_a_module_docstring_names_its_own_file():
+    """A header naming a file that does not exist sends a reader to nothing.
+
+    Twenty-six of the package's twenty-seven module docstrings open with their
+    own filename, so the convention is real and worth holding. The twenty-
+    seventh named `mitMGFprior.py` while living in `mitMGFprior_class.py`, and
+    a tree-wide rename carried that error forward intact rather than exposing
+    it -- substituting the identifier left the header just as wrong and no
+    less plausible.
+
+    Only modules that open with something ending in `.py` are checked, so a
+    docstring that begins with prose instead is free to.
+    """
+    import ast
+
+    package = pathlib.Path(__file__).resolve().parent.parent / "jumufraktiv"
+
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        docstring = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+        if not docstring:
+            continue
+        first = next((ln.strip() for ln in docstring.splitlines() if ln.strip()), "")
+        if first.endswith(".py") and first != path.name:
+            offenders.append(f"{path.name}: docstring header says '{first}'")
+
+    assert not offenders, (
+        "a module docstring opens by naming a file that is not its own:\n"
+        + "\n".join(offenders)
     )

@@ -1,5 +1,5 @@
 """
-MGFPrior.py
+MGFPrior_class.py
 
 Unified container for moment-generating function (MGF) priors.
 

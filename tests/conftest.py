@@ -30,8 +30,11 @@ from jumufraktiv.MGFPrior_class import MGFPrior
 def _initialised_registry():
     """Populate the prior registry once for the whole session.
 
-    ``MGFPrior.from_registry`` does not initialise the registry itself; see
-    ``test_known_broken.py::test_from_registry_initialises_registry``.
+    Not because ``MGFPrior.from_registry`` needs it -- it routes through
+    ``get_prior``, which calls ``initialize()`` itself, and that defect was
+    repaired long ago. This is for the tests that read ``PRIOR_REGISTRY`` or
+    call ``list_priors()`` *without* building a prior first, which would
+    otherwise see an empty registry and pass or fail on collection order.
     """
     registry.initialize()
 
