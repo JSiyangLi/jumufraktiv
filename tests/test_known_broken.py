@@ -873,3 +873,90 @@ def test_a_one_signed_cgf_is_never_refused(order):
     got = float(np.atleast_1d(sign)[0]) * float(np.exp(np.atleast_1d(log_abs)[0]))
 
     assert got == pytest.approx(exact, rel=1e-12)
+
+
+# ==========================================================================
+# The two edge cases of the cancellation guard, raised in review of PR 13f
+# ==========================================================================
+def _cancellation_check(expr, t_values):
+    """Call the guard directly.
+
+    A unit test rather than an end-to-end one, because the inputs wanted here
+    are a term structure rather than a prior: reaching total cancellation
+    through a registry prior would mean searching for an evaluation point that
+    happens to produce it, which tests the search rather than the guard.
+    """
+    from jumufraktiv.derivativeDispatch import _check_cancellation
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    _check_cancellation(
+        expr, np.asarray(t_values, dtype=float), 3, mitMGFprior(), "symbolic"
+    )
+
+
+def test_terms_that_cancel_to_exactly_zero_are_refused():
+    """Complete cancellation is the worst case, not a case to wave through.
+
+    `exp(t) - exp(2t)` is 1 - 1 at the origin: the terms are non-zero and the
+    sum is exactly zero, so every significant digit is gone. The true value
+    cannot be zero either -- `D^a M(t) = E[theta^a e^(t theta)]` is strictly
+    positive because `theta > 0` -- so this is arithmetic rather than an
+    answer.
+    """
+    from jumufraktiv.symbols import t as t_sym
+
+    expr = sp.exp(t_sym) - sp.exp(2 * t_sym)
+
+    with pytest.raises(ValueError, match="cancels to exactly zero"):
+        _cancellation_check(expr, [0.0])
+
+
+def test_one_cancelled_point_is_not_excused_by_its_neighbours():
+    """Scoring only the surviving points would let a mixed batch pass.
+
+    The first point cancels completely and the other two are well conditioned.
+    Taking the ratio over the survivors alone would mark the cancelled point as
+    perfectly conditioned and report the batch as clean.
+    """
+    from jumufraktiv.symbols import t as t_sym
+
+    expr = sp.exp(t_sym) - sp.exp(2 * t_sym)
+
+    with pytest.raises(ValueError, match="cancels to exactly zero"):
+        _cancellation_check(expr, [0.0, -1.0, -2.0])
+
+
+def test_terms_that_are_all_zero_are_not_cancellation():
+    """Nothing cancelled, so nothing to refuse.
+
+    Distinguished from the case above by the terms themselves: zero terms
+    summing to zero has lost no digits. Whether a zero value is meaningful is
+    the caller's question, not this guard's.
+    """
+    from jumufraktiv.symbols import t as t_sym
+
+    _cancellation_check(sp.Integer(0) * t_sym, [0.0, -1.0])
+
+
+def test_a_prior_without_a_symbolic_mgf_is_not_blamed_for_a_singularity():
+    """It has no expression to be singular.
+
+    A prior built from `mgf_backend`/`pdf_backend` -- the shape
+    `to_prior_object` produces for sequential updating -- cannot use a
+    differentiating route at any `t`. Reporting a removable singularity in an
+    expression it does not carry would send the caller after the wrong thing,
+    so the origin guard stands aside and lets the route report its own failure.
+    """
+    from jumufraktiv.derivativeDispatch import (
+        _check_fractional_kernel_at_origin,
+        _kernel_derivative_at_origin,
+    )
+    from jumufraktiv.mitMGFprior_class import mitMGFprior
+
+    prior = mitMGFprior(
+        mgf_backend=lambda x, xp=np, **p: xp.exp(x),
+        pdf_backend=lambda x, xp=np, **p: xp.exp(-x),
+    ).as_mitMGFprior()
+
+    assert _kernel_derivative_at_origin(1.5, prior) is None
+    _check_fractional_kernel_at_origin(1.5, prior, 0.0, "scipy")

@@ -180,10 +180,12 @@ def cached_term_values(expr, symbol, probe=None):
     Returns
     -------
     callable or None
-        Maps a value (or array) of `symbol` to an array of the terms'
-        values, with the terms along the first axis. `None` if the expression
-        carries other free symbols, or if it cannot be compiled or called —
-        the same `expint` case :func:`cached_lambdify` returns `None` for.
+        Maps a value (or array) of `symbol` to a *list* of the terms' values,
+        one entry per term. Entries are not all the same shape: a term that
+        does not contain `symbol` evaluates to a scalar whatever the input, so
+        the caller must broadcast. `None` if the expression carries other free
+        symbols, or if it cannot be compiled or called — the same `expint`
+        case :func:`cached_lambdify` returns `None` for.
 
     Notes
     -----
@@ -206,9 +208,13 @@ def cached_term_values(expr, symbol, probe=None):
     try:
         terms = sp.expand(expr).as_ordered_terms()
         if not any(term.free_symbols - {symbol} for term in terms):
-            compiled = sp.lambdify(
-                symbol, sp.Matrix(terms), modules=["scipy", "numpy"]
-            )
+            # A list rather than a `Matrix`. A term that does not contain
+            # `symbol` -- a constant one, which a differentiated MGF can
+            # perfectly well have -- evaluates to a scalar while its
+            # neighbours evaluate to arrays, and `Matrix` raises outright on
+            # that mixture. A list returns them side by side and leaves the
+            # broadcasting to the caller.
+            compiled = sp.lambdify(symbol, list(terms), modules=["scipy", "numpy"])
     except (TypeError, ValueError, AttributeError, NotImplementedError):
         compiled = None
 

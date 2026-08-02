@@ -1001,22 +1001,39 @@ def _check_cancellation(expr, t_values, order, prior, method) -> None:
         return
 
     with np.errstate(all="ignore"):
-        values = np.asarray(compiled(t_values), dtype=float)
-    if values.ndim > 1:
-        values = values.reshape(-1, t_values.size)
-    else:
-        values = values.reshape(-1, 1)
+        raw = compiled(t_values)
+        # A term free of `t` comes back as a scalar however many points were
+        # asked for, so each is broadcast to the batch before stacking.
+        values = np.stack(
+            [
+                np.broadcast_to(np.asarray(term, dtype=float), t_values.shape)
+                for term in raw
+            ]
+        )
     if not np.all(np.isfinite(values)):
         return  # overflow or underflow; the exact path handles those elements
 
     totals = values.sum(axis=0)
     magnitudes = np.abs(values).sum(axis=0)
-    nonzero = totals != 0.0
-    if not np.any(nonzero):
-        return
 
-    ratios = np.full(totals.shape, 1.0)
-    ratios[nonzero] = magnitudes[nonzero] / np.abs(totals[nonzero])
+    # A total of exactly zero against terms that are not all zero is *complete*
+    # cancellation -- every significant digit gone -- and it is the worst case
+    # this guard exists for rather than one to wave through. The true value
+    # cannot be zero: `D^a M(t) = E[theta^a e^{t theta}]` is strictly positive
+    # because `theta > 0`, so a computed zero here is arithmetic, not an answer.
+    #
+    # Both halves matter. Skipping when *every* point cancels would disable the
+    # check exactly where it is most needed, and scoring only the surviving
+    # points would mark the cancelled ones as perfectly conditioned -- worse,
+    # because a mixed batch would then pass on the strength of its good points.
+    all_terms_zero = magnitudes == 0.0
+    cancelled = (totals == 0.0) & ~all_terms_zero
+    live = (totals != 0.0) & ~all_terms_zero
+
+    ratios = np.ones_like(totals, dtype=float)
+    ratios[live] = magnitudes[live] / np.abs(totals[live])
+    ratios[cancelled] = np.inf
+
     with np.errstate(divide="ignore"):
         digits_left = _FLOAT64_DIGITS - np.log10(np.maximum(ratios, 1.0))
 
@@ -1025,13 +1042,24 @@ def _check_cancellation(expr, t_values, order, prior, method) -> None:
         return
 
     name = getattr(prior, "name", "this prior")
+    if np.isinf(ratios[worst]):
+        extent = (
+            "its MGF gives a sum that cancels to exactly zero, so no "
+            "significant digit survives at all -- and the true value cannot be "
+            "zero, since D^a M(t) = E[theta^a e^(t theta)] is strictly positive"
+        )
+    else:
+        extent = (
+            f"its MGF gives a sum whose terms cancel by a factor of "
+            f"{ratios[worst]:.3g}, leaving about {digits_left[worst]:.1f} of "
+            f"float64's {_FLOAT64_DIGITS:.0f} significant digits, below the "
+            f"{_MIN_SIGNIFICANT_DIGITS:.0f} this route will report"
+        )
+
     raise ValueError(
         f"method='{method}' cannot compute the order-{order} derivative for "
         f"prior '{name}' at t = {float(t_values[worst]):.6g}: differentiating "
-        f"its MGF gives a sum whose terms cancel by a factor of "
-        f"{ratios[worst]:.3g}, leaving about {digits_left[worst]:.1f} of "
-        f"float64's {_FLOAT64_DIGITS:.0f} significant digits, below the "
-        f"{_MIN_SIGNIFICANT_DIGITS:.0f} this route will report. The loss is in "
+        f"{extent}. The loss is in "
         f"the stored coefficients, not the arithmetic, so higher precision "
         f"does not recover it -- against Uniform(0.5, 2) at t = -1 and order "
         f"30 this route returns 3.60e+16 where the value is 6.67e+06. Use "
@@ -1055,24 +1083,33 @@ def _kernel_derivative_at_origin(order, prior):
 
     Returns
     -------
-    float
-        ``M^{(n+1)}(0)``, or ``nan`` if the expression cannot be evaluated
-        there at all.
+    float or None
+        ``M^{(n+1)}(0)``; ``nan`` if the expression exists but cannot be
+        evaluated there; ``None`` if the prior has no symbolic MGF at all,
+        which is a different situation and must not be reported as one.
 
     Notes
     -----
-    Returning ``inf`` and ``nan`` distinctly is the point, because they mean
-    different things and the two routes survive them differently. ``inf`` is a
-    genuine divergence — at the origin ``M^{(k)}(0) = E[Θ^k]``, so a
-    heavy-tailed prior has none past its bound. ``nan`` is a removable
+    Three outcomes rather than two, because they mean different things and the
+    routes survive them differently.
+
+    ``inf`` is a genuine divergence — at the origin ``M^{(k)}(0) = E[Θ^k]``, so
+    a heavy-tailed prior has none past its bound. ``nan`` is a removable
     singularity in the *expression*: the uniform MGF carries ``t`` in a
     denominator, so ``(e^{bt} − e^{at})/(t(b−a))`` differentiates to something
     that reads 0/0 at zero even though the function is perfectly finite.
+
+    ``None`` is neither. A prior built from ``mgf_backend``/``pdf_backend``
+    carries no expression to differentiate, and so does the one
+    ``to_prior_object`` produces for sequential updating. Those cannot use a
+    differentiating route at all, at any ``t``, and saying so is that route's
+    job — blaming a singularity in an expression the prior does not have would
+    send the caller looking for the wrong thing.
     """
     n_plus_1 = math.floor(float(order)) + 1
     expr = getattr(prior, "mgf_sym_out", None) or getattr(prior, "mgf_sym", None)
     if expr is None:
-        return float("nan")
+        return None
 
     from jumufraktiv.symbolic_cache import cached_diff
 
@@ -1142,6 +1179,12 @@ def _check_fractional_kernel_at_origin(order, prior, t, method) -> None:
         return
 
     value = _kernel_derivative_at_origin(order, prior)
+    if value is None:
+        # No symbolic MGF to differentiate -- a backend-built prior, or the one
+        # `to_prior_object` produces. It cannot use this route at any `t`, so
+        # the route's own failure is the accurate report and this guard has
+        # nothing to add.
+        return
     if np.isfinite(value):
         return
 

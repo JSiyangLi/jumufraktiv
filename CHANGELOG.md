@@ -47,6 +47,26 @@ without a deprecation period.
   same way `cached_lambdify` does — SymPy compiles Pareto's `expint` without
   complaint and the result raises `NameError` on the first call. (PR 13f)
 
+- **The cancellation guard let complete cancellation through**, which is the
+  one case it most needed to catch. A sum of non-zero terms reaching exactly
+  zero has lost every significant digit, and the true value cannot be zero
+  because `D^a M(t) = E[Theta^a e^(t Theta)]` is strictly positive. Skipping
+  it disabled the check where it mattered most; scoring only the surviving
+  points was worse, because a batch with one fully cancelled point among two
+  good ones reported 15.7 surviving digits and passed. (PR 13f)
+
+- The guard blamed a removable singularity for a prior that has no symbolic
+  MGF at all — one built from `mgf_backend`/`pdf_backend`, or the one
+  `to_prior_object` produces for sequential updating. Such a prior cannot use
+  a differentiating route at any `t`, and that route's own failure is the
+  accurate report. (PR 13f)
+
+- `cached_term_values` compiles its terms as a list rather than a
+  `sympy.Matrix`. A term free of `t` — which a differentiated MGF may
+  perfectly well have — evaluates to a scalar while its neighbours evaluate to
+  arrays, and `Matrix` raises on that mixture instead of broadcasting.
+  (PR 13f)
+
 ### Added
 
 - **The posterior CDF, quantile, interval and sampling methods now work for
