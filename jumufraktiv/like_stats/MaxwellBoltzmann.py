@@ -8,19 +8,22 @@ the density for a speed y ≥ 0 is:
 
     f(y; θ) = (4 / √π) * y² * θ^{3/2} * exp(-θ y²)
 
-This can be written as:
+This can be written as::
+
     L(θ; y) = c(y) * θ^{a(y)} * exp(-b(y) θ)
 
 with a(y) = 3/2, b(y) = y², c(y) = (4 / √π) * y².
 
-For a sample of size n, the joint likelihood is:
+For a sample of size n, the joint likelihood is::
+
     L(θ; y) = (4 / √π)^n (∏ y_i²) * θ^{3n/2} * exp(-θ Σ y_i²)
 
-Thus:
-    a = 3n/2
-    b = Σ y_i²
+Thus::
+
+    a     = 3n/2
+    b     = Σ y_i²
     log_c = n * log(4/√π) + 2 Σ log(y_i)
-         = n * (log(4) - 0.5 * log(π)) + 2 Σ log(y_i)
+          = n * (log(4) - 0.5 * log(π)) + 2 Σ log(y_i)
 """
 
 import math

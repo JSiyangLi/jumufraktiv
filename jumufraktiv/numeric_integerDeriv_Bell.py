@@ -213,8 +213,10 @@ def integerDeriv_numeric_bell(
     Compute the order-th derivative of M(t) or imgf(t,u) using Bell polynomials.
 
     The evaluation point is:
-        - complete MGF: (t)
-        - incomplete MGF: (t, u)
+
+    - complete MGF: (t)
+    - incomplete MGF: (t, u)
+
     If either t or u is array-like, they are broadcast to a common shape and the
     computation is vectorised over that batch (tuple-vectorisation principle).
 

@@ -902,12 +902,17 @@ def _check_moment_exists_at_origin(order, prior, t) -> None:
         )
 
 
+# No `prior` argument, deliberately: which backend serves an order is a
+# property of the order and the requested method alone. A `prior` parameter was
+# accepted here and never read, left over from when the choice between
+# differentiating and taking the expectation was to be made at this point. That
+# choice is made in `mgfDerivative`, where the evaluation point is known — see
+# the comment on the `auto` branch below.
 def resolve_backend(
     order,
     method: str = "auto",
     integer_method: str = "symbolic",
     int_tol: float = 1e-12,
-    prior=None,
 ):
     """Classify a derivative order and settle which backend will serve it.
 
@@ -1262,7 +1267,7 @@ def mgfDerivative(
 
     requested_method = method.lower() if isinstance(method, str) else method
     order_type, method, integer_method = resolve_backend(
-        order, method, integer_method, int_tol, prior=prior
+        order, method, integer_method, int_tol
     )
 
     # Dispatch

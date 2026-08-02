@@ -102,19 +102,19 @@ jobs:
 
       # The docs build succeeded with 79 warnings while the API reference
       # documented 2 of the package's 36 modules, so "it builds" was never the
-      # property worth checking. This step fails if the build errors or if the
-      # warning count rises above the recorded baseline; `-W` will replace the
-      # baseline once the remaining warnings are cleared.
+      # property worth checking. A counted baseline replaced that, and `-W` now
+      # replaces the baseline: any warning fails the build. A count is a
+      # ratchet that permits swapping one defect for another, which is the
+      # thing a reference manual most needs not to allow.
+      #
+      # `-E` discards the saved environment so every page is re-read. Sphinx
+      # skips unchanged documents otherwise, and a warning is emitted during
+      # the read it is skipping -- so an incremental build can report clean for
+      # a page that is not.
       - name: Build the documentation
         run: |
-          # The runner's default shell is `bash -e`, without `pipefail`, so a
-          # pipeline reports `tee`'s status and a Sphinx failure would pass.
-          set -o pipefail
           pip install -e ".[docs]"
-          python -m sphinx -b html docs /tmp/docbuild 2>&1 | tee /tmp/sphinx.log
-          count=$(grep -cE "WARNING|ERROR" /tmp/sphinx.log || true)
-          echo "sphinx warnings: $count"
-          test "$count" -le 30
+          python -m sphinx -W -E -b html docs /tmp/docbuild
 
       - name: Verify a clean install imports
         run: |

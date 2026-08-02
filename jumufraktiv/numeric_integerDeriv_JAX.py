@@ -208,6 +208,9 @@ def integerDeriv_numeric_jax(t, prior, order, complete=True, u=None):
     ----------
     order : int
         Must be scalar.
+    prior : mitMGFprior
+        The prior whose MGF is differentiated. Supplies `cgf_jax` for the
+        complete MGF and `logimgf_jax` for the incomplete one.
     t : scalar or array-like
         Evaluation point(s) for t.
     u : scalar or array-like, optional

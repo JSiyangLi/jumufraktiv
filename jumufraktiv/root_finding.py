@@ -240,6 +240,16 @@ def bisection_jax(
         Lower brackets, f(lower)<0.
     upper : array
         Upper brackets, f(upper)>0.
+    maxiter : int, optional
+        Number of bisection steps, always taken in full. This is the only
+        control over the result's accuracy; each step halves the bracket, so
+        the default of 100 exhausts double precision for any bracket.
+    tol : float, optional
+        **Accepted and not used.** `solve_root` passes the same arguments to
+        every backend, and the NumPy bisection stops early once ``|f(x)|``
+        falls below this; the JAX one runs a fixed `jax.lax.fori_loop`, which
+        cannot exit on a data-dependent condition. Tightening it changes
+        nothing here — reduce `maxiter` to stop sooner.
 
     Returns
     -------
@@ -272,6 +282,35 @@ def newton_jax(
 ):
     """
     JAX vectorised pure Newton method.
+
+    Parameters
+    ----------
+    f : callable
+        JAX-compatible function whose roots are sought.
+    df : callable
+        Its derivative.
+    x0 : array
+        Initial guesses, one per element of the batch.
+    maxiter : int, optional
+        Number of Newton steps, always taken in full. This is the only
+        control over the result's accuracy.
+    tol, rel_tol : float, optional
+        **Accepted and not used.** `solve_root` passes the same arguments to
+        every backend, and the NumPy Newton stops early on them; this one runs
+        a fixed `jax.lax.fori_loop`, which cannot exit on a data-dependent
+        condition. Adjust `maxiter` instead.
+
+    Returns
+    -------
+    array
+        Approximate roots.
+
+    Notes
+    -----
+    There is no safeguard against a step leaving a sensible region, and no
+    convergence test on the result: a batch element whose derivative is near
+    zero is divided by 1e-300 and diverges silently. Prefer
+    :func:`bisectioned_newton_jax`, which keeps every step inside a bracket.
     """
     x0 = jnp.asarray(x0, dtype=jnp.float64)
 
@@ -300,6 +339,31 @@ def bisectioned_newton_jax(
 
     Newton steps are accepted only when they remain inside
     the bracket; otherwise bisection is used.
+
+    Parameters
+    ----------
+    f : callable
+        JAX-compatible function whose roots are sought.
+    df : callable
+        Its derivative.
+    x0 : array
+        Initial guesses, one per element of the batch.
+    lower, upper : array
+        Brackets, with ``f(lower) < 0 < f(upper)``. A Newton step landing
+        outside them, or taken where the derivative underflows, is replaced by
+        a bisection step, so the bracket is an invariant rather than a hint.
+    maxiter : int, optional
+        Number of steps, always taken in full. This is the only control over
+        the result's accuracy.
+    tol, rel_tol : float, optional
+        **Accepted and not used**, for the same reason as in
+        :func:`newton_jax`: the loop is a fixed `jax.lax.fori_loop` and cannot
+        exit on a data-dependent condition. Adjust `maxiter` instead.
+
+    Returns
+    -------
+    array
+        Approximate roots.
     """
     x = jnp.asarray(x0, dtype=jnp.float64)
     lower = jnp.asarray(lower, dtype=jnp.float64)
@@ -362,7 +426,8 @@ def solve_root(
     upper : array-like, optional
         Upper brackets. Required for bisection-based methods.
     root_method : str, optional
-        One of:
+        One of::
+
             "auto"                      -- try methods in order, skipping
                                            those with missing args.
             "bisectioned-newton-jax"
@@ -371,6 +436,7 @@ def solve_root(
             "bisectioned-newton-np"
             "newton-np"
             "bisection-np"
+
     maxiter : int, optional
         Maximum iterations.
     tol : float, optional
