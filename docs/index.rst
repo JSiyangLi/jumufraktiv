@@ -2,7 +2,7 @@ Welcome to jumufraktiv's documentation!
 =======================================
 
 **jumufraktiv** is a Python package for Bayesian inference using MGF marginalisation.
-It provides tools for posterior density, CDF, quantiles, moments, and sequential updating.
+It provides tools for posterior density, CDF, quantiles, moments, MGF, and sequential updating.
 
 .. include:: ../README.rst
    :start-after: .. readme-body-start

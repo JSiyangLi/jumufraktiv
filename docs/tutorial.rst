@@ -14,7 +14,7 @@ as
 
    L(\theta; y) = c(y)\, \theta^{a(y)} \exp\!\big(-b(y)\,\theta\big),
 
-where :math:`\big(a(y), b(y)\big)` is **jointly** sufficient for
+where :math:`\big(a(y), b(y)\big)` is **jointly** minimal-sufficient for
 :math:`\theta`. Neither component is sufficient on its own, and they play
 different roles: :math:`a(y)` is the order of differentiation and
 :math:`b(y)` fixes the point of evaluation.
@@ -76,12 +76,13 @@ evidence factorises:
 
    post.evidence() + later.evidence()   # equals the batch evidence for all five
 
-Choosing a backend
-------------------
+Choosing a differentiation backend
+----------------------------------
 
-``method="auto"`` is the default and computes the derivative as an
-expectation, :math:`\mathrm{D}^a M(t) = E[\theta^a e^{t\theta}]`, whose
-integrand is positive and therefore cannot cancel. It is not the fastest
-route, but it is never catastrophically wrong, which is the property a default
-needs. ``method="symbolic"``, ``"scipy"``, ``"mpmath"``, ``"bell"`` and
-``"jax"`` are available when you know your problem suits them.
+``method="auto"`` is the default and computes the derivative by first
+examining if the derivative order is integer, then trying 
+each backend in turn until one succeeds. The orders for integer derivatives are: 
+``method="symbolic"``, ``"bell"`` and ``"jax"``,
+and the orders for fractional derivatives are ``method="scipy"`` and ``"mpmath"``, where
+the latter two also contains a step of integer derivative computed in the same way as above.
+All methods listed above are also available to be specified directly when you know your problem suits them.

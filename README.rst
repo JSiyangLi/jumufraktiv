@@ -29,7 +29,7 @@ as
 
    L(\theta; y) = c(y)\, \theta^{a(y)} \exp\!\big(-b(y)\,\theta\big),
 
-where :math:`\big(a(y), b(y)\big)` is **jointly** sufficient for :math:`\theta` —
+where :math:`\big(a(y), b(y)\big)` is **jointly** minimal-sufficient for :math:`\theta` —
 neither component is sufficient on its own. The marginal likelihood is then a
 derivative of the prior MGF :math:`M`, of order :math:`a(y)`, evaluated at
 :math:`t = -b(y)`:
@@ -41,8 +41,9 @@ derivative of the prior MGF :math:`M`, of order :math:`a(y)`, evaluated at
 So the two components play different roles: :math:`a(y)` sets the order of
 differentiation and :math:`b(y)` the point of evaluation. When :math:`a(y)` is
 not an integer the derivative is fractional — the Liouville--Caputo definition of fractional derivatives are used extensively in this package. Everything else
-(density, CDF, quantiles, moments, predictive, sequential updating) follows from
-the same object.
+(density, CDF, quantiles, moments, predictive, MGF, sequential updating) follows from
+the same object. See the bibliography for more details on how these posterior quantities are analytically
+related to each other via fractional derivatives of the prior MGF, and how to compute them efficiently.
 
 The name of this package constitutes of two parts - "jumu", 矩母, means "moment-generating" in Chinese;
 "fraktiv", a newly-invented word by authors of this package, stands for "fractional derivatives".
@@ -137,13 +138,19 @@ another package will serve you better.
 Citation
 ========
 
-This package implements the method of
+This package implements the methods of:
 
+Model evidence:
    Li, S.-Y., van Dyk, D. A., & Autenrieth, M. *Using fractional derivatives to
-   derive marginal densities.* [manuscript in preparation] (2026).
+   derive marginal densities.* [Biometrika] (2026).
    `arXiv:2409.11167 <https://arxiv.org/abs/2409.11167>`_
 
-Please cite that paper if you use ``jumufraktiv`` in published work. Machine-
+Posterior quantities:
+   Li, S.-Y., van Dyk, D. A., and Autenrieth, M. (2026a). *Beyond conjugacy: 
+   reconcieving analytic posterior quantities using moment-generating function.* 
+   [Manuscript available on request]
+
+Please cite the relevant papers above if you use ``jumufraktiv`` in published work. Machine-
 readable metadata is in ``CITATION.cff``.
 
 The derivative is the Liouville–Caputo fractional derivative with lower terminal
@@ -151,12 +158,12 @@ at :math:`-\infty`. That terminal is essential rather than conventional: it is
 what gives :math:`D^{a} e^{t\theta} = \theta^{a} e^{t\theta}`, and hence
 :math:`D^{a} M(t) = \mathbb{E}[\theta^{a} e^{t\theta}]`. It also means the
 operator reads :math:`M` only on :math:`(-\infty, t]`, so the method works for
-priors whose MGF exists only for :math:`t \le 0`, such as the Pareto.
+priors whose MGF exists only for some :math:`t \le 0`, such as the Pareto.
 
 Status
 ======
 
-Alpha. The API is not yet stable and may change without a deprecation period
+Beta. The API will be stable soon, but may change without a deprecation period
 before version 1.0. See ``CHANGELOG.md`` for release notes.
 
 License

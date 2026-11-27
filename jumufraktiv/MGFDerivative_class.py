@@ -289,12 +289,12 @@ def _unknown_kwargs_message(
 # by their own docstrings for that reason; do not add a summary table back.
 class MGFDerivative:
     """
-    Posterior distribution derived via MGF marginalisation.
+    Posterior quantities derived via MGF marginalisation.
 
-    This class encapsulates a posterior distribution obtained from a prior
+    This class encapsulates model evidence and various posterior quantities obtained from a prior
     (a `MGFPrior` object) and a likelihood from the MGF-marginalisable
     family. It computes the posterior normalising constant (evidence) and
-    provides methods for density, CDF, quantiles, moments, and predictive
+    provides methods for density, CDF, quantiles, moments, MGF, and predictive
     inference.
 
     The core computation is based on fractional derivatives of the prior
@@ -306,7 +306,7 @@ class MGFDerivative:
     ----------
     a : float
         Order of differentiation. Together with `b` this forms the pair
-        `(a, b)`, which is jointly sufficient for `theta`; neither component is
+        `(a, b)`, which is jointly minimal sufficient for `theta`; neither component is
         sufficient on its own.
     b : float
         Evaluation point, entering as `t = -b`. See `a`.
@@ -828,12 +828,12 @@ class MGFDerivative:
 
             evidence = c_func() * D^a M(t) |_{t=-b}
 
-        where `c_func` is the likelihood's normalising constant and the
+        where `c_func` is the sampling distribution's normalising constant and the
         derivative is evaluated at the posterior mode location `t = -b`.
 
         No sign accompanies the logarithm, because the evidence cannot be
         negative: `p(y) = c(y) D^a M(-b)`, `c(y) > 0`, and
-        `D^a M(t) = E[Theta^a e^{t Theta}] > 0` for positive `Theta`. A negative
+        `D^a M(t) = E[Theta^a e^{t Theta}] > 0` for positive `Theta` (see Bernstein's Theorem). A negative
         value therefore means the computation failed rather than that the
         quantity is signed, and the constructor rejects it outright rather than
         returning a flag for the caller to notice.
@@ -857,7 +857,7 @@ class MGFDerivative:
         if self._is_symbolic:
             # `sp.exp(self.log_c)`, not `self.c_func()`.
             #
-            # `c_func()` returns the likelihood's normalising constant as a
+            # `c_func()` returns the sampling distribution's normalising constant as a
             # general formula -- for Poisson,
             # `Product(s[i]**y[i]/factorial(y[i]), (i, 1, n))` -- written over
             # indexed symbols that are never bound to this object's data, so it
@@ -1432,7 +1432,7 @@ class MGFDerivative:
             If `new_data` is a `sympy.Symbol`. The predictive density
             differentiates the posterior MGF `a(y_new)` times, so a symbolic
             observation gives a symbolic differentiation order, which SymPy
-            cannot use. This is a property of the construction rather than a
+            cannot use. This is an (undesired) property of the construction rather than a
             gap in one backend, so no `method` avoids it.
 
         Notes
